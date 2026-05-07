@@ -26,6 +26,10 @@ KILL_COMMAND = (
     "pkill -f 'run_worker[.]py'; "
     "pkill -f 'python worker[.]py'; "
     "pkill -f 'source[.]runtime[.]worker'; "
+    "sleep 5; "
+    "pkill -9 -f 'run_worker[.]py' || true; "
+    "pkill -9 -f 'python worker[.]py' || true; "
+    "pkill -9 -f 'source[.]runtime[.]worker' || true; "
     "sleep 2"
 )
 
@@ -213,7 +217,7 @@ def capture_current_worker_cmdline(ssh) -> WorkerProcessInfo | None:
 
 def kill_supervisor_and_worker(ssh) -> None:
     _execute(ssh, KILL_COMMAND, check=False, timeout=30)
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         stdout, _ = _execute(
             ssh,
