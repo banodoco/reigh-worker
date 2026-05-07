@@ -843,6 +843,94 @@ def test_variant_fresh_dry_run_uses_livetest_workspace_and_env_exports(capsys, m
     assert "VIBECOMFY_PATH" in output
 
 
+def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    from scripts.live_test import variant_fresh
+
+    events = []
+    cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+
+    class FakeDB:
+        async def create_worker_record(self, worker_id, instance_type, runpod_id=None):
+            events.append(("create_worker_record", worker_id, instance_type, runpod_id))
+            return True
+
+        async def update_worker_status(self, worker_id, status, metadata):
+            events.append(("update_worker_status", worker_id, status, metadata.get("runpod_id")))
+            return True
+
+    class DummySSH:
+        def execute_command(self, _command, timeout=600):
+            return 0, "", ""
+
+        def disconnect(self):
+            return None
+
+    monkeypatch.setattr(
+        "scripts.live_test.variant_fresh._prepare_context",
+        lambda _args: {
+            "db": FakeDB(),
+            "token": "token-1",
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "cases": cases,
+        },
+    )
+    monkeypatch.setattr("scripts.live_test.variant_fresh._validate_cases", lambda _cases, _project_id: None)
+    monkeypatch.setattr(
+        "scripts.live_test.variant_fresh.config.require_env",
+        lambda name: {
+            "RUNPOD_API_KEY": "api-key",
+            "SUPABASE_URL": "https://supabase.example",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        }[name],
+    )
+    monkeypatch.setattr("scripts.live_test.variant_fresh._runs_root", lambda: tmp_path)
+    monkeypatch.setitem(
+        sys.modules,
+        "runpod_lifecycle.api",
+        types.SimpleNamespace(
+            create_pod=lambda **_kwargs: {"id": "pod-123", "networkVolumeId": "volume-1"},
+            get_network_volumes=lambda _api_key: [],
+        ),
+    )
+    monkeypatch.setattr("scripts.live_test.variant_fresh.open_session", lambda _pod_id, _api_key: DummySSH())
+    monkeypatch.setattr("scripts.live_test.variant_fresh.clone_repo_into", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_fresh.run_install", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_fresh.clone_and_install_vibecomfy", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_fresh.launch_worker_detached", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_fresh.wait_until_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_fresh.run_matrix", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("scripts.live_test.variant_fresh.write_report", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr("scripts.live_test.variant_fresh.fetch_worker_logs", lambda *_args, **_kwargs: "logs")
+    monkeypatch.setattr("scripts.live_test.variant_fresh.guarded_terminate", lambda *_args, **_kwargs: False)
+
+    args = SimpleNamespace(
+        dry_run=False,
+        no_terminate=False,
+        wgp_profile=3,
+        timeout_image=900,
+        timeout_travel_segment=1500,
+        timeout_travel_orchestrator=2400,
+        anchor_image_a="https://example.com/a.png",
+        anchor_image_b="https://example.com/b.png",
+        ref="main",
+        backend="vibecomfy",
+        vibecomfy_ref="branch-a",
+        selector_namespace="production",
+        selector_version=None,
+        worker_contract_version=1,
+        worker_profile="default",
+        case=[],
+        task_type=[],
+        route_key=[],
+    )
+    assert run_variant_fresh(args) == 0
+    assert events == [
+        ("create_worker_record", "pod-123", variant_fresh.config.RUNPOD_GPU_TYPE, "pod-123"),
+        ("update_worker_status", "pod-123", "spawning", "pod-123"),
+    ]
+
+
 def test_clone_and_install_vibecomfy_validates_required_manifests():
     calls = []
 

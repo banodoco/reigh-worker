@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -133,6 +134,21 @@ def _validate_cases(cases: list, project_id: str) -> None:
         render_case_payload(case, project_id=project_id, unique_suffix=f"fresh-{index}")
 
 
+def _register_fresh_worker_record(db, pod_id: str, pod: dict[str, Any]) -> None:
+    created = asyncio.run(db.create_worker_record(pod_id, config.RUNPOD_GPU_TYPE, runpod_id=pod_id))
+    if not created:
+        raise RuntimeError(f"Failed to create fresh live-test worker record for pod {pod_id}")
+    metadata = {
+        "runpod_id": pod_id,
+        "pod_details": pod,
+        "storage_volume": pod.get("volumeId") or pod.get("networkVolumeId"),
+        "live_test_variant": FRESH_VARIANT,
+    }
+    updated = asyncio.run(db.update_worker_status(pod_id, "spawning", metadata))
+    if not updated:
+        raise RuntimeError(f"Failed to mark fresh live-test worker {pod_id} as spawning")
+
+
 def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> None:
     supabase_url = config.require_env("SUPABASE_URL")
     launch_command = build_run_worker_command(
@@ -237,6 +253,7 @@ def run(args) -> int:
             raise RuntimeError("create_pod_and_wait did not return a pod id")
 
         pod_id = str(pod["id"])
+        _register_fresh_worker_record(db, pod_id, pod)
         with _phase("open_ssh_session", pod_id=pod_id):
             ssh = open_session(pod_id, api_key)
         with _phase("clone_reigh_worker", pod_id=pod_id, ref=args.ref or "main", workdir=FRESH_WORKDIR):
