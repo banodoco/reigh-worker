@@ -66,7 +66,7 @@ def _patch_wanvideo_defaults(workflow, *, steps, cfg, shift, seed):
             node.inputs['device'] = node.inputs.get('device', node.inputs.get('widget_6', 'gpu'))
         elif node.class_type == 'WanVideoModelLoader':
             node.inputs['model'] = node.inputs.get('model', node.inputs.get('widget_0', 'WanVideo\\\\2_2\\\\Wan2_2-T2V-A14B-HIGH_fp8_e4m3fn_scaled_KJ.safetensors'))
-            node.inputs['base_precision'] = node.inputs.get('base_precision', node.inputs.get('widget_1', 'fp16_fast'))
+            node.inputs['base_precision'] = node.inputs.get('base_precision', node.inputs.get('widget_1', 'fp16'))
             node.inputs['quantization'] = node.inputs.get('quantization', node.inputs.get('widget_2', 'fp8_e4m3fn_scaled'))
             node.inputs['load_device'] = node.inputs.get('load_device', node.inputs.get('widget_3', 'offload_device'))
             node.inputs['attention_mode'] = node.inputs.get('attention_mode', node.inputs.get('widget_4', 'sdpa'))
@@ -265,6 +265,7 @@ def _build_vibecomfy_command(resolved: ResolvedTask, run_workspace: Path) -> lis
         "--runtime",
         "embedded",
         "--ensure-packs",
+        "--ensure-models",
     ]
     if ready:
         command.append("--ready")
