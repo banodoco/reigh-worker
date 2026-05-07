@@ -960,6 +960,45 @@ def test_run_matrix_continues_after_individual_case_failures(monkeypatch: pytest
     assert polled == inserted
 
 
+def test_run_matrix_serial_queues_next_case_after_previous_poll(monkeypatch: pytest.MonkeyPatch):
+    cases = [
+        MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=5),
+        MatrixCase(name="case-b", task_type="qwen_image_style", fixture_key="qwen_image_style_db_task", timeout_sec=5),
+    ]
+    events = []
+
+    def fake_insert(_db, _project_id, task_type, _params_overrides, **_kwargs):
+        task_id = f"{task_type}-task"
+        events.append(("insert", task_id))
+        return task_id
+
+    def fake_poll(_db, task_id, _project_id, **kwargs):
+        events.append(("poll", task_id, kwargs.get("worker_id")))
+        return TaskResult(
+            task_id=task_id,
+            case_name=kwargs["case_name"],
+            task_type=kwargs["task_type"],
+            final_status="Complete",
+            output_location="https://out.example/image.png",
+            generation_ids=["gen-1"],
+            elapsed_sec=1.0,
+            error_summary=None,
+        )
+
+    monkeypatch.setattr("scripts.live_test.matrix.insert_spoof_task", fake_insert)
+    monkeypatch.setattr("scripts.live_test.matrix.poll_until_complete", fake_poll)
+
+    results = run_matrix(object(), "project-1", cases, worker_id="worker-target", serial=True)
+
+    assert [result.case_name for result in results] == ["case-a", "case-b"]
+    assert events == [
+        ("insert", "qwen_image-task"),
+        ("poll", "qwen_image-task", "worker-target"),
+        ("insert", "qwen_image_style-task"),
+        ("poll", "qwen_image_style-task", "worker-target"),
+    ]
+
+
 def test_queue_matrix_inserts_all_cases_before_polling(monkeypatch: pytest.MonkeyPatch):
     cases = [
         MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=5),
@@ -1457,7 +1496,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
         "scripts.live_test.variant_update.wait_until_ready",
         lambda _db, worker_id, timeout_sec=900: wait_calls.append((worker_id, timeout_sec)),
     )
-    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases: [])
+    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases, **_kwargs: [])
     monkeypatch.setattr(
         "scripts.live_test.variant_update.write_report",
         lambda _results, _variant, _pod_id, _out_dir: tmp_path,
@@ -1573,7 +1612,7 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
         "scripts.live_test.variant_update.wait_until_ready",
         lambda _db, worker_id, timeout_sec=900: wait_calls.append((worker_id, timeout_sec)),
     )
-    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases: [])
+    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases, **_kwargs: [])
     monkeypatch.setattr("scripts.live_test.variant_update.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_update._restore_remote_state", lambda _ssh, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_update.cleanup_temp_branch", lambda branch, preserve, submodule_path='reigh-worker': branch)
@@ -1716,7 +1755,7 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
     monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update.launch_worker_detached", lambda _ssh, command: launched.append(command))
     monkeypatch.setattr("scripts.live_test.variant_update.wait_until_ready", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases: [])
+    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases, **_kwargs: [])
     monkeypatch.setattr("scripts.live_test.variant_update.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_update._restore_remote_state", lambda _ssh, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_update.cleanup_temp_branch", lambda branch, preserve, submodule_path='reigh-worker': branch)

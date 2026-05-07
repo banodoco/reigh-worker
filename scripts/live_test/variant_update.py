@@ -550,7 +550,7 @@ def run(args) -> int:
         )
         wait_until_ready(db, worker_id=worker_id, timeout_sec=900)
 
-        results = run_matrix(db, project_id, cases)
+        results = run_matrix(db, project_id, cases, worker_id=worker_id, serial=True)
         write_report(results, f"{UPDATE_VARIANT}-{mode}", pod_id, out_dir)
         _restore_remote_state(
             ssh,

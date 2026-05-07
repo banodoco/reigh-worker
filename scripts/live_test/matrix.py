@@ -654,8 +654,22 @@ def poll_queued_matrix(db, project_id: str, queued: list[tuple[MatrixCase, str]]
     return results
 
 
-def run_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[TaskResult]:
+def run_matrix(
+    db,
+    project_id: str,
+    cases: list[MatrixCase],
+    *,
+    worker_id: str | None = None,
+    serial: bool = False,
+) -> list[TaskResult]:
     try:
+        if serial:
+            results: list[TaskResult] = []
+            for case in cases:
+                queued = queue_matrix(db, project_id, [case])
+                results.extend(poll_queued_matrix(db, project_id, queued, worker_id=worker_id))
+            return results
+
         queued = queue_matrix(db, project_id, cases)
     except Exception as exc:
         return [
@@ -670,7 +684,7 @@ def run_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[TaskResult]
                 error_summary=str(exc),
             )
         ]
-    return poll_queued_matrix(db, project_id, queued)
+    return poll_queued_matrix(db, project_id, queued, worker_id=worker_id)
 
 
 __all__ = [
