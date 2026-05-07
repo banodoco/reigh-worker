@@ -184,6 +184,7 @@ def _should_skip_restore(branch_name: str) -> bool:
 def _remote_checkout_and_sync(ssh, branch: str) -> None:
     command = (
         f"cd {shlex.quote(UPDATE_WORKDIR)} && "
+        'export PATH="$HOME/.local/bin:$PATH" && '
         "git fetch origin && "
         f"git checkout {shlex.quote(branch)} && "
         f"git pull --ff-only origin {shlex.quote(branch)} && "
