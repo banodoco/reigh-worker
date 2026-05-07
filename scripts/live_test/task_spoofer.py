@@ -86,6 +86,36 @@ def insert_spoof_task(
     payload["params"] = _deep_merge(params, params_overrides or {})
     payload["params"]["live_test"] = True
 
+    route_contract = payload["params"].get("route_contract")
+    if isinstance(route_contract, dict):
+        for key in (
+            "selector_namespace",
+            "route_key",
+            "selected_backend",
+            "selector_version",
+            "support_state",
+            "selected_profile",
+            "selected_template_id",
+            "worker_contract_version",
+        ):
+            if key in route_contract and route_contract[key] is not None:
+                payload[key] = route_contract[key]
+        snapshot = route_contract.get("route_selection_snapshot")
+        if isinstance(snapshot, dict):
+            payload["route_selection_snapshot"] = snapshot
+    else:
+        for key in (
+            "selector_namespace",
+            "route_key",
+            "selected_backend",
+            "selector_version",
+            "worker_contract_version",
+            "selected_profile",
+        ):
+            value = payload["params"].get(key)
+            if value is not None:
+                payload[key] = value
+
     result = db.supabase.table("tasks").insert(payload).execute()
     rows = _coerce_rows(result)
     if len(rows) != 1 or not rows[0].get("id"):

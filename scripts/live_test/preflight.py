@@ -46,6 +46,37 @@ def assert_user_queue_clean(db, user_id: str) -> None:
         )
 
 
+def close_stale_live_test_tasks(db, user_id: str) -> int:
+    """Mark live-test queued/in-progress rows failed before starting a new run."""
+    result = (
+        db.supabase.table("tasks")
+        .select("id, status, params, project_id, projects!inner(user_id)")
+        .in_("status", ["Queued", "In Progress"])
+        .eq("projects.user_id", user_id)
+        .execute()
+    )
+    live_test_ids = [
+        str(row["id"])
+        for row in _coerce_rows(result)
+        if row.get("id") and _is_live_test_task(row)
+    ]
+    if not live_test_ids:
+        return 0
+
+    (
+        db.supabase.table("tasks")
+        .update(
+            {
+                "status": "Failed",
+                "error_message": "closed stale live-test task before new live-test run",
+            }
+        )
+        .in_("id", live_test_ids)
+        .execute()
+    )
+    return len(live_test_ids)
+
+
 def get_or_create_live_test_project(db, user_id: str) -> str:
     """Return the dedicated live-test project ID for the target user."""
     existing = (
@@ -78,5 +109,6 @@ __all__ = [
     "LIVE_TEST_PROJECT_NAME",
     "UnexpectedUserWorkError",
     "assert_user_queue_clean",
+    "close_stale_live_test_tasks",
     "get_or_create_live_test_project",
 ]

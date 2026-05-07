@@ -24,6 +24,7 @@ from scripts.live_test.preflight import (
     LIVE_TEST_PROJECT_NAME,
     UnexpectedUserWorkError,
     assert_user_queue_clean,
+    close_stale_live_test_tasks,
     get_or_create_live_test_project,
 )
 from scripts.live_test.report import write_report
@@ -80,6 +81,7 @@ class FakeQuery:
         self.order_key = None
         self.order_desc = False
         self.insert_payload = None
+        self.update_payload = None
 
     def select(self, *_args, **_kwargs):
         return self
@@ -106,10 +108,24 @@ class FakeQuery:
         self.insert_payload = copy.deepcopy(payload)
         return self
 
+    def update(self, payload):
+        self.update_payload = copy.deepcopy(payload)
+        return self
+
     def single(self):
         return self
 
     def execute(self):
+        if self.update_payload is not None:
+            rows = self.supabase.tables.setdefault(self.table_name, [])
+            updated = []
+            for row in rows:
+                if all(predicate(row) for predicate in self.filters):
+                    row.update(copy.deepcopy(self.update_payload))
+                    updated.append(copy.deepcopy(row))
+            self.supabase.updated.setdefault(self.table_name, []).extend(updated)
+            return FakeResult(updated)
+
         if self.insert_payload is not None:
             row = copy.deepcopy(self.insert_payload)
             row.setdefault("id", f"{self.table_name}-row-{len(self.supabase.tables.setdefault(self.table_name, [])) + 1}")
@@ -139,6 +155,7 @@ class FakeSupabase:
         self.tables = copy.deepcopy(tables or {})
         self.sources = dict(sources or {})
         self.inserted = {}
+        self.updated = {}
 
     def table(self, table_name: str) -> FakeQuery:
         return FakeQuery(self, table_name)
@@ -210,6 +227,27 @@ def test_preflight_passes_when_clean():
     assert get_or_create_live_test_project(db, "user-1") == "project-1"
 
 
+def test_preflight_closes_stale_live_test_tasks_without_touching_user_work():
+    db = FakeDB(
+        tables={
+            "tasks": [
+                {"id": "live-queued", "status": "Queued", "params": {"live_test": True}, "projects": {"user_id": "user-1"}},
+                {"id": "live-active", "status": "In Progress", "params": {"live_test": True}, "projects": {"user_id": "user-1"}},
+                {"id": "user-task", "status": "Queued", "params": {"live_test": False}, "projects": {"user_id": "user-1"}},
+                {"id": "other-user", "status": "Queued", "params": {"live_test": True}, "projects": {"user_id": "user-2"}},
+            ]
+        }
+    )
+
+    assert close_stale_live_test_tasks(db, "user-1") == 2
+    by_id = {row["id"]: row for row in db.supabase.tables["tasks"]}
+    assert by_id["live-queued"]["status"] == "Failed"
+    assert by_id["live-active"]["status"] == "Failed"
+    assert by_id["live-queued"]["error_message"] == "closed stale live-test task before new live-test run"
+    assert by_id["user-task"]["status"] == "Queued"
+    assert by_id["other-user"]["status"] == "Queued"
+
+
 def test_task_spoofer_stamps_live_test_and_queued_status():
     db = FakeDB(tables={"tasks": []})
     task_id = insert_spoof_task(
@@ -225,6 +263,40 @@ def test_task_spoofer_stamps_live_test_and_queued_status():
     assert inserted["params"]["prompt"] == "overridden"
     assert inserted["params"]["live_test"] is True
     assert "notes" not in inserted
+
+
+def test_task_spoofer_promotes_route_contract_to_task_columns():
+    db = FakeDB(tables={"tasks": []})
+    insert_spoof_task(
+        db,
+        "project-1",
+        "z_image_turbo",
+        {
+            "route_contract": {
+                "selector_namespace": "production",
+                "route_key": "z_image_turbo",
+                "selected_backend": "vibecomfy",
+                "selector_version": 10,
+                "support_state": "vibecomfy_supported",
+                "selected_profile": "default",
+                "selected_template_id": "image/z_image",
+                "worker_contract_version": 1,
+                "route_selection_snapshot": {"route_key": "z_image_turbo"},
+            }
+        },
+        fixture_payload={"params": {}},
+    )
+
+    inserted = db.supabase.inserted["tasks"][0]
+    assert inserted["selector_namespace"] == "production"
+    assert inserted["route_key"] == "z_image_turbo"
+    assert inserted["selected_backend"] == "vibecomfy"
+    assert inserted["selector_version"] == 10
+    assert inserted["support_state"] == "vibecomfy_supported"
+    assert inserted["selected_profile"] == "default"
+    assert inserted["selected_template_id"] == "image/z_image"
+    assert inserted["worker_contract_version"] == 1
+    assert inserted["route_selection_snapshot"] == {"route_key": "z_image_turbo"}
 
 
 def test_completion_poller_returns_on_complete(monkeypatch: pytest.MonkeyPatch):

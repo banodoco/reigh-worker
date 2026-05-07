@@ -20,7 +20,11 @@ from scripts.live_test.heartbeat_waiter import wait_until_ready
 from scripts.live_test.launch_command import build_direct_worker_command, build_run_worker_command
 from scripts.live_test.logger import get_logger
 from scripts.live_test.matrix import build_matrix, render_case_payload, run_matrix
-from scripts.live_test.preflight import assert_user_queue_clean, get_or_create_live_test_project
+from scripts.live_test.preflight import (
+    assert_user_queue_clean,
+    close_stale_live_test_tasks,
+    get_or_create_live_test_project,
+)
 from scripts.live_test.report import write_report
 from scripts.live_test.safety_gate import assert_safe_to_take_over
 from scripts.live_test.ssh_bootstrap import (
@@ -99,6 +103,9 @@ def _prepare_context(args) -> dict[str, Any]:
     token = config.require_env("REIGH_LIVE_TEST_TOKEN")
     db = config.DatabaseClient()
     user_id = resolve_token_to_user_id(db, token)
+    stale_count = close_stale_live_test_tasks(db, user_id)
+    if stale_count:
+        log.info("closed stale live-test tasks before update run", count=stale_count)
     assert_user_queue_clean(db, user_id)
     project_id = get_or_create_live_test_project(db, user_id)
     cases = _build_matrix_cases(args)
