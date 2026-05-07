@@ -44,6 +44,7 @@ from scripts.live_test.token_resolver import resolve_token_to_user_id
 
 UPDATE_VARIANT = "update"
 UPDATE_WORKDIR = "/workspace/Reigh-Worker"
+FRESH_LIVE_TEST_WORKDIR = "/workspace/Reigh-Worker-LiveTest"
 VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
 VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
 VIBECOMFY_PYTHON = "python3.11"
@@ -153,19 +154,19 @@ def _quote(value: str) -> str:
     return shlex.quote(str(value))
 
 
-def _read_remote_branch(ssh) -> str:
+def _read_remote_branch(ssh, workdir: str = UPDATE_WORKDIR) -> str:
     stdout, _ = _ssh_execute(
         ssh,
-        f"bash -lc {_quote(f'cd {UPDATE_WORKDIR} && git symbolic-ref --short HEAD || echo DETACHED')}",
+        f"bash -lc {_quote(f'cd {workdir} && git symbolic-ref --short HEAD || echo DETACHED')}",
         timeout=60,
     )
     return stdout.strip() or "DETACHED"
 
 
-def _read_remote_sha(ssh) -> str:
+def _read_remote_sha(ssh, workdir: str = UPDATE_WORKDIR) -> str:
     stdout, _ = _ssh_execute(
         ssh,
-        f"bash -lc {_quote(f'cd {UPDATE_WORKDIR} && git rev-parse HEAD')}",
+        f"bash -lc {_quote(f'cd {workdir} && git rev-parse HEAD')}",
         timeout=60,
     )
     return stdout.strip()
@@ -178,31 +179,54 @@ def _extract_worker_id_from_cmdline(cmdline: list[str]) -> str | None:
     return None
 
 
+def _worker_matches_pod(row: dict[str, Any], pod_id: str) -> bool:
+    if str(row.get("id") or "") == pod_id:
+        return True
+    metadata = row.get("metadata")
+    return isinstance(metadata, dict) and str(metadata.get("runpod_id") or "") == pod_id
+
+
+def _query_workers_for_pod(db, pod_id: str) -> list[dict[str, Any]]:
+    if not hasattr(db, "supabase"):
+        return []
+    result = db.supabase.table("workers").select("id, metadata, status, created_at, last_heartbeat").execute()
+    rows = list(getattr(result, "data", None) or [])
+    return [row for row in rows if _worker_matches_pod(row, pod_id)]
+
+
+def _fresh_live_test_worker_present(db, pod_id: str) -> bool:
+    for row in _query_workers_for_pod(db, pod_id):
+        metadata = row.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("live_test_variant") == "fresh":
+            return True
+    return False
+
+
 def _resolve_existing_worker_id(db, pod_id: str, prev_proc: WorkerProcessInfo | None) -> str:
+    matching = _query_workers_for_pod(db, pod_id)
+    if matching:
+        matching.sort(
+            key=lambda row: (
+                row.get("status") not in {"terminated", "failed", "offline"},
+                str(row.get("last_heartbeat") or ""),
+                str(row.get("created_at") or ""),
+            ),
+            reverse=True,
+        )
+        return str(matching[0]["id"])
+
     if prev_proc:
         worker_id = _extract_worker_id_from_cmdline(prev_proc.cmdline)
         if worker_id:
             return worker_id
 
-    result = db.supabase.table("workers").select("id, metadata, created_at, last_heartbeat").execute()
-    rows = list(getattr(result, "data", None) or [])
-    matching = []
-    for row in rows:
-        metadata = row.get("metadata")
-        if isinstance(metadata, dict) and str(metadata.get("runpod_id")) == pod_id:
-            matching.append(row)
+    raise RuntimeError(f"Could not resolve existing worker_id for pod {pod_id}")
 
-    if not matching:
-        raise RuntimeError(f"Could not resolve existing worker_id for pod {pod_id}")
 
-    matching.sort(
-        key=lambda row: (
-            str(row.get("last_heartbeat") or ""),
-            str(row.get("created_at") or ""),
-        ),
-        reverse=True,
-    )
-    return str(matching[0]["id"])
+def _resolve_update_workdir(db, pod_id: str) -> str:
+    if _fresh_live_test_worker_present(db, pod_id):
+        return FRESH_LIVE_TEST_WORKDIR
+    return UPDATE_WORKDIR
 
 
 def _build_supervisor_restore_command(workdir: str, cli_args: list[str]) -> str:
@@ -215,9 +239,9 @@ def _should_skip_restore(branch_name: str) -> bool:
     return branch_name == "DETACHED" or branch_name.startswith("live-test/")
 
 
-def _remote_checkout_and_sync(ssh, branch: str) -> None:
+def _remote_checkout_and_sync(ssh, branch: str, workdir: str = UPDATE_WORKDIR) -> None:
     command = (
-        f"cd {shlex.quote(UPDATE_WORKDIR)} && "
+        f"cd {shlex.quote(workdir)} && "
         f"{REMOTE_UV_BOOTSTRAP} && "
         "git fetch origin && "
         f"git checkout {shlex.quote(branch)} && "
@@ -233,6 +257,7 @@ def _restore_remote_state(
     prev_remote_branch: str,
     prev_remote_sha: str,
     prev_proc: WorkerProcessInfo | None,
+    workdir: str = UPDATE_WORKDIR,
 ) -> None:
     if _should_skip_restore(prev_remote_branch):
         kill_supervisor_and_worker(ssh)
@@ -244,7 +269,7 @@ def _restore_remote_state(
 
     kill_supervisor_and_worker(ssh)
     restore_command = (
-        f"cd {shlex.quote(UPDATE_WORKDIR)} && "
+        f"cd {shlex.quote(workdir)} && "
         f"{REMOTE_UV_BOOTSTRAP} && "
         f"git checkout {shlex.quote(prev_remote_branch)} && "
         f"git reset --hard {shlex.quote(prev_remote_sha)} && "
@@ -257,10 +282,10 @@ def _restore_remote_state(
         return
 
     if prev_proc.family == "supervisor":
-        launch_worker_detached(ssh, _build_supervisor_restore_command(UPDATE_WORKDIR, prev_proc.cmdline))
+        launch_worker_detached(ssh, _build_supervisor_restore_command(workdir, prev_proc.cmdline))
         return
 
-    launch_worker_detached(ssh, build_direct_worker_command(UPDATE_WORKDIR, cli_args=prev_proc.cmdline))
+    launch_worker_detached(ssh, build_direct_worker_command(workdir, cli_args=prev_proc.cmdline))
 
 
 def _spawn_takeover_pod(db, api_key: str) -> tuple[str, str]:
@@ -419,6 +444,7 @@ def run(args) -> int:
     prev_remote_branch = "DETACHED"
     prev_remote_sha = ""
     prev_proc: WorkerProcessInfo | None = None
+    workdir = UPDATE_WORKDIR
 
     try:
         if args.spawn_takeover:
@@ -439,14 +465,15 @@ def run(args) -> int:
         branch, _sha = push_working_copy_to_temp_branch(worker_repo_path, snapshot)
 
         ssh = open_session(pod_id, api_key)
-        prev_remote_branch = _read_remote_branch(ssh)
-        prev_remote_sha = _read_remote_sha(ssh)
+        workdir = _resolve_update_workdir(db, pod_id)
+        prev_remote_branch = _read_remote_branch(ssh, workdir)
+        prev_remote_sha = _read_remote_sha(ssh, workdir)
         prev_proc = capture_current_worker_cmdline(ssh)
 
         if not worker_id:
             worker_id = _resolve_existing_worker_id(db, pod_id, prev_proc)
 
-        _remote_checkout_and_sync(ssh, branch)
+        _remote_checkout_and_sync(ssh, branch, workdir)
         if getattr(args, "backend", "wgp") == "vibecomfy":
             clone_and_install_vibecomfy(
                 ssh,
@@ -462,7 +489,7 @@ def run(args) -> int:
             export_env(worker_env)
             + " && "
             + build_run_worker_command(
-                UPDATE_WORKDIR,
+                workdir,
                 reigh_token=token,
                 supabase_url=supabase_url,
                 worker_id=worker_id,
@@ -479,19 +506,20 @@ def run(args) -> int:
             prev_remote_branch=prev_remote_branch,
             prev_remote_sha=prev_remote_sha,
             prev_proc=prev_proc,
+            workdir=workdir,
         )
         preserve_branch = False
         return 0
     finally:
+        if snapshot is not None:
+            restore_local_state(str(config.WORKER_ROOT), snapshot)
         if branch:
             kept_branch = cleanup_temp_branch(branch, preserve=preserve_branch, submodule_path=str(config.WORKER_ROOT))
             if preserve_branch:
                 print(f"Preserved temp branch for inspection: {kept_branch}")
-        if snapshot is not None:
-            restore_local_state(str(config.WORKER_ROOT), snapshot)
         if ssh is not None:
             try:
-                logs = fetch_worker_logs(ssh, UPDATE_WORKDIR)
+                logs = fetch_worker_logs(ssh, workdir)
                 out_dir.mkdir(parents=True, exist_ok=True)
                 (out_dir / "worker_logs.txt").write_text(logs, encoding="utf-8")
             except Exception as exc:

@@ -124,8 +124,10 @@ def cleanup_temp_branch(
         return branch
 
     repo_path = _repo_path(submodule_path)
-    _git(repo_path, "push", "origin", "--delete", branch)
-    _git(repo_path, "branch", "-D", branch)
+    _git(repo_path, "push", "origin", "--delete", branch, check=False)
+    current_branch = _git(repo_path, "branch", "--show-current", check=False).stdout.strip()
+    if current_branch != branch:
+        _git(repo_path, "branch", "-D", branch, check=False)
     return branch
 
 

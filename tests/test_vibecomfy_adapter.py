@@ -505,6 +505,8 @@ def test_wan_2_2_t2i_uses_single_frame_scratchpad(monkeypatch, tmp_path):
     assert "node.inputs['scheduler'] = node.inputs.get('scheduler'" in source
     assert "node.inputs.setdefault(" not in source
     assert "'model_name'" in source
+    assert "node.inputs['blocks_to_swap'] = node.inputs.get('blocks_to_swap'" in source
+    assert "node.inputs['offload_txt_emb'] = node.inputs.get('offload_txt_emb'" in source
     assert "node.inputs['tile_x'] = node.inputs.get('tile_x'" in source
     assert "workflow.nodes['78'].inputs['num_frames'] = 1" in source
     assert 'workflow.nodes[\'16\'].inputs[\'positive_prompt\'] = "wan_2_2_t2i prompt"' in source
@@ -564,6 +566,9 @@ def test_wan_vace_materializes_anchors_control_and_scratchpad(monkeypatch, tmp_p
     assert "workflow.nodes['56'].inputs['num_frames'] = 81" in source
     assert "_patch_wanvideo_defaults(workflow, steps=6, cfg=3.0, shift=5.0, seed=123)" in source
     assert "node.inputs['force_offload'] = node.inputs.get('force_offload'" in source
+    assert "node.inputs['blocks_to_swap'] = node.inputs.get('blocks_to_swap'" in source
+    assert "node.inputs['num_frames'] = node.inputs.get('num_frames'" in source
+    assert "node.inputs['empty_frame_level'] = node.inputs.get('empty_frame_level'" in source
     assert "workflow.nodes['139'].inputs['frame_rate'] = 16" in source
     assert "workflow.nodes['139'].inputs['loop_count'] = 0" in source
     assert "workflow.nodes['139'].inputs['filename_prefix'] = 'Wan-2-2-VACE'" in source

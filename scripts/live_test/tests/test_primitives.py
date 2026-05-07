@@ -44,7 +44,15 @@ from scripts.live_test.token_resolver import TokenResolutionError, resolve_token
 from scripts.live_test.variant_fresh import run as run_variant_fresh
 from scripts.live_test.variant_fresh import _build_matrix_cases as build_fresh_matrix_cases
 from scripts.live_test.variant_fresh import _build_worker_env as build_fresh_worker_env
-from scripts.live_test.variant_update import _remote_checkout_and_sync, _spawn_takeover_pod, run as run_variant_update
+from scripts.live_test.variant_update import (
+    FRESH_LIVE_TEST_WORKDIR,
+    UPDATE_WORKDIR,
+    _remote_checkout_and_sync,
+    _resolve_existing_worker_id,
+    _resolve_update_workdir,
+    _spawn_takeover_pod,
+    run as run_variant_update,
+)
 
 
 def _iso_now(offset_seconds: int = 0) -> str:
@@ -1429,8 +1437,8 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
             return None
 
     monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
-    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh: "main")
-    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh: "sha-prev")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr(
         "scripts.live_test.variant_update.capture_current_worker_cmdline",
         lambda _ssh: WorkerProcessInfo(
@@ -1439,7 +1447,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
             pid=123,
         ),
     )
-    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch: None)
+    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch, _workdir=None: None)
     monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
     monkeypatch.setattr(
         "scripts.live_test.variant_update.launch_worker_detached",
@@ -1543,8 +1551,8 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
             return None
 
     monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
-    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh: "main")
-    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh: "sha-prev")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr(
         "scripts.live_test.variant_update.capture_current_worker_cmdline",
         lambda _ssh: WorkerProcessInfo(
@@ -1554,7 +1562,7 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
         ),
     )
     monkeypatch.setattr("scripts.live_test.variant_update._resolve_existing_worker_id", lambda _db, _pod_id, _prev_proc: "worker-prev")
-    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch: None)
+    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch, _workdir=None: None)
     monkeypatch.setattr("scripts.live_test.variant_update.clone_and_install_vibecomfy", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update.launch_worker_detached", lambda _ssh, _command: None)
@@ -1588,6 +1596,54 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
     assert safety_calls == [("pod-existing", "user-1", False)]
     assert status_updates == [("worker-prev", "inactive", "pod-existing", "wgp")]
     assert wait_calls == [("worker-prev", 900)]
+
+
+def test_variant_update_prefers_pod_worker_row_over_stale_process_cmdline():
+    db = FakeDB(
+        tables={
+            "workers": [
+                {
+                    "id": "old-worker",
+                    "metadata": {"runpod_id": "old-pod"},
+                    "status": "active",
+                    "created_at": "2026-05-07T10:00:00Z",
+                    "last_heartbeat": "2026-05-07T10:01:00Z",
+                },
+                {
+                    "id": "pod-existing",
+                    "metadata": {"runpod_id": "pod-existing", "live_test_variant": "fresh"},
+                    "status": "terminated",
+                    "created_at": "2026-05-07T11:00:00Z",
+                    "last_heartbeat": "2026-05-07T11:01:00Z",
+                },
+            ]
+        }
+    )
+    prev_proc = WorkerProcessInfo(
+        family="supervisor",
+        cmdline=["python", "run_worker.py", "--worker", "old-worker"],
+        pid=123,
+    )
+
+    assert _resolve_existing_worker_id(db, "pod-existing", prev_proc) == "pod-existing"
+
+
+def test_variant_update_reuses_fresh_live_test_workdir_for_fresh_pods():
+    fresh_db = FakeDB(
+        tables={
+            "workers": [
+                {
+                    "id": "pod-existing",
+                    "metadata": {"runpod_id": "pod-existing", "live_test_variant": "fresh"},
+                    "status": "terminated",
+                }
+            ]
+        }
+    )
+    normal_db = FakeDB(tables={"workers": [{"id": "worker-1", "metadata": {"runpod_id": "pod-existing"}}]})
+
+    assert _resolve_update_workdir(fresh_db, "pod-existing") == FRESH_LIVE_TEST_WORKDIR
+    assert _resolve_update_workdir(normal_db, "pod-existing") == UPDATE_WORKDIR
 
 
 def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -1636,11 +1692,11 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
             return None
 
     monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
-    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh: "main")
-    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh: "sha-prev")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr("scripts.live_test.variant_update.capture_current_worker_cmdline", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update._resolve_existing_worker_id", lambda _db, _pod_id, _prev_proc: "worker-prev")
-    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch: None)
+    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch, _workdir=None: None)
     monkeypatch.setattr(
         "scripts.live_test.variant_update.clone_and_install_vibecomfy",
         lambda _ssh, **kwargs: refresh_calls.append(kwargs),

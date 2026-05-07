@@ -76,8 +76,19 @@ def _patch_wanvideo_defaults(workflow, *, steps, cfg, shift, seed):
                 node.inputs[f'strength_{index}'] = node.inputs.get(f'strength_{index}', node.inputs.get(f'widget_{index * 2 + 1}', 1.0))
             node.inputs['low_mem_load'] = node.inputs.get('low_mem_load', node.inputs.get('widget_10', False))
             node.inputs['merge_loras'] = node.inputs.get('merge_loras', node.inputs.get('widget_11', False))
+        elif node.class_type == 'WanVideoBlockSwap':
+            node.inputs['blocks_to_swap'] = node.inputs.get('blocks_to_swap', node.inputs.get('widget_0', 0))
+            node.inputs['offload_txt_emb'] = node.inputs.get('offload_txt_emb', node.inputs.get('widget_1', False))
+            node.inputs['offload_img_emb'] = node.inputs.get('offload_img_emb', node.inputs.get('widget_2', False))
+            node.inputs['offload_img_emb_nonblock'] = node.inputs.get('offload_img_emb_nonblock', node.inputs.get('widget_3', False))
+            node.inputs['vace_blocks_to_swap'] = node.inputs.get('vace_blocks_to_swap', node.inputs.get('widget_4', 0))
+            node.inputs['prefetch_blocks'] = node.inputs.get('prefetch_blocks', node.inputs.get('widget_5', 0))
+            node.inputs['blocks_to_keep'] = node.inputs.get('blocks_to_keep', node.inputs.get('widget_6', False))
         elif node.class_type == 'WanVideoVACEModelSelect':
             node.inputs['vace_model'] = node.inputs.get('vace_model', node.inputs.get('widget_0', 'WanVideo\\\\Wan2_1-VACE_module_14B_fp8_e4m3fn.safetensors'))
+        elif node.class_type == 'WanVideoVACEStartToEndFrame':
+            node.inputs['num_frames'] = node.inputs.get('num_frames', node.inputs.get('widget_0', 81))
+            node.inputs['empty_frame_level'] = node.inputs.get('empty_frame_level', node.inputs.get('widget_1', 0.0))
         elif node.class_type == 'WanVideoVAELoader':
             node.inputs['model_name'] = node.inputs.get('model_name', node.inputs.get('widget_0', 'wanvideo\\\\Wan2_1_VAE_bf16.safetensors'))
             node.inputs['precision'] = node.inputs.get('precision', node.inputs.get('widget_1', 'bf16'))
