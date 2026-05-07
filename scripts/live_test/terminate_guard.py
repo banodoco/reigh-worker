@@ -13,7 +13,12 @@ def guarded_terminate(pod_id: str | None, api_key: str | None, *, no_terminate: 
         return False
     if no_terminate or os.getenv("REIGH_LIVE_TEST_NO_TERMINATE") == "1":
         return False
-    live_test_pkg.terminate_pod(pod_id, api_key)
+    try:
+        live_test_pkg.terminate_pod(pod_id, api_key)
+    except Exception as exc:
+        if "pod not found" not in str(exc).lower():
+            raise
+        return False
     return True
 
 

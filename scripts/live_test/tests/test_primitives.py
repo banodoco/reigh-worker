@@ -499,6 +499,16 @@ def test_terminate_guard_skips_on_exception_path(monkeypatch: pytest.MonkeyPatch
     assert calls == []
 
 
+def test_terminate_guard_treats_missing_pod_as_already_terminated(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("REIGH_LIVE_TEST_NO_TERMINATE", raising=False)
+
+    def _missing_pod(_pod_id, _api_key):
+        raise RuntimeError("QueryError pod not found to terminate")
+
+    monkeypatch.setattr("scripts.live_test.terminate_guard.live_test_pkg.terminate_pod", _missing_pod)
+    assert guarded_terminate("pod-1", "api-key", no_terminate=False) is False
+
+
 def test_build_run_worker_command_uses_run_worker_py_and_idle_zero():
     command = build_run_worker_command(
         "/workspace/Reigh-Worker-LiveTest",
@@ -927,7 +937,7 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
     assert run_variant_fresh(args) == 0
     assert events == [
         ("create_worker_record", "pod-123", variant_fresh.config.RUNPOD_GPU_TYPE, "pod-123"),
-        ("update_worker_status", "pod-123", "spawning", "pod-123"),
+        ("update_worker_status", "pod-123", "inactive", "pod-123"),
     ]
 
 

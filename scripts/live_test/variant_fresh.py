@@ -134,19 +134,44 @@ def _validate_cases(cases: list, project_id: str) -> None:
         render_case_payload(case, project_id=project_id, unique_suffix=f"fresh-{index}")
 
 
-def _register_fresh_worker_record(db, pod_id: str, pod: dict[str, Any]) -> None:
+def _register_fresh_worker_record(db, pod_id: str, pod: dict[str, Any], args) -> None:
     created = asyncio.run(db.create_worker_record(pod_id, config.RUNPOD_GPU_TYPE, runpod_id=pod_id))
     if not created:
         raise RuntimeError(f"Failed to create fresh live-test worker record for pod {pod_id}")
+    worker_backend = getattr(args, "backend", "wgp")
+    worker_profile = getattr(args, "worker_profile", "default")
+    selector_namespace = getattr(args, "selector_namespace", "production")
+    selector_version = getattr(args, "selector_version", None)
+    worker_contract_version = int(getattr(args, "worker_contract_version", 1))
+    worker_pool = f"gpu-{worker_backend}-{selector_namespace}"
     metadata = {
         "runpod_id": pod_id,
         "pod_details": pod,
         "storage_volume": pod.get("volumeId") or pod.get("networkVolumeId"),
         "live_test_variant": FRESH_VARIANT,
+        "worker_backend": worker_backend,
+        "worker_profile": worker_profile,
+        "worker_pool": worker_pool,
+        "selector_namespace": selector_namespace,
+        "selector_version": selector_version,
+        "worker_contract_version": worker_contract_version,
+        "route_contract": {
+            "selected_backend": worker_backend,
+            "selected_profile": worker_profile,
+            "worker_backend": worker_backend,
+            "worker_profile": worker_profile,
+            "worker_pool": worker_pool,
+            "selector_namespace": selector_namespace,
+            "selector_version": selector_version,
+            "worker_contract_version": worker_contract_version,
+            "route_run_id": None,
+        },
     }
-    updated = asyncio.run(db.update_worker_status(pod_id, "spawning", metadata))
+    # Keep the row out of orchestrator spawning ownership. The live-test harness
+    # owns setup and launch; the worker heartbeat will promote it to active.
+    updated = asyncio.run(db.update_worker_status(pod_id, "inactive", metadata))
     if not updated:
-        raise RuntimeError(f"Failed to mark fresh live-test worker {pod_id} as spawning")
+        raise RuntimeError(f"Failed to register fresh live-test worker metadata for {pod_id}")
 
 
 def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> None:
@@ -253,7 +278,7 @@ def run(args) -> int:
             raise RuntimeError("create_pod_and_wait did not return a pod id")
 
         pod_id = str(pod["id"])
-        _register_fresh_worker_record(db, pod_id, pod)
+        _register_fresh_worker_record(db, pod_id, pod, args)
         with _phase("open_ssh_session", pod_id=pod_id):
             ssh = open_session(pod_id, api_key)
         with _phase("clone_reigh_worker", pod_id=pod_id, ref=args.ref or "main", workdir=FRESH_WORKDIR):
