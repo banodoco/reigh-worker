@@ -108,10 +108,10 @@ def test_wan_vace_travel_child_smoke_uses_constructed_payload_defaults_and_depen
     assert normalized["orchestrator_details"]["orchestrator_task_id"] == "travel-child-1"
     assert (
         resolved.route_key
-        == "travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default"
+        == "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default"
     )
-    assert resolved.support_state == RouteSupportState.VIBECOMFY_UNSUPPORTED
-    assert resolved.should_use_vibecomfy is False
+    assert resolved.support_state == RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.should_use_vibecomfy is True
 
     ctx = task_registry.SegmentContext(
         mode="orchestrator",
@@ -255,10 +255,10 @@ def test_wan_vace_individual_travel_segment_uses_real_local_contract_path(tmp_pa
     )
 
     assert resolved.route_key == (
-        "individual_travel_segment__model-wan22_vace__guidance-vace__"
+        "individual_travel_segment__model-wan22_vace__guidance-vace_raw__"
         "continuity-first_last__profile-default"
     )
-    assert resolved.support_state == RouteSupportState.VIBECOMFY_UNSUPPORTED
+    assert resolved.support_state == RouteSupportState.VIBECOMFY_SUPPORTED
     assert normalized["pair_shot_generation_id"] == "pair-shot-generation-1"
     assert normalized["travel_guidance"]["kind"] == "vace"
 
