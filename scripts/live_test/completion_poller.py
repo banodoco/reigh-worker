@@ -77,12 +77,32 @@ def _linked_generation_ids(rows: list[dict[str, Any]], task_ids: list[str]) -> t
 def _fetch_task_row(db, task_id: str, project_id: str) -> dict[str, Any] | None:
     rows = _coerce_rows(
         db.supabase.table("tasks")
-        .select("id, task_type, status, output_location, error_message, created_at, project_id")
+        .select("id, task_type, status, output_location, error_message, created_at, project_id, worker_id, params")
         .eq("id", task_id)
         .eq("project_id", project_id)
         .execute()
     )
     return rows[0] if rows else None
+
+
+def _fetch_worker_row(db, worker_id: str | None) -> dict[str, Any] | None:
+    if not worker_id:
+        return None
+    rows = _coerce_rows(
+        db.supabase.table("workers")
+        .select("id, status, metadata")
+        .eq("id", worker_id)
+        .execute()
+    )
+    return rows[0] if rows else None
+
+
+def _worker_error_summary(worker_row: dict[str, Any] | None) -> str | None:
+    if not worker_row or worker_row.get("status") != "error":
+        return None
+    metadata = worker_row.get("metadata") if isinstance(worker_row.get("metadata"), dict) else {}
+    reason = metadata.get("error_reason") or metadata.get("error_code") or "worker row reached error status"
+    return f"Worker {worker_row.get('id')} reached error status: {reason}"
 
 
 def _orchestrator_child_task_ids(rows: list[dict[str, Any]], parent_task_id: str) -> list[str]:
@@ -208,6 +228,7 @@ def poll_until_complete(
     interval_sec: int = 5,
     case_name: str | None = None,
     task_type: str | None = None,
+    worker_id: str | None = None,
 ) -> TaskResult:
     """Poll a task row until terminal and summarize any linked generations."""
     started = time.monotonic()
@@ -215,6 +236,19 @@ def poll_until_complete(
 
     while time.monotonic() <= deadline:
         task_row = _fetch_task_row(db, task_id, project_id)
+        effective_worker_id = worker_id or ((task_row or {}).get("worker_id") if task_row else None)
+        worker_error = _worker_error_summary(_fetch_worker_row(db, str(effective_worker_id) if effective_worker_id else None))
+        if worker_error:
+            return TaskResult(
+                task_id=task_id,
+                case_name=case_name or task_id,
+                task_type=task_type or str((task_row or {}).get("task_type") or ""),
+                final_status=str((task_row or {}).get("status") or "Worker Error"),
+                output_location=str((task_row or {}).get("output_location")) if (task_row or {}).get("output_location") else None,
+                generation_ids=[],
+                elapsed_sec=round(time.monotonic() - started, 3),
+                error_summary=worker_error,
+            )
         if task_row is not None and task_row.get("status") in TERMINAL_STATUSES:
             final_status = str(task_row["status"])
             generation_ids, generation_location = _fetch_generations_since(

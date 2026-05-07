@@ -44,7 +44,7 @@ def _timestamp_label() -> str:
 
 
 def _build_matrix_cases(args) -> list:
-    return build_matrix(
+    cases = build_matrix(
         anchor_image_a=args.anchor_image_a,
         anchor_image_b=args.anchor_image_b,
         timeout_image_sec=args.timeout_image,
@@ -59,6 +59,10 @@ def _build_matrix_cases(args) -> list:
         task_types=getattr(args, "task_type", []),
         route_keys=getattr(args, "route_key", []),
     )
+    explicit_selection = bool(getattr(args, "case", []) or getattr(args, "task_type", []) or getattr(args, "route_key", []))
+    if getattr(args, "backend", "wgp") == "vibecomfy" and not explicit_selection:
+        return [case for case in cases if case.support_state == "vibecomfy_supported"]
+    return cases
 
 
 def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args=None) -> dict[str, str]:
@@ -317,7 +321,7 @@ def run(args) -> int:
             wait_until_ready(db, worker_id=pod_id, timeout_sec=900, progress_every_sec=60)
 
         with _phase("run_matrix", pod_id=pod_id, cases=len(cases)):
-            results = poll_queued_matrix(db, project_id, queued)
+            results = poll_queued_matrix(db, project_id, queued, worker_id=pod_id)
         with _phase("write_report", pod_id=pod_id, out_dir=str(out_dir)):
             write_report(results, FRESH_VARIANT, pod_id, out_dir)
         return 0

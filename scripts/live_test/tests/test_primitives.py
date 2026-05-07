@@ -39,6 +39,7 @@ from scripts.live_test.task_spoofer import insert_spoof_task
 from scripts.live_test.terminate_guard import guarded_terminate
 from scripts.live_test.token_resolver import TokenResolutionError, resolve_token_to_user_id
 from scripts.live_test.variant_fresh import run as run_variant_fresh
+from scripts.live_test.variant_fresh import _build_matrix_cases as build_fresh_matrix_cases
 from scripts.live_test.variant_update import _remote_checkout_and_sync, _spawn_takeover_pod, run as run_variant_update
 
 
@@ -383,6 +384,46 @@ def test_completion_poller_records_failure(monkeypatch: pytest.MonkeyPatch):
     result = poll_until_complete(db, "task-1", "project-1", timeout_sec=1, interval_sec=0)
     assert result.final_status == "Failed"
     assert result.error_summary == "backend exploded"
+
+
+def test_completion_poller_fails_fast_when_worker_errors(monkeypatch: pytest.MonkeyPatch):
+    db = FakeDB(
+        tables={
+            "tasks": [
+                {
+                    "id": "task-1",
+                    "project_id": "project-1",
+                    "task_type": "qwen_image",
+                    "status": "Queued",
+                    "created_at": _iso_now(-10),
+                    "worker_id": None,
+                }
+            ],
+            "workers": [
+                {
+                    "id": "worker-1",
+                    "status": "error",
+                    "metadata": {"error_reason": "Pod externally terminated - not found in RunPod"},
+                }
+            ],
+            "generations": [],
+        }
+    )
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.sleep", lambda _interval: None)
+
+    result = poll_until_complete(
+        db,
+        "task-1",
+        "project-1",
+        timeout_sec=300,
+        interval_sec=0,
+        case_name="case",
+        task_type="qwen_image",
+        worker_id="worker-1",
+    )
+
+    assert result.final_status == "Queued"
+    assert "Worker worker-1 reached error status" in (result.error_summary or "")
 
 
 def test_heartbeat_waiter_requires_dwell_and_ready_for_tasks(monkeypatch: pytest.MonkeyPatch):
@@ -786,6 +827,53 @@ def test_queue_matrix_inserts_all_cases_before_polling(monkeypatch: pytest.Monke
     assert [task_id for _case, task_id in queued] == ["qwen_image-task-1", "qwen_image_style-task-2"]
 
 
+def test_fresh_vibecomfy_default_matrix_excludes_wgp_only_cases():
+    args = SimpleNamespace(
+        anchor_image_a="https://example.test/a.jpg",
+        anchor_image_b="https://example.test/b.jpg",
+        timeout_image=60,
+        timeout_travel_segment=60,
+        timeout_travel_orchestrator=60,
+        backend="vibecomfy",
+        selector_namespace="production",
+        selector_version=None,
+        worker_contract_version=1,
+        worker_profile="default",
+        case=[],
+        task_type=[],
+        route_key=[],
+    )
+
+    cases = build_fresh_matrix_cases(args)
+
+    assert cases
+    assert {case.support_state for case in cases} == {"vibecomfy_supported"}
+    assert "travel_orchestrator_wan2_1seg" not in {case.name for case in cases}
+
+
+def test_fresh_vibecomfy_explicit_matrix_selection_can_include_wgp_only_case():
+    args = SimpleNamespace(
+        anchor_image_a="https://example.test/a.jpg",
+        anchor_image_b="https://example.test/b.jpg",
+        timeout_image=60,
+        timeout_travel_segment=60,
+        timeout_travel_orchestrator=60,
+        backend="vibecomfy",
+        selector_namespace="production",
+        selector_version=None,
+        worker_contract_version=1,
+        worker_profile="default",
+        case=["travel_orchestrator_wan2_1seg"],
+        task_type=[],
+        route_key=[],
+    )
+
+    cases = build_fresh_matrix_cases(args)
+
+    assert [case.name for case in cases] == ["travel_orchestrator_wan2_1seg"]
+    assert cases[0].support_state == "wgp_only"
+
+
 def test_write_report_outputs_json_and_markdown(tmp_path: Path):
     results = [
         TaskResult(
@@ -928,7 +1016,7 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
     monkeypatch.setattr("scripts.live_test.variant_fresh.launch_worker_detached", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_fresh.wait_until_ready", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_fresh.queue_matrix", lambda _db, _project_id, _cases: [(cases[0], "task-1")])
-    monkeypatch.setattr("scripts.live_test.variant_fresh.poll_queued_matrix", lambda _db, _project_id, _queued: [])
+    monkeypatch.setattr("scripts.live_test.variant_fresh.poll_queued_matrix", lambda _db, _project_id, _queued, **_kwargs: [])
     monkeypatch.setattr("scripts.live_test.variant_fresh.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_fresh.fetch_worker_logs", lambda *_args, **_kwargs: "logs")
     monkeypatch.setattr("scripts.live_test.variant_fresh.guarded_terminate", lambda *_args, **_kwargs: False)

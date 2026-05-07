@@ -638,7 +638,7 @@ def queue_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[tuple[Mat
     return queued
 
 
-def poll_queued_matrix(db, project_id: str, queued: list[tuple[MatrixCase, str]]) -> list[TaskResult]:
+def poll_queued_matrix(db, project_id: str, queued: list[tuple[MatrixCase, str]], *, worker_id: str | None = None) -> list[TaskResult]:
     results: list[TaskResult] = []
     for case, task_id in queued:
         result = poll_until_complete(
@@ -648,6 +648,7 @@ def poll_queued_matrix(db, project_id: str, queued: list[tuple[MatrixCase, str]]
             timeout_sec=case.timeout_sec,
             case_name=case.name,
             task_type=case.task_type,
+            worker_id=worker_id,
         )
         results.append(result)
     return results
