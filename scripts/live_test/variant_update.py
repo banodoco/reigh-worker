@@ -186,11 +186,15 @@ def _worker_matches_pod(row: dict[str, Any], pod_id: str) -> bool:
     return isinstance(metadata, dict) and str(metadata.get("runpod_id") or "") == pod_id
 
 
-def _query_workers_for_pod(db, pod_id: str) -> list[dict[str, Any]]:
+def _query_workers(db) -> list[dict[str, Any]]:
     if not hasattr(db, "supabase"):
         return []
     result = db.supabase.table("workers").select("id, metadata, status, created_at, last_heartbeat").execute()
-    rows = list(getattr(result, "data", None) or [])
+    return list(getattr(result, "data", None) or [])
+
+
+def _query_workers_for_pod(db, pod_id: str) -> list[dict[str, Any]]:
+    rows = _query_workers(db)
     return [row for row in rows if _worker_matches_pod(row, pod_id)]
 
 
@@ -202,7 +206,13 @@ def _fresh_live_test_worker_present(db, pod_id: str) -> bool:
     return False
 
 
-def _resolve_existing_worker_id(db, pod_id: str, prev_proc: WorkerProcessInfo | None) -> str:
+def _resolve_existing_worker_id(
+    db,
+    pod_id: str,
+    prev_proc: WorkerProcessInfo | None,
+    *,
+    allow_pod_id_fallback: bool = False,
+) -> str:
     matching = _query_workers_for_pod(db, pod_id)
     if matching:
         matching.sort(
@@ -215,6 +225,9 @@ def _resolve_existing_worker_id(db, pod_id: str, prev_proc: WorkerProcessInfo | 
         )
         return str(matching[0]["id"])
 
+    if allow_pod_id_fallback:
+        return pod_id
+
     if prev_proc:
         worker_id = _extract_worker_id_from_cmdline(prev_proc.cmdline)
         if worker_id:
@@ -223,10 +236,38 @@ def _resolve_existing_worker_id(db, pod_id: str, prev_proc: WorkerProcessInfo | 
     raise RuntimeError(f"Could not resolve existing worker_id for pod {pod_id}")
 
 
-def _resolve_update_workdir(db, pod_id: str) -> str:
+def _remote_dir_exists(ssh, path: str) -> bool:
+    exit_code, _stdout, _stderr = ssh.execute_command(
+        f"bash -lc {_quote(f'test -d {path}/.git')}",
+        timeout=60,
+    )
+    return exit_code == 0
+
+
+def _resolve_update_workdir(db, pod_id: str, ssh=None) -> str:
     if _fresh_live_test_worker_present(db, pod_id):
         return FRESH_LIVE_TEST_WORKDIR
+    if ssh is not None and _remote_dir_exists(ssh, FRESH_LIVE_TEST_WORKDIR):
+        return FRESH_LIVE_TEST_WORKDIR
     return UPDATE_WORKDIR
+
+
+def _worker_row_exists(db, worker_id: str) -> bool:
+    return any(str(row.get("id") or "") == worker_id for row in _query_workers(db))
+
+
+def _create_worker_row_if_missing(db, worker_id: str, pod_id: str) -> None:
+    if _worker_row_exists(db, worker_id):
+        return
+    create = getattr(db, "create_worker_record", None)
+    if create is None:
+        return
+    try:
+        created = asyncio.run(create(worker_id, config.RUNPOD_GPU_TYPE, runpod_id=pod_id))
+    except TypeError:
+        created = asyncio.run(create(worker_id, config.RUNPOD_GPU_TYPE))
+    if not created:
+        raise RuntimeError(f"Failed to create update live-test worker row {worker_id} for pod {pod_id}")
 
 
 def _build_supervisor_restore_command(workdir: str, cli_args: list[str]) -> str:
@@ -465,13 +506,19 @@ def run(args) -> int:
         branch, _sha = push_working_copy_to_temp_branch(worker_repo_path, snapshot)
 
         ssh = open_session(pod_id, api_key)
-        workdir = _resolve_update_workdir(db, pod_id)
+        workdir = _resolve_update_workdir(db, pod_id, ssh)
         prev_remote_branch = _read_remote_branch(ssh, workdir)
         prev_remote_sha = _read_remote_sha(ssh, workdir)
         prev_proc = capture_current_worker_cmdline(ssh)
 
         if not worker_id:
-            worker_id = _resolve_existing_worker_id(db, pod_id, prev_proc)
+            worker_id = _resolve_existing_worker_id(
+                db,
+                pod_id,
+                prev_proc,
+                allow_pod_id_fallback=workdir == FRESH_LIVE_TEST_WORKDIR,
+            )
+        _create_worker_row_if_missing(db, worker_id, pod_id)
 
         _remote_checkout_and_sync(ssh, branch, workdir)
         if getattr(args, "backend", "wgp") == "vibecomfy":

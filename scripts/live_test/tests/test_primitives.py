@@ -1561,7 +1561,10 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
             pid=123,
         ),
     )
-    monkeypatch.setattr("scripts.live_test.variant_update._resolve_existing_worker_id", lambda _db, _pod_id, _prev_proc: "worker-prev")
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update._resolve_existing_worker_id",
+        lambda _db, _pod_id, _prev_proc, **_kwargs: "worker-prev",
+    )
     monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch, _workdir=None: None)
     monkeypatch.setattr("scripts.live_test.variant_update.clone_and_install_vibecomfy", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
@@ -1626,6 +1629,12 @@ def test_variant_update_prefers_pod_worker_row_over_stale_process_cmdline():
     )
 
     assert _resolve_existing_worker_id(db, "pod-existing", prev_proc) == "pod-existing"
+    assert _resolve_existing_worker_id(
+        FakeDB(tables={"workers": []}),
+        "pod-missing",
+        prev_proc,
+        allow_pod_id_fallback=True,
+    ) == "pod-missing"
 
 
 def test_variant_update_reuses_fresh_live_test_workdir_for_fresh_pods():
@@ -1695,7 +1704,10 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr("scripts.live_test.variant_update.capture_current_worker_cmdline", lambda _ssh: None)
-    monkeypatch.setattr("scripts.live_test.variant_update._resolve_existing_worker_id", lambda _db, _pod_id, _prev_proc: "worker-prev")
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update._resolve_existing_worker_id",
+        lambda _db, _pod_id, _prev_proc, **_kwargs: "worker-prev",
+    )
     monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch, _workdir=None: None)
     monkeypatch.setattr(
         "scripts.live_test.variant_update.clone_and_install_vibecomfy",
