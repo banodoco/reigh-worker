@@ -81,20 +81,21 @@ def _build_matrix_cases(args) -> list:
 
 
 def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args=None) -> dict[str, str]:
+    backend = getattr(args, "backend", "wgp")
     env = {
         "REIGH_ACCESS_TOKEN": token,
-        "REIGH_BACKEND": getattr(args, "backend", "wgp"),
+        "REIGH_BACKEND": backend,
         "REIGH_SELECTOR_NAMESPACE": getattr(args, "selector_namespace", "production"),
         "REIGH_WORKER_CONTRACT_VERSION": str(getattr(args, "worker_contract_version", 1)),
         "REIGH_WORKER_PROFILE": getattr(args, "worker_profile", "default"),
         "SUPABASE_SERVICE_ROLE_KEY": service_role_key,
         "SUPABASE_URL": supabase_url,
-        "WORKER_DB_CLIENT_AUTH_MODE": "worker",
+        "WORKER_DB_CLIENT_AUTH_MODE": "service" if backend == "vibecomfy" else "worker",
     }
     selector_version = getattr(args, "selector_version", None)
     if selector_version:
         env["REIGH_SELECTOR_VERSION"] = str(selector_version)
-    if getattr(args, "backend", "wgp") == "vibecomfy":
+    if backend == "vibecomfy":
         env.update(
             {
                 "VIBECOMFY_CWD": VIBECOMFY_WORKDIR,

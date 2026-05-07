@@ -167,8 +167,8 @@ def export_env(env: dict[str, str]) -> str:
     missing = sorted(name for name in required if not exports.get(name))
     if missing:
         raise ValueError(f"Missing required environment values for export_env: {', '.join(missing)}")
-    if exports["WORKER_DB_CLIENT_AUTH_MODE"] != "worker":
-        raise ValueError("WORKER_DB_CLIENT_AUTH_MODE must be 'worker' for PAT live tests")
+    if exports["WORKER_DB_CLIENT_AUTH_MODE"] not in {"worker", "service"}:
+        raise ValueError("WORKER_DB_CLIENT_AUTH_MODE must be 'worker' or 'service' for live tests")
     return " && ".join(f"export {key}={_quote(value)}" for key, value in sorted(exports.items()))
 
 

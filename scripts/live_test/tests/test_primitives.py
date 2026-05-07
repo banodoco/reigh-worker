@@ -40,6 +40,7 @@ from scripts.live_test.terminate_guard import guarded_terminate
 from scripts.live_test.token_resolver import TokenResolutionError, resolve_token_to_user_id
 from scripts.live_test.variant_fresh import run as run_variant_fresh
 from scripts.live_test.variant_fresh import _build_matrix_cases as build_fresh_matrix_cases
+from scripts.live_test.variant_fresh import _build_worker_env as build_fresh_worker_env
 from scripts.live_test.variant_update import _remote_checkout_and_sync, _spawn_takeover_pod, run as run_variant_update
 
 
@@ -911,6 +912,43 @@ def test_fresh_vibecomfy_explicit_matrix_selection_can_include_wgp_only_case():
 
     assert [case.name for case in cases] == ["travel_orchestrator_wan2_1seg"]
     assert cases[0].support_state == "wgp_only"
+
+
+def test_fresh_vibecomfy_worker_env_uses_service_claim_auth():
+    env = build_fresh_worker_env(
+        "pat-token",
+        "https://supabase.example",
+        "service-key",
+        SimpleNamespace(
+            backend="vibecomfy",
+            selector_namespace="production",
+            selector_version=None,
+            worker_contract_version=1,
+            worker_profile="default",
+        ),
+    )
+
+    assert env["WORKER_DB_CLIENT_AUTH_MODE"] == "service"
+    assert env["REIGH_ACCESS_TOKEN"] == "pat-token"
+    assert env["SUPABASE_SERVICE_ROLE_KEY"] == "service-key"
+    assert env["REIGH_BACKEND"] == "vibecomfy"
+
+
+def test_fresh_wgp_worker_env_keeps_pat_claim_auth():
+    env = build_fresh_worker_env(
+        "pat-token",
+        "https://supabase.example",
+        "service-key",
+        SimpleNamespace(
+            backend="wgp",
+            selector_namespace="production",
+            selector_version=None,
+            worker_contract_version=1,
+            worker_profile="default",
+        ),
+    )
+
+    assert env["WORKER_DB_CLIENT_AUTH_MODE"] == "worker"
 
 
 def test_write_report_outputs_json_and_markdown(tmp_path: Path):
