@@ -45,6 +45,30 @@ _OUTPUT_EXTENSIONS = {
 }
 
 
+_WANVIDEO_DEFAULTS_HELPER = """
+def _patch_wanvideo_defaults(workflow, *, steps, cfg, shift, seed):
+    for node in workflow.nodes.values():
+        if node.class_type == 'WanVideoSampler':
+            node.inputs['steps'] = steps
+            node.inputs.setdefault('cfg', cfg)
+            node.inputs.setdefault('shift', shift)
+            node.inputs.setdefault('seed', seed)
+            node.inputs.setdefault('scheduler', 'dpm++_sde')
+            node.inputs.setdefault('force_offload', True)
+            node.inputs.setdefault('riflex_freq_index', 0)
+        elif node.class_type == 'WanVideoVAELoader':
+            node.inputs.setdefault(
+                'model_name',
+                node.inputs.get('widget_0') or 'wanvideo\\\\Wan2_1_VAE_bf16.safetensors',
+            )
+        elif node.class_type == 'WanVideoDecode':
+            node.inputs.setdefault('tile_x', 272)
+            node.inputs.setdefault('tile_y', 272)
+            node.inputs.setdefault('tile_stride_x', 144)
+            node.inputs.setdefault('tile_stride_y', 128)
+""".strip()
+
+
 def handle_vibecomfy_resolved_task(
     resolved: ResolvedTask,
     main_output_dir_base: str | Path,
@@ -403,8 +427,11 @@ def _write_wan_2_2_t2i_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 "from vibecomfy.cli_loader import load_workflow_any",
                 "",
                 "",
+                _WANVIDEO_DEFAULTS_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_t2i')",
+                f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg={cfg_1}, shift={shift}, seed={seed})",
                 f"    workflow.nodes['78'].inputs['widget_0'] = {width}",
                 f"    workflow.nodes['78'].inputs['widget_1'] = {height}",
                 "    workflow.nodes['78'].inputs['widget_2'] = 1",
@@ -419,6 +446,7 @@ def _write_wan_2_2_t2i_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 f"    workflow.nodes['27'].inputs['widget_2'] = {shift}",
                 f"    workflow.nodes['27'].inputs['widget_3'] = {seed}",
                 f"    workflow.nodes['87'].inputs['steps'] = {steps}",
+                f"    workflow.nodes['87'].inputs['cfg'] = {cfg_2}",
                 f"    workflow.nodes['87'].inputs['widget_0'] = {steps}",
                 f"    workflow.nodes['87'].inputs['widget_1'] = {cfg_2}",
                 f"    workflow.nodes['87'].inputs['widget_2'] = {shift}",
@@ -497,6 +525,8 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
         or -1
     )
     steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 6)))
+    cfg = float(resolved.params.get("guidance_scale", 3))
+    shift = float(resolved.params.get("flow_shift", 5))
     scratchpad = run_workspace / "wan_2_2_vace_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -504,8 +534,11 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
                 "from vibecomfy.cli_loader import load_workflow_any",
                 "",
                 "",
+                _WANVIDEO_DEFAULTS_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_vace_cocktail')",
+                f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg={cfg}, shift={shift}, seed={seed})",
                 f"    workflow.nodes['64'].inputs['image'] = {json.dumps(start_name)}",
                 f"    workflow.nodes['112'].inputs['image'] = {json.dumps(end_name)}",
                 f"    control_name = {json.dumps(control_name)}",
