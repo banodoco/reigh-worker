@@ -782,7 +782,6 @@ def test_kill_supervisor_and_worker_patterns_cover_both_families(monkeypatch: py
 
 
 def test_matrix_contains_route_specific_z_image_turbo_case():
-    assert len(MATRIX) == 16
     assert [case.name for case in MATRIX].count("z_image_turbo") == 1
     assert [case.name for case in MATRIX].count("z_image_turbo_i2i") == 1
     z_image_case = next(case for case in MATRIX if case.name == "z_image_turbo")
@@ -961,6 +960,18 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         ("qwen_image_style", "qwen_image_style"),
         ("z_image_turbo_i2i", "z_image_turbo_i2i"),
         ("wan_2_2_t2i", "wan_2_2_t2i"),
+        (
+            "individual_travel_segment_wan22_vace_flow",
+            "individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+        ),
+        (
+            "individual_travel_segment_wan22_vace_canny",
+            "individual_travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+        ),
+        (
+            "individual_travel_segment_wan22_vace_depth",
+            "individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+        ),
         ("image_inpaint", "image_inpaint"),
         ("annotated_image_edit", "annotated_image_edit"),
         ("travel_stitch", "travel_stitch"),

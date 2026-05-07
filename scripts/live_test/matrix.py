@@ -376,6 +376,49 @@ def render_case_payload(
     return payload
 
 
+def _wan_vace_individual_overrides(
+    *,
+    mode: str,
+    anchor_image_a: str,
+    anchor_image_b: str,
+) -> dict[str, Any]:
+    model_name = "wan_2_2_vace_lightning_baseline_2_2_2"
+    travel_guidance = {
+        "kind": "vace",
+        "mode": mode,
+        "videos": [{"url": LIVE_TEST_VIDEO_URL}],
+    }
+    return {
+        "model_name": model_name,
+        "model": model_name,
+        "resolution": "832x480",
+        "parsed_resolution_wh": "832x480",
+        "num_frames": 81,
+        "video_length": 81,
+        "fps": 16,
+        "start_image_url": anchor_image_a,
+        "end_image_url": anchor_image_b,
+        "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+        "travel_guidance": travel_guidance,
+        "orchestrator_details": {
+            "model_name": model_name,
+            "model": model_name,
+            "parsed_resolution_wh": "832x480",
+            "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+            "travel_guidance": travel_guidance,
+        },
+        "individual_segment_params": {
+            "model_name": model_name,
+            "model": model_name,
+            "start_image_url": anchor_image_a,
+            "end_image_url": anchor_image_b,
+            "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+            "num_frames": 81,
+            "travel_guidance": travel_guidance,
+        },
+    }
+
+
 def build_matrix(
     *,
     anchor_image_a: str = config.ANCHOR_IMAGE_A_URL,
@@ -441,53 +484,38 @@ def build_matrix(
             name="individual_travel_segment_wan22_vace",
             task_type="individual_travel_segment",
             fixture_key="wan22_i2v_individual_segment",
-            param_overrides={
-                "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
-                "model": "wan_2_2_vace_lightning_baseline_2_2_2",
-                "resolution": "832x480",
-                "parsed_resolution_wh": "832x480",
-                "num_frames": 81,
-                "video_length": 81,
-                "fps": 16,
-                "start_image_url": anchor_image_a,
-                "end_image_url": anchor_image_b,
-                "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
-                "travel_guidance": {
-                    "kind": "vace",
-                    "mode": "raw",
-                    "videos": [{"url": LIVE_TEST_VIDEO_URL}],
-                },
-                "orchestrator_details": {
-                    "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
-                    "model": "wan_2_2_vace_lightning_baseline_2_2_2",
-                    "parsed_resolution_wh": "832x480",
-                    "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
-                    "travel_guidance": {
-                        "kind": "vace",
-                        "mode": "raw",
-                        "videos": [{"url": LIVE_TEST_VIDEO_URL}],
-                    },
-                },
-                "individual_segment_params": {
-                    "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
-                    "model": "wan_2_2_vace_lightning_baseline_2_2_2",
-                    "start_image_url": anchor_image_a,
-                    "end_image_url": anchor_image_b,
-                    "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
-                    "num_frames": 81,
-                    "travel_guidance": {
-                        "kind": "vace",
-                        "mode": "raw",
-                        "videos": [{"url": LIVE_TEST_VIDEO_URL}],
-                    },
-                },
-            },
+            param_overrides=_wan_vace_individual_overrides(
+                mode="raw",
+                anchor_image_a=anchor_image_a,
+                anchor_image_b=anchor_image_b,
+            ),
             timeout_sec=timeout_travel_segment_sec,
             route_key="individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
             support_state="vibecomfy_supported",
             selected_template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
             route_runtime=route_runtime,
         ),
+        *[
+            MatrixCase(
+                name=f"individual_travel_segment_wan22_vace_{mode}",
+                task_type="individual_travel_segment",
+                fixture_key="wan22_i2v_individual_segment",
+                param_overrides=_wan_vace_individual_overrides(
+                    mode=mode,
+                    anchor_image_a=anchor_image_a,
+                    anchor_image_b=anchor_image_b,
+                ),
+                timeout_sec=timeout_travel_segment_sec,
+                route_key=(
+                    "individual_travel_segment__model-wan22_vace__"
+                    f"guidance-vace_{mode}__continuity-first_last__profile-default"
+                ),
+                support_state="vibecomfy_supported",
+                selected_template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
+                route_runtime=route_runtime,
+            )
+            for mode in ("flow", "canny", "depth")
+        ],
         MatrixCase(
             name="travel_stitch",
             task_type="travel_stitch",
