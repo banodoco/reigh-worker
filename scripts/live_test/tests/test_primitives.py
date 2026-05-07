@@ -1377,12 +1377,18 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     launched = []
     cleanup_calls = []
     restore_calls = []
+    status_updates = []
 
     cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+    class FakeDB:
+        async def update_worker_status(self, worker_id, status, metadata):
+            status_updates.append((worker_id, status, metadata["runpod_id"]))
+            return True
+
     monkeypatch.setattr(
         "scripts.live_test.variant_update._prepare_context",
         lambda _args: {
-            "db": object(),
+            "db": FakeDB(),
             "token": "token-1",
             "user_id": "user-1",
             "project_id": "project-1",
@@ -1482,18 +1488,25 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     assert wait_calls == [("worker-123", 900)]
     assert any("--worker worker-123" in command for command in launched)
     assert all("--worker pod-456" not in command for command in launched)
+    assert status_updates == [("worker-123", "inactive", "pod-456")]
     assert cleanup_calls == [("live-test/branch", False, str(ROOT))]
 
 
 def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     safety_calls = []
     wait_calls = []
+    status_updates = []
 
     cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+    class FakeDB:
+        async def update_worker_status(self, worker_id, status, metadata):
+            status_updates.append((worker_id, status, metadata["runpod_id"], metadata["worker_backend"]))
+            return True
+
     monkeypatch.setattr(
         "scripts.live_test.variant_update._prepare_context",
         lambda _args: {
-            "db": object(),
+            "db": FakeDB(),
             "token": "token-1",
             "user_id": "user-1",
             "project_id": "project-1",
@@ -1573,18 +1586,25 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
     )
     assert run_variant_update(args) == 0
     assert safety_calls == [("pod-existing", "user-1", False)]
+    assert status_updates == [("worker-prev", "inactive", "pod-existing", "wgp")]
     assert wait_calls == [("worker-prev", 900)]
 
 
 def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     refresh_calls = []
     launched = []
+    status_updates = []
 
     cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+    class FakeDB:
+        async def update_worker_status(self, worker_id, status, metadata):
+            status_updates.append((worker_id, status, metadata["runpod_id"], metadata["worker_backend"]))
+            return True
+
     monkeypatch.setattr(
         "scripts.live_test.variant_update._prepare_context",
         lambda _args: {
-            "db": object(),
+            "db": FakeDB(),
             "token": "token-1",
             "user_id": "user-1",
             "project_id": "project-1",
@@ -1665,6 +1685,7 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
         }
     ]
     assert launched
+    assert status_updates == [("worker-prev", "inactive", "pod-existing", "vibecomfy")]
     assert "WORKER_DB_CLIENT_AUTH_MODE=service" in launched[0]
     assert "VIBECOMFY_CWD=/workspace/vibecomfy" in launched[0]
 

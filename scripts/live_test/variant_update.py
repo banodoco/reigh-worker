@@ -293,6 +293,39 @@ def _spawn_takeover_pod(db, api_key: str) -> tuple[str, str]:
     return worker_id, pod_id
 
 
+def _register_update_worker_record(db, worker_id: str, pod_id: str, args) -> None:
+    worker_backend = getattr(args, "backend", "wgp")
+    worker_profile = getattr(args, "worker_profile", "default")
+    selector_namespace = getattr(args, "selector_namespace", "production")
+    selector_version = getattr(args, "selector_version", None)
+    worker_contract_version = int(getattr(args, "worker_contract_version", 1))
+    worker_pool = f"gpu-{worker_backend}-{selector_namespace}"
+    metadata = {
+        "runpod_id": pod_id,
+        "live_test_variant": UPDATE_VARIANT,
+        "worker_backend": worker_backend,
+        "worker_profile": worker_profile,
+        "worker_pool": worker_pool,
+        "selector_namespace": selector_namespace,
+        "selector_version": selector_version,
+        "worker_contract_version": worker_contract_version,
+        "route_contract": {
+            "selected_backend": worker_backend,
+            "selected_profile": worker_profile,
+            "worker_backend": worker_backend,
+            "worker_profile": worker_profile,
+            "worker_pool": worker_pool,
+            "selector_namespace": selector_namespace,
+            "selector_version": selector_version,
+            "worker_contract_version": worker_contract_version,
+            "route_run_id": None,
+        },
+    }
+    updated = asyncio.run(db.update_worker_status(worker_id, "inactive", metadata))
+    if not updated:
+        raise RuntimeError(f"Failed to reactivate live-test worker row {worker_id} for pod {pod_id}")
+
+
 def _wait_for_spawned_pod_ssh(spawner, worker_id: str, pod_id: str, *, timeout_sec: int = 300, poll_interval: int = 5) -> None:
     check = getattr(spawner, "check_and_initialize_worker", None)
     if check is None:
@@ -423,6 +456,7 @@ def run(args) -> int:
                 python_path=VIBECOMFY_PYTHON,
             )
         kill_supervisor_and_worker(ssh)
+        _register_update_worker_record(db, worker_id, pod_id, args)
         launch_worker_detached(
             ssh,
             export_env(worker_env)
