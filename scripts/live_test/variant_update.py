@@ -398,7 +398,7 @@ def run(args) -> int:
             db,
             pod_id,
             user_id,
-            allow_fresh_heartbeat=args.spawn_takeover,
+            allow_fresh_heartbeat=args.spawn_takeover or getattr(args, "allow_fresh_heartbeat", False),
         )
 
         worker_repo_path = str(config.WORKER_ROOT)

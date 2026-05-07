@@ -79,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run the selected route/task cases in rollback mode by forcing REIGH_BACKEND=wgp.",
     )
+    parser.add_argument(
+        "--allow-fresh-heartbeat",
+        action="store_true",
+        help="Allow update-mode takeover of a pod that is already running this live-test worker.",
+    )
     parser.add_argument("--timeout-image", type=int, default=config.TIMEOUT_IMAGE_SEC)
     parser.add_argument(
         "--timeout-travel-segment",
