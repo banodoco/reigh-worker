@@ -20,12 +20,12 @@ APT_INSTALL_PACKAGES = (
     "wget",
 )
 PROCESS_SCAN_COMMAND = (
-    r"ps -eo pid=,args= | grep -E '(run_worker\.py|worker\.py|source\.runtime\.worker)' | grep -v grep"
+    r"ps -eo pid=,args= | awk '/run_worker[.]py|python worker[.]py|source[.]runtime[.]worker/ {print}'"
 )
 KILL_COMMAND = (
-    "pkill -f run_worker.py; "
-    "pkill -f 'python worker.py'; "
-    "pkill -f 'source.runtime.worker'; "
+    "pkill -f 'run_worker[.]py'; "
+    "pkill -f 'python worker[.]py'; "
+    "pkill -f 'source[.]runtime[.]worker'; "
     "sleep 2"
 )
 
@@ -209,9 +209,7 @@ def kill_supervisor_and_worker(ssh) -> None:
     while time.monotonic() < deadline:
         stdout, _ = _execute(
             ssh,
-            "pgrep -af run_worker.py || true; "
-            "pgrep -af 'python worker.py' || true; "
-            "pgrep -af source.runtime.worker || true",
+            PROCESS_SCAN_COMMAND,
             check=False,
             timeout=30,
         )

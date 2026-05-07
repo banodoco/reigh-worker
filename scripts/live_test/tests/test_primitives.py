@@ -547,15 +547,17 @@ def test_kill_supervisor_and_worker_patterns_cover_both_families(monkeypatch: py
     ssh = ScriptedSSH(
         [
             (None, (0, "", "")),
-            ("pgrep -af run_worker.py", (0, "123 python run_worker.py\n", "")),
-            ("pgrep -af run_worker.py", (0, "", "")),
+            ("ps -eo pid=,args=", (0, "123 python run_worker.py\n", "")),
+            ("ps -eo pid=,args=", (0, "", "")),
         ]
     )
     kill_supervisor_and_worker(ssh)
     assert ssh.commands[0][0] == KILL_COMMAND
-    assert "pgrep -af run_worker.py" in ssh.commands[1][0]
-    assert "pgrep -af 'python worker.py'" in ssh.commands[1][0]
-    assert "pgrep -af source.runtime.worker" in ssh.commands[1][0]
+    assert "run_worker[.]py" in ssh.commands[0][0]
+    assert "python worker[.]py" in ssh.commands[0][0]
+    assert "source[.]runtime[.]worker" in ssh.commands[0][0]
+    assert "awk" in ssh.commands[1][0]
+    assert "source[.]runtime[.]worker" in ssh.commands[1][0]
 
 
 def test_matrix_contains_route_specific_z_image_turbo_case():
