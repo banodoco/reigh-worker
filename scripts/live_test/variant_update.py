@@ -288,8 +288,8 @@ def _remote_checkout_and_sync(ssh, branch: str, workdir: str = UPDATE_WORKDIR) -
     command = (
         f"cd {shlex.quote(workdir)} && "
         f"{REMOTE_UV_BOOTSTRAP} && "
-        "git fetch origin && "
-        f"git checkout {shlex.quote(branch)} && "
+        f"git fetch origin {shlex.quote(branch)}:refs/remotes/origin/{shlex.quote(branch)} && "
+        f"git checkout -B {shlex.quote(branch)} refs/remotes/origin/{shlex.quote(branch)} && "
         f"git pull --ff-only origin {shlex.quote(branch)} && "
         "uv sync --locked --extra cuda124"
     )

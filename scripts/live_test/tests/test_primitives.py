@@ -1374,8 +1374,8 @@ def test_remote_checkout_and_sync_bootstraps_uv_before_sync():
     assert 'export PATH="$HOME/.local/bin:$PATH"' in command
     assert "python3 -m pip install --user uv" in command
     assert "command -v uv >/dev/null 2>&1" in command
-    assert "git fetch origin" in command
-    assert "git checkout live-test/branch-a" in command
+    assert "git fetch origin live-test/branch-a:refs/remotes/origin/live-test/branch-a" in command
+    assert "git checkout -B live-test/branch-a refs/remotes/origin/live-test/branch-a" in command
     assert "uv sync --locked --extra cuda124" in command
 
 
