@@ -502,13 +502,20 @@ def test_wan_2_2_t2i_uses_single_frame_scratchpad(monkeypatch, tmp_path):
     source = Path(commands[0][4]).read_text(encoding="utf-8")
     assert "load_workflow_any('video/wanvideo_wrapper_22_14b_t2i')" in source
     assert "_patch_wanvideo_defaults(workflow, steps=6, cfg=3.0, shift=5.0, seed=2026)" in source
-    assert "node.inputs.setdefault('scheduler', 'dpm++_sde')" in source
-    assert "node.inputs.setdefault(" in source
+    assert "node.inputs['scheduler'] = node.inputs.get('scheduler'" in source
+    assert "node.inputs.setdefault(" not in source
     assert "'model_name'" in source
-    assert "node.inputs.setdefault('tile_x', 272)" in source
+    assert "node.inputs['tile_x'] = node.inputs.get('tile_x'" in source
     assert "workflow.nodes['78'].inputs['num_frames'] = 1" in source
+    assert 'workflow.nodes[\'16\'].inputs[\'positive_prompt\'] = "wan_2_2_t2i prompt"' in source
+    assert 'workflow.nodes[\'16\'].inputs[\'negative_prompt\'] = "fading, breaking, shot cuts, jumpcuts, blurry, noise, distorted"' in source
+    assert "workflow.nodes['27'].inputs['cfg'] = 3.0" in source
+    assert "workflow.nodes['27'].inputs['shift'] = 5.0" in source
+    assert "workflow.nodes['27'].inputs['seed'] = 2026" in source
     assert "workflow.nodes['27'].inputs['widget_3'] = 2026" in source
     assert "workflow.nodes['87'].inputs['cfg'] = 1.0" in source
+    assert "workflow.nodes['87'].inputs['shift'] = 5.0" in source
+    assert "workflow.nodes['87'].inputs['seed'] = 2026" in source
     assert "workflow.nodes['87'].inputs['widget_3'] = 2026" in source
 
 
@@ -556,7 +563,15 @@ def test_wan_vace_materializes_anchors_control_and_scratchpad(monkeypatch, tmp_p
     assert "vace_control_vace-task.mp4" in source
     assert "workflow.nodes['56'].inputs['num_frames'] = 81" in source
     assert "_patch_wanvideo_defaults(workflow, steps=6, cfg=3.0, shift=5.0, seed=123)" in source
-    assert "node.inputs.setdefault('force_offload', True)" in source
+    assert "node.inputs['force_offload'] = node.inputs.get('force_offload'" in source
     assert "workflow.nodes['139'].inputs['frame_rate'] = 16" in source
+    assert "workflow.nodes['139'].inputs['loop_count'] = 0" in source
+    assert "workflow.nodes['139'].inputs['filename_prefix'] = 'Wan-2-2-VACE'" in source
+    assert "workflow.nodes['139'].inputs['format'] = 'video/h264-mp4'" in source
+    assert "workflow.nodes['139'].inputs['pingpong'] = False" in source
     assert 'workflow.nodes[\'16\'].inputs[\'widget_0\'] = "vace prompt"' in source
+    assert 'workflow.nodes[\'16\'].inputs[\'positive_prompt\'] = "vace prompt"' in source
+    assert "workflow.nodes['27'].inputs['cfg'] = 3.0" in source
+    assert "workflow.nodes['87'].inputs['cfg'] = 1.0" in source
+    assert "workflow.nodes['197'].inputs['cfg'] = 1.0" in source
     assert "workflow.nodes['197'].inputs['widget_3'] = 123" in source

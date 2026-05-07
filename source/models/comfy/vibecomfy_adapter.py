@@ -50,22 +50,50 @@ def _patch_wanvideo_defaults(workflow, *, steps, cfg, shift, seed):
     for node in workflow.nodes.values():
         if node.class_type == 'WanVideoSampler':
             node.inputs['steps'] = steps
-            node.inputs.setdefault('cfg', cfg)
-            node.inputs.setdefault('shift', shift)
-            node.inputs.setdefault('seed', seed)
-            node.inputs.setdefault('scheduler', 'dpm++_sde')
-            node.inputs.setdefault('force_offload', True)
-            node.inputs.setdefault('riflex_freq_index', 0)
+            node.inputs['cfg'] = node.inputs.get('cfg', node.inputs.get('widget_1', cfg))
+            node.inputs['shift'] = node.inputs.get('shift', node.inputs.get('widget_2', shift))
+            node.inputs['seed'] = node.inputs.get('seed', node.inputs.get('widget_3', seed))
+            node.inputs['scheduler'] = node.inputs.get('scheduler', node.inputs.get('widget_6', 'unipc'))
+            node.inputs['force_offload'] = node.inputs.get('force_offload', node.inputs.get('widget_5', True))
+            node.inputs['riflex_freq_index'] = node.inputs.get('riflex_freq_index', node.inputs.get('widget_7', 0))
+        elif node.class_type == 'WanVideoTextEncodeCached':
+            node.inputs['model_name'] = node.inputs.get('model_name', node.inputs.get('widget_0', 'umt5-xxl-enc-bf16.safetensors'))
+            node.inputs['precision'] = node.inputs.get('precision', node.inputs.get('widget_1', 'bf16'))
+            node.inputs['positive_prompt'] = node.inputs.get('positive_prompt', node.inputs.get('widget_2', ''))
+            node.inputs['negative_prompt'] = node.inputs.get('negative_prompt', node.inputs.get('widget_3', ''))
+            node.inputs['quantization'] = node.inputs.get('quantization', node.inputs.get('widget_4', 'disabled'))
+            node.inputs['use_disk_cache'] = node.inputs.get('use_disk_cache', node.inputs.get('widget_5', True))
+            node.inputs['device'] = node.inputs.get('device', node.inputs.get('widget_6', 'gpu'))
+        elif node.class_type == 'WanVideoModelLoader':
+            node.inputs['model'] = node.inputs.get('model', node.inputs.get('widget_0', 'WanVideo\\\\2_2\\\\Wan2_2-T2V-A14B-HIGH_fp8_e4m3fn_scaled_KJ.safetensors'))
+            node.inputs['base_precision'] = node.inputs.get('base_precision', node.inputs.get('widget_1', 'fp16_fast'))
+            node.inputs['quantization'] = node.inputs.get('quantization', node.inputs.get('widget_2', 'fp8_e4m3fn_scaled'))
+            node.inputs['load_device'] = node.inputs.get('load_device', node.inputs.get('widget_3', 'offload_device'))
+            node.inputs['attention_mode'] = node.inputs.get('attention_mode', node.inputs.get('widget_4', 'sdpa'))
+        elif node.class_type == 'WanVideoLoraSelectMulti':
+            for index in range(5):
+                node.inputs[f'lora_{index}'] = node.inputs.get(f'lora_{index}', node.inputs.get(f'widget_{index * 2}', 'none'))
+                node.inputs[f'strength_{index}'] = node.inputs.get(f'strength_{index}', node.inputs.get(f'widget_{index * 2 + 1}', 1.0))
+            node.inputs['low_mem_load'] = node.inputs.get('low_mem_load', node.inputs.get('widget_10', False))
+            node.inputs['merge_loras'] = node.inputs.get('merge_loras', node.inputs.get('widget_11', False))
+        elif node.class_type == 'WanVideoVACEModelSelect':
+            node.inputs['vace_model'] = node.inputs.get('vace_model', node.inputs.get('widget_0', 'WanVideo\\\\Wan2_1-VACE_module_14B_fp8_e4m3fn.safetensors'))
         elif node.class_type == 'WanVideoVAELoader':
-            node.inputs.setdefault(
-                'model_name',
-                node.inputs.get('widget_0') or 'wanvideo\\\\Wan2_1_VAE_bf16.safetensors',
-            )
+            node.inputs['model_name'] = node.inputs.get('model_name', node.inputs.get('widget_0', 'wanvideo\\\\Wan2_1_VAE_bf16.safetensors'))
+            node.inputs['precision'] = node.inputs.get('precision', node.inputs.get('widget_1', 'bf16'))
         elif node.class_type == 'WanVideoDecode':
-            node.inputs.setdefault('tile_x', 272)
-            node.inputs.setdefault('tile_y', 272)
-            node.inputs.setdefault('tile_stride_x', 144)
-            node.inputs.setdefault('tile_stride_y', 128)
+            node.inputs['enable_vae_tiling'] = node.inputs.get('enable_vae_tiling', node.inputs.get('widget_0', False))
+            node.inputs['tile_x'] = node.inputs.get('tile_x', node.inputs.get('widget_1', 272))
+            node.inputs['tile_y'] = node.inputs.get('tile_y', node.inputs.get('widget_2', 272))
+            node.inputs['tile_stride_x'] = node.inputs.get('tile_stride_x', node.inputs.get('widget_3', 144))
+            node.inputs['tile_stride_y'] = node.inputs.get('tile_stride_y', node.inputs.get('widget_4', 128))
+            node.inputs['normalization'] = node.inputs.get('normalization', node.inputs.get('widget_5', 'default'))
+        elif node.class_type == 'VHS_VideoCombine':
+            node.inputs['loop_count'] = node.inputs.get('loop_count', node.inputs.get('widget_1', 0))
+            node.inputs['filename_prefix'] = node.inputs.get('filename_prefix', node.inputs.get('widget_2', 'Wan-2-2-VACE'))
+            node.inputs['format'] = node.inputs.get('format', node.inputs.get('widget_3', 'video/h264-mp4'))
+            node.inputs['pingpong'] = node.inputs.get('pingpong', node.inputs.get('widget_8', False))
+            node.inputs['save_output'] = node.inputs.get('save_output', True)
 """.strip()
 
 
@@ -440,13 +468,20 @@ def _write_wan_2_2_t2i_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 "    workflow.nodes['78'].inputs['num_frames'] = 1",
                 f"    workflow.nodes['16'].inputs['widget_0'] = {json.dumps(prompt)}",
                 f"    workflow.nodes['16'].inputs['widget_1'] = {json.dumps(negative)}",
+                f"    workflow.nodes['16'].inputs['positive_prompt'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['16'].inputs['negative_prompt'] = {json.dumps(negative)}",
                 f"    workflow.nodes['27'].inputs['steps'] = {steps}",
                 f"    workflow.nodes['27'].inputs['widget_0'] = {steps}",
+                f"    workflow.nodes['27'].inputs['cfg'] = {cfg_1}",
+                f"    workflow.nodes['27'].inputs['shift'] = {shift}",
+                f"    workflow.nodes['27'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['27'].inputs['widget_1'] = {cfg_1}",
                 f"    workflow.nodes['27'].inputs['widget_2'] = {shift}",
                 f"    workflow.nodes['27'].inputs['widget_3'] = {seed}",
                 f"    workflow.nodes['87'].inputs['steps'] = {steps}",
                 f"    workflow.nodes['87'].inputs['cfg'] = {cfg_2}",
+                f"    workflow.nodes['87'].inputs['shift'] = {shift}",
+                f"    workflow.nodes['87'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['87'].inputs['widget_0'] = {steps}",
                 f"    workflow.nodes['87'].inputs['widget_1'] = {cfg_2}",
                 f"    workflow.nodes['87'].inputs['widget_2'] = {shift}",
@@ -559,14 +594,30 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
                 f"    workflow.nodes['56'].inputs['num_frames'] = {frames}",
                 f"    workflow.nodes['16'].inputs['widget_0'] = {json.dumps(prompt)}",
                 f"    workflow.nodes['16'].inputs['widget_1'] = {json.dumps(negative)}",
+                f"    workflow.nodes['16'].inputs['positive_prompt'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['16'].inputs['negative_prompt'] = {json.dumps(negative)}",
                 f"    workflow.nodes['139'].inputs['frame_rate'] = {fps}",
+                "    workflow.nodes['139'].inputs['loop_count'] = 0",
+                "    workflow.nodes['139'].inputs['filename_prefix'] = 'Wan-2-2-VACE'",
+                "    workflow.nodes['139'].inputs['format'] = 'video/h264-mp4'",
+                "    workflow.nodes['139'].inputs['pingpong'] = False",
+                "    workflow.nodes['139'].inputs['save_output'] = True",
                 f"    workflow.nodes['27'].inputs['steps'] = {steps}",
+                f"    workflow.nodes['27'].inputs['cfg'] = {cfg}",
+                f"    workflow.nodes['27'].inputs['shift'] = {shift}",
+                f"    workflow.nodes['27'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['27'].inputs['widget_0'] = {steps}",
                 f"    workflow.nodes['27'].inputs['widget_3'] = {seed}",
                 f"    workflow.nodes['87'].inputs['steps'] = {steps}",
+                "    workflow.nodes['87'].inputs['cfg'] = 1.0",
+                f"    workflow.nodes['87'].inputs['shift'] = {shift}",
+                f"    workflow.nodes['87'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['87'].inputs['widget_0'] = {steps}",
                 f"    workflow.nodes['87'].inputs['widget_3'] = {seed}",
                 f"    workflow.nodes['197'].inputs['steps'] = {steps}",
+                "    workflow.nodes['197'].inputs['cfg'] = 1.0",
+                f"    workflow.nodes['197'].inputs['shift'] = {shift}",
+                f"    workflow.nodes['197'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['197'].inputs['widget_0'] = {steps}",
                 f"    workflow.nodes['197'].inputs['widget_3'] = {seed}",
                 "    return workflow.finalize_metadata()",
