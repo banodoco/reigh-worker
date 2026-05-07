@@ -77,6 +77,33 @@ def close_stale_live_test_tasks(db, user_id: str) -> int:
     return len(live_test_ids)
 
 
+def ensure_user_cloud_generation_enabled(db, user_id: str) -> bool:
+    """Ensure the live-test user can be claimed by cloud workers."""
+    result = db.supabase.table("users").select("id, settings").eq("id", user_id).execute()
+    rows = _coerce_rows(result)
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one live-test user row for {user_id}, found {len(rows)}")
+
+    settings = rows[0].get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+    ui = settings.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+    generation_methods = ui.get("generationMethods")
+    if not isinstance(generation_methods, dict):
+        generation_methods = {}
+
+    if generation_methods.get("inCloud") is True:
+        return False
+
+    generation_methods["inCloud"] = True
+    ui["generationMethods"] = generation_methods
+    settings["ui"] = ui
+    db.supabase.table("users").update({"settings": settings}).eq("id", user_id).execute()
+    return True
+
+
 def get_or_create_live_test_project(db, user_id: str) -> str:
     """Return the dedicated live-test project ID for the target user."""
     existing = (
@@ -110,5 +137,6 @@ __all__ = [
     "UnexpectedUserWorkError",
     "assert_user_queue_clean",
     "close_stale_live_test_tasks",
+    "ensure_user_cloud_generation_enabled",
     "get_or_create_live_test_project",
 ]

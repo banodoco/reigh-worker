@@ -23,6 +23,7 @@ from scripts.live_test.matrix import build_matrix, render_case_payload, run_matr
 from scripts.live_test.preflight import (
     assert_user_queue_clean,
     close_stale_live_test_tasks,
+    ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
 from scripts.live_test.report import write_report
@@ -92,6 +93,7 @@ def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args
         "SUPABASE_SERVICE_ROLE_KEY": service_role_key,
         "SUPABASE_URL": supabase_url,
         "WORKER_DB_CLIENT_AUTH_MODE": "worker",
+        "REIGH_CLAIM_TELEMETRY": "1",
     }
     selector_version = getattr(args, "selector_version", None)
     if selector_version:
@@ -106,6 +108,8 @@ def _prepare_context(args) -> dict[str, Any]:
     stale_count = close_stale_live_test_tasks(db, user_id)
     if stale_count:
         log.info("closed stale live-test tasks before update run", count=stale_count)
+    if ensure_user_cloud_generation_enabled(db, user_id):
+        log.info("enabled cloud generation for live-test user", user_id=user_id)
     assert_user_queue_clean(db, user_id)
     project_id = get_or_create_live_test_project(db, user_id)
     cases = _build_matrix_cases(args)

@@ -25,6 +25,7 @@ from scripts.live_test.preflight import (
     UnexpectedUserWorkError,
     assert_user_queue_clean,
     close_stale_live_test_tasks,
+    ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
 from scripts.live_test.report import write_report
@@ -246,6 +247,34 @@ def test_preflight_closes_stale_live_test_tasks_without_touching_user_work():
     assert by_id["live-queued"]["error_message"] == "closed stale live-test task before new live-test run"
     assert by_id["user-task"]["status"] == "Queued"
     assert by_id["other-user"]["status"] == "Queued"
+
+
+def test_preflight_enables_cloud_generation_for_live_test_user():
+    db = FakeDB(
+        tables={
+            "users": [
+                {
+                    "id": "user-1",
+                    "settings": {
+                        "ui": {
+                            "generationMethods": {
+                                "inCloud": False,
+                                "onComputer": True,
+                            },
+                            "theme": {"darkMode": True},
+                        }
+                    },
+                }
+            ]
+        }
+    )
+
+    assert ensure_user_cloud_generation_enabled(db, "user-1") is True
+    user = db.supabase.tables["users"][0]
+    assert user["settings"]["ui"]["generationMethods"]["inCloud"] is True
+    assert user["settings"]["ui"]["generationMethods"]["onComputer"] is True
+    assert user["settings"]["ui"]["theme"]["darkMode"] is True
+    assert ensure_user_cloud_generation_enabled(db, "user-1") is False
 
 
 def test_task_spoofer_stamps_live_test_and_queued_status():

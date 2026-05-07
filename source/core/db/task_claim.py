@@ -356,6 +356,14 @@ def poll_next_task(
     selector_version = _selector_version()
     worker_profile = _worker_profile()
     worker_contract_version = _worker_contract_version()
+    if os.getenv("REIGH_CLAIM_TELEMETRY", "").strip().lower() in {"1", "true", "yes"}:
+        token_role = "service" if (_cfg.SUPABASE_ACCESS_TOKEN or "").count(".") == 2 else "worker"
+        headless_logger.essential(
+            "[CLAIM] polling "
+            f"worker_id={worker_id} backend={worker_backend.value} profile={worker_profile} "
+            f"selector_namespace={selector_namespace} selector_version={selector_version or '-'} "
+            f"same_model_only={same_model_only} max_wait={max_task_wait_minutes} auth={token_role}"
+        )
 
     # OPTIMIZATION: Check task counts first to avoid unnecessary claim attempts
     headless_logger.debug("Checking task counts before attempting to claim...")
@@ -433,6 +441,12 @@ def poll_next_task(
                     return ClaimPollOutcome.ERROR, None
                 return ClaimPollOutcome.CLAIMED, task_data
             if resp.status_code == 204:
+                if os.getenv("REIGH_CLAIM_TELEMETRY", "").strip().lower() in {"1", "true", "yes"}:
+                    headless_logger.essential(
+                        "[CLAIM] no task "
+                        f"backend={worker_backend.value} selector_namespace={selector_namespace} "
+                        f"same_model_only={same_model_only}"
+                    )
                 headless_logger.debug("Edge Function: No queued tasks available")
                 return ClaimPollOutcome.EMPTY, None
 
