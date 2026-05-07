@@ -76,7 +76,7 @@ def handle_vibecomfy_resolved_task(
     try:
         completed = subprocess.run(
             command,
-            cwd=run_workspace,
+            cwd=_vibecomfy_cwd(run_workspace),
             env=env,
             text=True,
             capture_output=True,
@@ -775,6 +775,13 @@ def _build_subprocess_env(run_workspace: Path) -> dict[str, str]:
 
 def _vibecomfy_python() -> str:
     return os.environ.get("VIBECOMFY_PYTHON") or "python3.11"
+
+
+def _vibecomfy_cwd(run_workspace: Path) -> Path:
+    configured = os.environ.get("VIBECOMFY_CWD") or os.environ.get("VIBECOMFY_PATH")
+    if configured and Path(configured).exists():
+        return Path(configured)
+    return run_workspace
 
 
 def _process_default_memory_profile() -> int | None:

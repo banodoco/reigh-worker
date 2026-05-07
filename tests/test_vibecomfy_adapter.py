@@ -64,6 +64,28 @@ def test_uses_vibecomfy_python_env_when_set(monkeypatch, tmp_path):
     assert commands[0][0] == "/opt/vibe/bin/python"
 
 
+def test_subprocess_runs_from_vibecomfy_checkout_when_configured(monkeypatch, tmp_path):
+    cwd_values = []
+    vibecomfy_root = tmp_path / "vibecomfy"
+    vibecomfy_root.mkdir()
+    monkeypatch.setenv("VIBECOMFY_CWD", str(vibecomfy_root))
+
+    def _run(command, cwd, env, text, capture_output, check):
+        cwd_values.append(Path(cwd))
+        run_dir = Path(env["VIBECOMFY_WORKER_RUN_DIR"])
+        output = run_dir / "out.png"
+        output.write_text("fake", encoding="utf-8")
+        return _completed(stdout="output: out.png\n")
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+
+    ok, result = handle_vibecomfy_resolved_task(_resolved(), tmp_path)
+
+    assert ok is True
+    assert cwd_values == [vibecomfy_root]
+    assert result and "vibecomfy_runs/adapter-task/out.png" in result
+
+
 def test_defaults_to_python311_and_avoids_unsupported_cli_flags(monkeypatch, tmp_path):
     commands = []
     monkeypatch.delenv("VIBECOMFY_PYTHON", raising=False)
