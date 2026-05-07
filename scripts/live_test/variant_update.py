@@ -38,6 +38,16 @@ from scripts.live_test.token_resolver import resolve_token_to_user_id
 
 UPDATE_VARIANT = "update"
 UPDATE_WORKDIR = "/workspace/Reigh-Worker"
+REMOTE_UV_BOOTSTRAP = (
+    'export PATH="$HOME/.local/bin:$PATH" && '
+    "if ! command -v uv >/dev/null 2>&1; then "
+    "((python3 -m pip install --user uv) || "
+    "(python3 -m ensurepip --user && python3 -m pip install --user uv) || "
+    "(python -m pip install --user uv)); "
+    'export PATH="$HOME/.local/bin:$PATH"; '
+    "fi && "
+    "command -v uv >/dev/null 2>&1"
+)
 
 log = get_logger(__name__)
 
@@ -184,7 +194,7 @@ def _should_skip_restore(branch_name: str) -> bool:
 def _remote_checkout_and_sync(ssh, branch: str) -> None:
     command = (
         f"cd {shlex.quote(UPDATE_WORKDIR)} && "
-        'export PATH="$HOME/.local/bin:$PATH" && '
+        f"{REMOTE_UV_BOOTSTRAP} && "
         "git fetch origin && "
         f"git checkout {shlex.quote(branch)} && "
         f"git pull --ff-only origin {shlex.quote(branch)} && "
@@ -211,6 +221,7 @@ def _restore_remote_state(
     kill_supervisor_and_worker(ssh)
     restore_command = (
         f"cd {shlex.quote(UPDATE_WORKDIR)} && "
+        f"{REMOTE_UV_BOOTSTRAP} && "
         f"git checkout {shlex.quote(prev_remote_branch)} && "
         f"git reset --hard {shlex.quote(prev_remote_sha)} && "
         "uv sync --locked --extra cuda124"

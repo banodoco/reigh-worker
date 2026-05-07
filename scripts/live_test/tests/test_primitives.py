@@ -39,7 +39,7 @@ from scripts.live_test.task_spoofer import insert_spoof_task
 from scripts.live_test.terminate_guard import guarded_terminate
 from scripts.live_test.token_resolver import TokenResolutionError, resolve_token_to_user_id
 from scripts.live_test.variant_fresh import run as run_variant_fresh
-from scripts.live_test.variant_update import _spawn_takeover_pod, run as run_variant_update
+from scripts.live_test.variant_update import _remote_checkout_and_sync, _spawn_takeover_pod, run as run_variant_update
 
 
 def _iso_now(offset_seconds: int = 0) -> str:
@@ -941,6 +941,22 @@ def test_spawn_takeover_waits_for_ssh_before_start(monkeypatch: pytest.MonkeyPat
         ("check", "worker-123", "pod-456"),
         ("start", "pod-456", "worker-123", False),
     ]
+
+
+def test_remote_checkout_and_sync_bootstraps_uv_before_sync():
+    ssh = ScriptedSSH([(None, (0, "", ""))])
+
+    _remote_checkout_and_sync(ssh, "live-test/branch-a")
+
+    command, timeout = ssh.commands[0]
+    assert timeout == 3600
+    assert "cd /workspace/Reigh-Worker" in command
+    assert 'export PATH="$HOME/.local/bin:$PATH"' in command
+    assert "python3 -m pip install --user uv" in command
+    assert "command -v uv >/dev/null 2>&1" in command
+    assert "git fetch origin" in command
+    assert "git checkout live-test/branch-a" in command
+    assert "uv sync --locked --extra cuda124" in command
 
 
 def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
