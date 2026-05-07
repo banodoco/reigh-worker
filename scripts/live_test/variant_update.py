@@ -365,8 +365,9 @@ def run(args) -> int:
             allow_fresh_heartbeat=args.spawn_takeover,
         )
 
-        snapshot = snapshot_local_state("reigh-worker")
-        branch, _sha = push_working_copy_to_temp_branch("reigh-worker", snapshot)
+        worker_repo_path = str(config.WORKER_ROOT)
+        snapshot = snapshot_local_state(worker_repo_path)
+        branch, _sha = push_working_copy_to_temp_branch(worker_repo_path, snapshot)
 
         ssh = open_session(pod_id, api_key)
         prev_remote_branch = _read_remote_branch(ssh)
@@ -405,11 +406,11 @@ def run(args) -> int:
         return 0
     finally:
         if branch:
-            kept_branch = cleanup_temp_branch(branch, preserve=preserve_branch, submodule_path="reigh-worker")
+            kept_branch = cleanup_temp_branch(branch, preserve=preserve_branch, submodule_path=str(config.WORKER_ROOT))
             if preserve_branch:
                 print(f"Preserved temp branch for inspection: {kept_branch}")
         if snapshot is not None:
-            restore_local_state("reigh-worker", snapshot)
+            restore_local_state(str(config.WORKER_ROOT), snapshot)
         if ssh is not None:
             try:
                 logs = fetch_worker_logs(ssh, UPDATE_WORKDIR)

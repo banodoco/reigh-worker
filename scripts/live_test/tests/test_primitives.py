@@ -1054,7 +1054,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     assert wait_calls == [("worker-123", 900)]
     assert any("--worker worker-123" in command for command in launched)
     assert all("--worker pod-456" not in command for command in launched)
-    assert cleanup_calls == [("live-test/branch", False, "reigh-worker")]
+    assert cleanup_calls == [("live-test/branch", False, str(ROOT))]
 
 
 def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
