@@ -41,6 +41,19 @@ SELECTED_ROUTE_FIXTURES_PATH = (
     / "_shared"
     / "selectedRoute.fixtures.json"
 )
+SECTION3A_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "dual_run_compare"
+    / "fixtures"
+    / "section3a_matrix.fixture"
+)
+SPRINT12_ROUTE_INVENTORY_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "sprint-12-route-inventory.md"
+)
+SPRINT12_ROUTE_SUPPORT_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "sprint-12-route-support.md"
+)
 
 
 @pytest.fixture()
@@ -218,6 +231,215 @@ def test_travel_route_key_distinguishes_wan_vace_payload_context(routing) -> Non
     assert "will not fall back to WGP" in resolved.fail_closed_reason
 
 
+def test_travel_route_key_distinguishes_wan_vace_control_modes(routing) -> None:
+    base_params = {
+        "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
+        "continuity_case": "first_last",
+        "profile": "default",
+    }
+
+    route_keys = [
+        routing.derive_route_key(
+            "travel_segment",
+            {
+                **base_params,
+                "travel_guidance": {"kind": "vace", "mode": mode},
+            },
+        )
+        for mode in ("flow", "canny", "depth", "raw")
+    ]
+
+    assert route_keys == [
+        "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+        "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+        "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+        "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+    ]
+    assert len(route_keys) == len(set(route_keys))
+
+
+def test_travel_route_key_distinguishes_ltx_control_modes(routing) -> None:
+    base_params = {
+        "model_name": "ltx2_22B_distilled_1_1",
+        "continuity_case": "first_last",
+        "profile": "default",
+        "guidance_kind": "ltx_control",
+    }
+
+    route_keys = [
+        routing.derive_route_key(
+            "travel_segment",
+            {
+                **base_params,
+                "guidance_mode": mode,
+            },
+        )
+        for mode in ("video", "pose", "depth", "canny", "cameraman")
+    ]
+
+    assert route_keys == [
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+    ]
+    assert len(route_keys) == len(set(route_keys))
+
+
+def test_section3a_matrix_route_support_is_explicit_and_deterministic(routing) -> None:
+    fixture = json.loads(SECTION3A_FIXTURE_PATH.read_text(encoding="utf-8"))
+    rows = fixture["rows"]
+    route_keys = {row["route_key_expectation"] for row in rows}
+
+    assert route_keys == set(routing.SECTION3A_ROUTE_SUPPORT_MAP)
+
+    for row in rows:
+        route_key = row["route_key_expectation"]
+        report = routing.route_support_report_fields(route_key)
+        assert routing.route_support_state(route_key).value == row["support_state_expectation"]
+        assert report == {
+            "route_key": route_key,
+            "support_state": row["support_state_expectation"],
+            "template_id": (
+                "video/ltx2_3_runexx_first_last_frame"
+                if row["support_state_expectation"] == "vibecomfy_supported"
+                else None
+            ),
+            "disposition": row["disposition"],
+            "blocking_reason": row["blocking_reason"],
+        }
+
+
+def test_sprint12_route_docs_cover_selector_maps_section3a_and_app_snapshots(routing) -> None:
+    inventory = SPRINT12_ROUTE_INVENTORY_PATH.read_text(encoding="utf-8")
+    support = SPRINT12_ROUTE_SUPPORT_PATH.read_text(encoding="utf-8")
+    app_fixtures = json.loads(SELECTED_ROUTE_FIXTURES_PATH.read_text(encoding="utf-8"))
+
+    assert "`z_image_turbo` | `dual_supported`" in inventory
+    assert "| `z_image_turbo` | supported | supported | `image/z_image`" in support
+    assert "None. Sprint 12 does not close any route as VibeComfy-only" in support
+
+    for route_key in routing.SPRINT_2_SELECTOR_MAP:
+        assert f"`{route_key}`" in inventory
+
+    for alias in routing.DIRECT_ROUTE_ALIASES:
+        assert f"`{alias}`" in inventory or alias in inventory
+
+    for route_key, entry in routing.SECTION3A_ROUTE_SUPPORT_MAP.items():
+        assert f"`{route_key}`" in inventory
+        assert entry.disposition in inventory
+        assert entry.blocking_reason in inventory
+
+    for fixture in app_fixtures:
+        route_key = fixture["expected"]["route_key"]
+        assert fixture["name"] in inventory
+        assert f"`{route_key}`" in inventory
+
+
+@pytest.mark.parametrize(
+    ("model_name", "expected_route_key"),
+    [
+        (
+            "ltx2_22B",
+            "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
+        ),
+        (
+            "ltx2_22B_distilled_1_1",
+            "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+        ),
+    ],
+)
+def test_section3a_ltx_first_last_rows_remain_blocked_until_adapter_wiring(
+    routing, model_name: str, expected_route_key: str
+) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="ltx-promoted",
+        task_type="travel_segment",
+        params={
+            "model_name": model_name,
+            "continuity_case": "first_last",
+            "profile": "default",
+        },
+        backend="vibecomfy",
+    )
+
+    assert resolved.route_key == expected_route_key
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
+    assert resolved.template_id is None
+    assert resolved.fail_closed_reason
+    assert "will not fall back to WGP" in resolved.fail_closed_reason
+    assert resolved.should_use_vibecomfy is False
+
+
+@pytest.mark.parametrize(
+    "route_key",
+    [
+        "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
+        "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+    ],
+)
+def test_section3a_unsupported_rows_fail_closed_under_explicit_vibecomfy(
+    routing, route_key: str
+) -> None:
+    entry = routing.SECTION3A_ROUTE_SUPPORT_MAP[route_key]
+    resolved = routing.resolve_task_route(
+        task_id="section3a-unsupported",
+        task_type="travel_segment",
+        params={
+            "_source_task_type": "travel_segment",
+            "model_family": route_key.split("__model-", 1)[1].split("__", 1)[0],
+            "guidance_kind": entry.route_key.split("__guidance-", 1)[1].split("__", 1)[0],
+            "continuity_case": "first_last",
+            "profile": "default",
+        },
+        backend="vibecomfy",
+    )
+
+    assert resolved.route_key == route_key
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
+    assert resolved.template_id is None
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason
+    assert "will not fall back to WGP" in resolved.fail_closed_reason
+
+
+def test_template_less_vibecomfy_supported_route_fails_closed(routing, monkeypatch) -> None:
+    route_key = "template_less_supported_route"
+    monkeypatch.setattr(
+        routing,
+        "SPRINT_2_SELECTOR_MAP",
+        routing.MappingProxyType(
+            {
+                **dict(routing.SPRINT_2_SELECTOR_MAP),
+                route_key: routing.RouteSelectorEntry(
+                    route_key=route_key,
+                    support_state=routing.RouteSupportState.VIBECOMFY_SUPPORTED,
+                    template_id=None,
+                ),
+            }
+        ),
+    )
+
+    resolved = routing.resolve_task_route(
+        task_id="template-less",
+        task_type=route_key,
+        params={},
+        backend="vibecomfy",
+    )
+
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.template_id is None
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason
+    assert "has no template" in resolved.fail_closed_reason
+    assert "will not fall back to WGP" in resolved.fail_closed_reason
+
+
 def test_join_clips_segment_uses_dimensional_route_key(routing) -> None:
     resolved = routing.resolve_task_route(
         task_id="join-child",
@@ -320,6 +542,7 @@ def test_route_snapshot_fields_are_top_level_columns_plus_json_snapshot(routing)
         "route_key": route_key,
         "selected_backend": "wgp",
         "selector_version": 42,
+        "support_state": "vibecomfy_unsupported",
         "selected_profile": "default",
         "selected_template_id": None,
         "route_run_id": None,
@@ -380,6 +603,74 @@ def test_parent_derived_child_snapshot_uses_parent_contract_not_env(
     assert fields["route_run_id"] == "run-parent-1"
     assert fields["route_selection_snapshot"]["parent_route_key"] == "join_clips_orchestrator"
     assert fields["route_selection_snapshot"]["task_id"] == "child-1"
+
+
+def test_legacy_parent_route_contract_is_normalized_for_child_pinning(routing) -> None:
+    fields = routing.parent_derived_child_route_snapshot_fields(
+        parent_params={
+            "route_contract": {
+                "selector_namespace": "production",
+                "route_key": "join_clips_orchestrator",
+                "selected_backend": "wgp",
+                "selector_version": 5,
+                "route_selection_snapshot": {
+                    "parent_route_key": "travel_orchestrator",
+                },
+            }
+        },
+        child_task_id="legacy-child",
+        child_task_type="join_final_stitch",
+        child_params={},
+    )
+
+    assert fields["selector_namespace"] == "production"
+    assert fields["selected_backend"] == "wgp"
+    assert fields["selector_version"] == 5
+    assert fields["support_state"] == "wgp_only"
+    assert fields["selected_profile"] == "default"
+    assert fields["worker_contract_version"] == routing.WORKER_ROUTE_CONTRACT_VERSION
+    assert fields["route_selection_snapshot"]["parent_route_key"] == "join_clips_orchestrator"
+    assert fields["route_selection_snapshot"]["task_id"] == "legacy-child"
+
+
+def test_normalize_route_snapshot_fields_inflates_partial_legacy_rows(routing) -> None:
+    fields = routing.normalize_route_snapshot_fields(
+        {
+            "selector_namespace": "canary",
+            "route_key": "join_final_stitch",
+            "selected_backend": "wgp",
+            "selector_version": 12,
+            "route_selection_snapshot": {
+                "parent_route_key": "join_clips_orchestrator",
+            },
+        },
+        task_type="join_final_stitch",
+        params={},
+    )
+
+    assert fields == {
+        "selector_namespace": "canary",
+        "route_key": "join_final_stitch",
+        "selected_backend": "wgp",
+        "selector_version": 12,
+        "support_state": "wgp_only",
+        "selected_profile": "default",
+        "selected_template_id": None,
+        "route_run_id": None,
+        "worker_contract_version": 1,
+        "route_selection_snapshot": {
+            "selector_namespace": "canary",
+            "route_key": "join_final_stitch",
+            "selected_backend": "wgp",
+            "selector_version": 12,
+            "support_state": "wgp_only",
+            "template_id": None,
+            "selected_profile": "default",
+            "route_run_id": None,
+            "worker_contract_version": 1,
+            "parent_route_key": "join_clips_orchestrator",
+        },
+    }
 
 
 def test_parent_child_route_preflight_reports_incompatible_vibecomfy_child(routing) -> None:
@@ -1004,6 +1295,7 @@ def test_add_task_to_db_lifts_route_snapshot_fields_into_create_task_payload(mon
         "route_key": "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
         "selected_backend": "wgp",
         "selector_version": 12,
+        "support_state": "vibecomfy_unsupported",
         "selected_profile": "default",
         "selected_template_id": None,
         "route_run_id": "run-1",
@@ -1070,6 +1362,7 @@ def test_add_task_to_db_preserves_control_row_dependency_arrays(
         "route_key": "join_final_stitch",
         "selected_backend": "wgp",
         "selector_version": 12,
+        "support_state": "wgp_only",
         "selected_profile": "production",
         "selected_template_id": None,
         "route_run_id": "run-1",

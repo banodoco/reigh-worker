@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 from typing import Any
 
 from scripts.live_test import config
@@ -14,6 +16,7 @@ from scripts.live_test.matrix import build_matrix, render_case_payload, run_matr
 from scripts.live_test.preflight import assert_user_queue_clean, get_or_create_live_test_project
 from scripts.live_test.report import write_report
 from scripts.live_test.ssh_bootstrap import (
+    clone_and_install_vibecomfy,
     clone_repo_into,
     export_env,
     fetch_worker_logs,
@@ -28,6 +31,9 @@ from scripts.live_test.token_resolver import resolve_token_to_user_id
 FRESH_VARIANT = "fresh"
 FRESH_WORKDIR = "/workspace/Reigh-Worker-LiveTest"
 FRESH_REPO_URL = "https://github.com/banodoco/Reigh-Worker.git"
+VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
+VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
+VIBECOMFY_PYTHON = "python3.11"
 
 log = get_logger(__name__)
 
@@ -43,20 +49,67 @@ def _build_matrix_cases(args) -> list:
         timeout_image_sec=args.timeout_image,
         timeout_travel_segment_sec=args.timeout_travel_segment,
         timeout_travel_orchestrator_sec=args.timeout_travel_orchestrator,
+        selected_backend=getattr(args, "backend", "wgp"),
+        selector_namespace=getattr(args, "selector_namespace", "production"),
+        selector_version=getattr(args, "selector_version", None),
+        worker_contract_version=getattr(args, "worker_contract_version", 1),
+        selected_profile=getattr(args, "worker_profile", "default"),
+        case_names=getattr(args, "case", []),
+        task_types=getattr(args, "task_type", []),
+        route_keys=getattr(args, "route_key", []),
     )
 
 
-def _build_worker_env(token: str, supabase_url: str, service_role_key: str) -> dict[str, str]:
-    return {
+def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args=None) -> dict[str, str]:
+    env = {
         "REIGH_ACCESS_TOKEN": token,
+        "REIGH_BACKEND": getattr(args, "backend", "wgp"),
+        "REIGH_SELECTOR_NAMESPACE": getattr(args, "selector_namespace", "production"),
+        "REIGH_WORKER_CONTRACT_VERSION": str(getattr(args, "worker_contract_version", 1)),
+        "REIGH_WORKER_PROFILE": getattr(args, "worker_profile", "default"),
         "SUPABASE_SERVICE_ROLE_KEY": service_role_key,
         "SUPABASE_URL": supabase_url,
         "WORKER_DB_CLIENT_AUTH_MODE": "worker",
     }
+    selector_version = getattr(args, "selector_version", None)
+    if selector_version:
+        env["REIGH_SELECTOR_VERSION"] = str(selector_version)
+    if getattr(args, "backend", "wgp") == "vibecomfy":
+        env.update(
+            {
+                "VIBECOMFY_CWD": VIBECOMFY_WORKDIR,
+                "VIBECOMFY_PATH": VIBECOMFY_WORKDIR,
+                "VIBECOMFY_PYTHON": VIBECOMFY_PYTHON,
+            }
+        )
+    return env
 
 
 def _runs_root() -> Path:
     return config.WORKER_ROOT / "scripts" / "live_test" / "runs"
+
+
+@contextmanager
+def _phase(name: str, **fields):
+    started_at = time.monotonic()
+    log.info("live test phase started", phase=name, **fields)
+    try:
+        yield
+    except Exception:
+        log.exception(
+            "live test phase failed",
+            phase=name,
+            elapsed_sec=round(time.monotonic() - started_at, 1),
+            **fields,
+        )
+        raise
+    else:
+        log.info(
+            "live test phase completed",
+            phase=name,
+            elapsed_sec=round(time.monotonic() - started_at, 1),
+            **fields,
+        )
 
 
 def _prepare_context(args) -> dict[str, Any]:
@@ -94,15 +147,31 @@ def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> No
     print("Variant: fresh")
     print(f"Project ID: {project_id}")
     print(f"Clone target: {FRESH_WORKDIR}")
+    if getattr(args, "backend", "wgp") == "vibecomfy":
+        print(f"VibeComfy clone target: {VIBECOMFY_WORKDIR}")
     print(f"Terminate after run: {not args.no_terminate}")
     print("Injected env vars:")
-    for key in ("REIGH_ACCESS_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL", "WORKER_DB_CLIENT_AUTH_MODE"):
+    for key in (
+        "REIGH_ACCESS_TOKEN",
+        "REIGH_BACKEND",
+        "REIGH_SELECTOR_NAMESPACE",
+        "REIGH_SELECTOR_VERSION",
+        "REIGH_WORKER_CONTRACT_VERSION",
+        "REIGH_WORKER_PROFILE",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_URL",
+        "WORKER_DB_CLIENT_AUTH_MODE",
+        "VIBECOMFY_CWD",
+        "VIBECOMFY_PATH",
+        "VIBECOMFY_PYTHON",
+    ):
         print(f"- {key}")
     print("Planned launch command:")
     print(launch_command)
     print("Planned tasks:")
     for case in cases:
-        print(f"- {case.name} ({case.task_type}, timeout={case.timeout_sec}s)")
+        route_suffix = f", route={case.route_key}, backend={case.route_runtime.selected_backend}" if case.route_key else ""
+        print(f"- {case.name} ({case.task_type}{route_suffix}, timeout={case.timeout_sec}s)")
 
 
 def run(args) -> int:
@@ -122,7 +191,7 @@ def run(args) -> int:
     api_key = config.require_env("RUNPOD_API_KEY")
     supabase_url = config.require_env("SUPABASE_URL")
     service_role_key = config.require_env("SUPABASE_SERVICE_ROLE_KEY")
-    worker_env = _build_worker_env(token, supabase_url, service_role_key)
+    worker_env = _build_worker_env(token, supabase_url, service_role_key, args)
     out_dir = _runs_root() / _timestamp_label()
 
     pod_id: str | None = None
@@ -149,27 +218,46 @@ def run(args) -> int:
         else:
             log.warning("no network volume matched %s; pod will only have ephemeral container disk", list(config.RUNPOD_STORAGE_VOLUMES))
 
-        pod = create_pod_and_wait(
-            api_key=api_key,
-            gpu_type_id=config.RUNPOD_GPU_TYPE,
-            image_name=config.RUNPOD_WORKER_IMAGE,
-            name=f"reigh-live-test-fresh-{_timestamp_label().lower()}",
-            network_volume_id=network_volume_id,
-            volume_mount_path=config.RUNPOD_VOLUME_MOUNT_PATH,
-            disk_in_gb=config.LIVE_TEST_DISK_SIZE_GB,
-            container_disk_in_gb=config.LIVE_TEST_CONTAINER_DISK_GB,
-            min_vcpu_count=config.RUNPOD_MIN_VCPU_COUNT,
-            min_memory_in_gb=config.RUNPOD_MIN_MEMORY_GB,
-            template_id=config.RUNPOD_TEMPLATE_ID,
-            env_vars=worker_env,
-        )
+        with _phase("create_runpod_pod", gpu_type=config.RUNPOD_GPU_TYPE, image=config.RUNPOD_WORKER_IMAGE):
+            pod = create_pod_and_wait(
+                api_key=api_key,
+                gpu_type_id=config.RUNPOD_GPU_TYPE,
+                image_name=config.RUNPOD_WORKER_IMAGE,
+                name=f"reigh-live-test-fresh-{_timestamp_label().lower()}",
+                network_volume_id=network_volume_id,
+                volume_mount_path=config.RUNPOD_VOLUME_MOUNT_PATH,
+                disk_in_gb=config.LIVE_TEST_DISK_SIZE_GB,
+                container_disk_in_gb=config.LIVE_TEST_CONTAINER_DISK_GB,
+                min_vcpu_count=config.RUNPOD_MIN_VCPU_COUNT,
+                min_memory_in_gb=config.RUNPOD_MIN_MEMORY_GB,
+                template_id=config.RUNPOD_TEMPLATE_ID,
+                env_vars=worker_env,
+            )
         if not pod or not pod.get("id"):
             raise RuntimeError("create_pod_and_wait did not return a pod id")
 
         pod_id = str(pod["id"])
-        ssh = open_session(pod_id, api_key)
-        clone_repo_into(ssh, FRESH_WORKDIR, FRESH_REPO_URL, branch=args.ref or "main")
-        run_install(ssh, FRESH_WORKDIR)
+        with _phase("open_ssh_session", pod_id=pod_id):
+            ssh = open_session(pod_id, api_key)
+        with _phase("clone_reigh_worker", pod_id=pod_id, ref=args.ref or "main", workdir=FRESH_WORKDIR):
+            clone_repo_into(ssh, FRESH_WORKDIR, FRESH_REPO_URL, branch=args.ref or "main")
+        with _phase("install_reigh_worker", pod_id=pod_id, workdir=FRESH_WORKDIR):
+            run_install(ssh, FRESH_WORKDIR)
+        if args.backend == "vibecomfy":
+            with _phase(
+                "clone_install_vibecomfy",
+                pod_id=pod_id,
+                ref=args.vibecomfy_ref,
+                workdir=VIBECOMFY_WORKDIR,
+                python=VIBECOMFY_PYTHON,
+            ):
+                clone_and_install_vibecomfy(
+                    ssh,
+                    repo_url=VIBECOMFY_REPO_URL,
+                    branch=args.vibecomfy_ref,
+                    workdir=VIBECOMFY_WORKDIR,
+                    python_path=VIBECOMFY_PYTHON,
+                )
 
         command = build_run_worker_command(
             FRESH_WORKDIR,
@@ -179,11 +267,15 @@ def run(args) -> int:
             wgp_profile=args.wgp_profile,
             idle_release_minutes=0,
         )
-        launch_worker_detached(ssh, export_env(worker_env) + " && " + command)
-        wait_until_ready(db, worker_id=pod_id, timeout_sec=900)
+        with _phase("launch_worker", pod_id=pod_id):
+            launch_worker_detached(ssh, export_env(worker_env) + " && " + command)
+        with _phase("wait_worker_ready", pod_id=pod_id):
+            wait_until_ready(db, worker_id=pod_id, timeout_sec=900, progress_every_sec=60)
 
-        results = run_matrix(db, project_id, cases)
-        write_report(results, FRESH_VARIANT, pod_id, out_dir)
+        with _phase("run_matrix", pod_id=pod_id, cases=len(cases)):
+            results = run_matrix(db, project_id, cases)
+        with _phase("write_report", pod_id=pod_id, out_dir=str(out_dir)):
+            write_report(results, FRESH_VARIANT, pod_id, out_dir)
         return 0
     finally:
         if ssh is not None:

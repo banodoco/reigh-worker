@@ -16,6 +16,27 @@ from scripts.live_test.task_spoofer import insert_spoof_task, load_fixture
 
 TRAVEL_WAN_FIXTURE_KEY = "travel_orchestrator_wan2_1seg"
 TRAVEL_LTX_FIXTURE_KEY = "travel_orchestrator_ltx"
+Z_IMAGE_TURBO_FIXTURE_KEY = "z_image_turbo"
+WAN_2_2_T2I_FIXTURE_KEY = "wan_2_2_t2i"
+IMAGE_INPAINT_FIXTURE_KEY = "image_inpaint"
+ANNOTATED_IMAGE_EDIT_FIXTURE_KEY = "annotated_image_edit"
+JOIN_CLIPS_ORCHESTRATOR_FIXTURE_KEY = "join_clips_orchestrator"
+EDIT_VIDEO_ORCHESTRATOR_FIXTURE_KEY = "edit_video_orchestrator"
+TRAVEL_STITCH_FIXTURE_KEY = "travel_stitch"
+
+LIVE_TEST_VIDEO_URL = (
+    "https://wczysqzxlwdndgxitrvc.supabase.co/storage/v1/object/public/image_uploads/"
+    "guidance-videos/onboarding/structure_video_optimized.mp4"
+)
+
+
+@dataclass(frozen=True)
+class RouteRuntimeOptions:
+    selected_backend: str = "wgp"
+    selector_namespace: str = "production"
+    selector_version: str | None = None
+    worker_contract_version: int = 1
+    selected_profile: str = "default"
 
 
 @dataclass(frozen=True)
@@ -25,6 +46,10 @@ class MatrixCase:
     fixture_key: str
     param_overrides: dict[str, Any] = field(default_factory=dict)
     timeout_sec: int = 0
+    route_key: str | None = None
+    support_state: str | None = None
+    selected_template_id: str | None = None
+    route_runtime: RouteRuntimeOptions = field(default_factory=RouteRuntimeOptions)
 
 
 def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
@@ -56,6 +81,7 @@ def _build_wan_travel_fixture() -> dict[str, Any]:
     orchestrator_details["base_prompts_expanded"] = [orchestrator_details["base_prompt"]]
     orchestrator_details["negative_prompts_expanded"] = [""]
     orchestrator_details["enhanced_prompts_expanded"] = [""]
+    orchestrator_details["enhance_prompt"] = False
     return template
 
 
@@ -78,12 +104,172 @@ def _build_ltx_travel_fixture() -> dict[str, Any]:
     return template
 
 
+def _build_z_image_turbo_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "z_image_turbo",
+        "status": "Queued",
+        "params": {
+            "prompt": "A compact red cube on a clean white tabletop, product-photo lighting.",
+            "resolution": "1024x1024",
+            "seed": 1732,
+            "steps": 4,
+            "num_inference_steps": 4,
+            "model": "z_image_turbo",
+        },
+    }
+
+
+def _build_wan_2_2_t2i_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "wan_2_2_t2i",
+        "status": "Queued",
+        "params": {
+            "prompt": "A compact cinematic still of a red cube on a clean white tabletop.",
+            "resolution": "832x480",
+            "seed": 20260507,
+            "num_inference_steps": 4,
+            "guidance_scale": 1,
+        },
+    }
+
+
+def _build_masked_qwen_fixture(task_type: str) -> dict[str, Any]:
+    return {
+        "task_type": task_type,
+        "status": "Queued",
+        "params": {
+            "prompt": "Repair the masked area while preserving the scene.",
+            "image_url": config.ANCHOR_IMAGE_A_URL,
+            "image": config.ANCHOR_IMAGE_A_URL,
+            "mask_url": config.ANCHOR_IMAGE_B_URL,
+            "resolution": "1024x1024",
+            "seed": 20260507,
+            "num_inference_steps": 4,
+        },
+    }
+
+
+def _build_join_clips_orchestrator_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "join_clips_orchestrator",
+        "status": "Queued",
+        "params": {
+            "orchestrator_details": {
+                "run_id": "live-test-join",
+                "clip_list": [
+                    {"url": LIVE_TEST_VIDEO_URL, "name": "clip_a"},
+                    {"url": LIVE_TEST_VIDEO_URL, "name": "clip_b"},
+                ],
+                "loop_first_clip": False,
+                "context_frame_count": 4,
+                "gap_frame_count": 8,
+                "replace_mode": False,
+                "prompt": "A simple coherent bridge between the clips.",
+                "negative_prompt": "",
+                "model": "wan_2_2_vace_lightning_baseline_2_2_2",
+                "seed": 20260507,
+                "resolution": "902x508",
+                "fps": 16,
+                "use_input_video_resolution": True,
+                "use_input_video_fps": True,
+                "use_parallel_joins": False,
+                "skip_frame_validation": True,
+                "enhance_prompt": False,
+            },
+        },
+    }
+
+
+def _build_edit_video_orchestrator_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "edit_video_orchestrator",
+        "status": "Queued",
+        "params": {
+            "orchestrator_details": {
+                "run_id": "live-test-edit-video",
+                "source_video_url": LIVE_TEST_VIDEO_URL,
+                "source_video_fps": 16,
+                "source_video_total_frames": 80,
+                "portions_to_regenerate": [
+                    {
+                        "start_frame": 16,
+                        "end_frame": 24,
+                        "prompt": "A clean transition through the edited region.",
+                    }
+                ],
+                "context_frame_count": 4,
+                "gap_frame_count": 8,
+                "replace_mode": False,
+                "prompt": "A simple coherent edit.",
+                "negative_prompt": "",
+                "model": "wan_2_2_vace_lightning_baseline_2_2_2",
+                "seed": 20260507,
+                "resolution": "902x508",
+                "fps": 16,
+                "use_input_video_resolution": True,
+                "use_input_video_fps": True,
+                "enhance_prompt": False,
+            },
+        },
+    }
+
+
+def _build_travel_stitch_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "travel_stitch",
+        "status": "Queued",
+        "params": {
+            "clip_urls": [LIVE_TEST_VIDEO_URL, LIVE_TEST_VIDEO_URL],
+            "frame_overlap_settings_expanded": [4],
+            "fps": 16,
+            "crossfade_sharp_amt": 0.3,
+        },
+    }
+
+
 def resolve_case_fixture(case: MatrixCase) -> dict[str, Any]:
     if case.fixture_key == TRAVEL_WAN_FIXTURE_KEY:
         return _build_wan_travel_fixture()
     if case.fixture_key == TRAVEL_LTX_FIXTURE_KEY:
         return _build_ltx_travel_fixture()
+    if case.fixture_key == Z_IMAGE_TURBO_FIXTURE_KEY:
+        return _build_z_image_turbo_fixture()
+    if case.fixture_key == WAN_2_2_T2I_FIXTURE_KEY:
+        return _build_wan_2_2_t2i_fixture()
+    if case.fixture_key == IMAGE_INPAINT_FIXTURE_KEY:
+        return _build_masked_qwen_fixture("image_inpaint")
+    if case.fixture_key == ANNOTATED_IMAGE_EDIT_FIXTURE_KEY:
+        return _build_masked_qwen_fixture("annotated_image_edit")
+    if case.fixture_key == JOIN_CLIPS_ORCHESTRATOR_FIXTURE_KEY:
+        return _build_join_clips_orchestrator_fixture()
+    if case.fixture_key == EDIT_VIDEO_ORCHESTRATOR_FIXTURE_KEY:
+        return _build_edit_video_orchestrator_fixture()
+    if case.fixture_key == TRAVEL_STITCH_FIXTURE_KEY:
+        return _build_travel_stitch_fixture()
     return load_fixture(case.fixture_key)
+
+
+def _route_contract(case: MatrixCase, task_marker: str) -> dict[str, Any] | None:
+    if not case.route_key:
+        return None
+
+    runtime = case.route_runtime
+    snapshot = {
+        "route_key": case.route_key,
+        "task_type": case.task_type,
+        "selected_backend": runtime.selected_backend,
+        "selector_namespace": runtime.selector_namespace,
+        "selector_version": runtime.selector_version,
+        "worker_contract_version": runtime.worker_contract_version,
+        "selected_profile": runtime.selected_profile,
+        "support_state": case.support_state,
+        "selected_template_id": case.selected_template_id,
+        "live_test_run_id": task_marker,
+    }
+    return {
+        **snapshot,
+        "route_selection_snapshot": snapshot,
+    }
 
 
 def build_case_params_overrides(
@@ -105,6 +291,13 @@ def build_case_params_overrides(
             ],
         }
 
+    if case.task_type in {"join_clips_orchestrator", "edit_video_orchestrator"}:
+        runtime["orchestrator_details"] = {
+            "run_id": task_marker,
+            "orchestrator_task_id": task_marker,
+            "orchestrator_task_id_ref": task_marker,
+        }
+
     if case.task_type == "individual_travel_segment":
         runtime["orchestrator_details"] = {
             "orchestrator_task_id": f"{task_marker}-parent",
@@ -119,7 +312,45 @@ def build_case_params_overrides(
         runtime["end_image_url"] = config.ANCHOR_IMAGE_B_URL
         runtime["input_image_paths_resolved"] = _anchor_pair()
 
+    route_contract = _route_contract(case, task_marker)
+    if route_contract is not None:
+        runtime["route_contract"] = route_contract
+        runtime["route_key"] = case.route_key
+        runtime["selected_backend"] = case.route_runtime.selected_backend
+        runtime["selector_namespace"] = case.route_runtime.selector_namespace
+        runtime["selector_version"] = case.route_runtime.selector_version
+        runtime["worker_contract_version"] = case.route_runtime.worker_contract_version
+        runtime["selected_profile"] = case.route_runtime.selected_profile
+
     return _deep_merge(case.param_overrides, runtime)
+
+
+def filter_matrix(
+    cases: list[MatrixCase],
+    *,
+    case_names: list[str] | None = None,
+    task_types: list[str] | None = None,
+    route_keys: list[str] | None = None,
+) -> list[MatrixCase]:
+    case_filter = set(case_names or [])
+    task_filter = set(task_types or [])
+    route_filter = set(route_keys or [])
+    if not case_filter and not task_filter and not route_filter:
+        return cases
+    selected = [
+        case
+        for case in cases
+        if (case_filter and case.name in case_filter)
+        or (task_filter and case.task_type in task_filter)
+        or (route_filter and case.route_key in route_filter)
+    ]
+    missing_cases = case_filter - {case.name for case in selected}
+    missing_tasks = task_filter - {case.task_type for case in selected}
+    missing_routes = route_filter - {case.route_key for case in selected if case.route_key}
+    missing = sorted(missing_cases | missing_tasks | missing_routes)
+    if missing:
+        raise ValueError(f"Unknown live-test case/task/route selection: {', '.join(missing)}")
+    return selected
 
 
 def render_case_payload(
@@ -153,19 +384,40 @@ def build_matrix(
     timeout_image_sec: int = config.TIMEOUT_IMAGE_SEC,
     timeout_travel_segment_sec: int = config.TIMEOUT_INDIVIDUAL_TRAVEL_SEGMENT_SEC,
     timeout_travel_orchestrator_sec: int = config.TIMEOUT_TRAVEL_ORCHESTRATOR_SEC,
+    selected_backend: str = "wgp",
+    selector_namespace: str = "production",
+    selector_version: str | None = None,
+    worker_contract_version: int = 1,
+    selected_profile: str = "default",
+    case_names: list[str] | None = None,
+    task_types: list[str] | None = None,
+    route_keys: list[str] | None = None,
 ) -> list[MatrixCase]:
-    return [
+    route_runtime = RouteRuntimeOptions(
+        selected_backend=selected_backend,
+        selector_namespace=selector_namespace,
+        selector_version=selector_version,
+        worker_contract_version=worker_contract_version,
+        selected_profile=selected_profile,
+    )
+    cases = [
         MatrixCase(
             name="travel_orchestrator_wan2_1seg",
             task_type="travel_orchestrator",
             fixture_key=TRAVEL_WAN_FIXTURE_KEY,
             timeout_sec=timeout_travel_orchestrator_sec,
+            route_key="travel_orchestrator",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
         ),
         MatrixCase(
             name="travel_orchestrator_ltx",
             task_type="travel_orchestrator",
             fixture_key=TRAVEL_LTX_FIXTURE_KEY,
             timeout_sec=timeout_travel_orchestrator_sec,
+            route_key="travel_orchestrator",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
         ),
         MatrixCase(
             name="individual_travel_segment",
@@ -187,6 +439,33 @@ def build_matrix(
             timeout_sec=timeout_travel_segment_sec,
         ),
         MatrixCase(
+            name="travel_stitch",
+            task_type="travel_stitch",
+            fixture_key=TRAVEL_STITCH_FIXTURE_KEY,
+            timeout_sec=timeout_image_sec,
+            route_key="travel_stitch",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="join_clips_orchestrator",
+            task_type="join_clips_orchestrator",
+            fixture_key=JOIN_CLIPS_ORCHESTRATOR_FIXTURE_KEY,
+            timeout_sec=timeout_travel_orchestrator_sec,
+            route_key="join_clips_orchestrator",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="edit_video_orchestrator",
+            task_type="edit_video_orchestrator",
+            fixture_key=EDIT_VIDEO_ORCHESTRATOR_FIXTURE_KEY,
+            timeout_sec=timeout_travel_orchestrator_sec,
+            route_key="edit_video_orchestrator",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
             name="qwen_image_style",
             task_type="qwen_image_style",
             fixture_key="qwen_image_style_db_task",
@@ -195,12 +474,18 @@ def build_matrix(
                 "subject_reference_image": anchor_image_a,
             },
             timeout_sec=timeout_image_sec,
+            route_key="qwen_image_style",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
         ),
         MatrixCase(
             name="qwen_image_t2i",
             task_type="qwen_image",
             fixture_key="qwen_image_basic",
             timeout_sec=timeout_image_sec,
+            route_key="qwen_image",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
         ),
         MatrixCase(
             name="qwen_image_2512",
@@ -208,6 +493,18 @@ def build_matrix(
             fixture_key="qwen_image_basic",
             param_overrides={"resolution": "1536x864"},
             timeout_sec=timeout_image_sec,
+            route_key="qwen_image_2512",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="wan_2_2_t2i",
+            task_type="wan_2_2_t2i",
+            fixture_key=WAN_2_2_T2I_FIXTURE_KEY,
+            timeout_sec=timeout_image_sec,
+            route_key="wan_2_2_t2i",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
         ),
         MatrixCase(
             name="qwen_image_edit",
@@ -218,6 +515,37 @@ def build_matrix(
                 "image_url": anchor_image_b,
             },
             timeout_sec=timeout_image_sec,
+            route_key="qwen_image_edit",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="image_inpaint",
+            task_type="image_inpaint",
+            fixture_key=IMAGE_INPAINT_FIXTURE_KEY,
+            timeout_sec=timeout_image_sec,
+            route_key="image_inpaint",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="annotated_image_edit",
+            task_type="annotated_image_edit",
+            fixture_key=ANNOTATED_IMAGE_EDIT_FIXTURE_KEY,
+            timeout_sec=timeout_image_sec,
+            route_key="annotated_image_edit",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="z_image_turbo",
+            task_type="z_image_turbo",
+            fixture_key=Z_IMAGE_TURBO_FIXTURE_KEY,
+            timeout_sec=timeout_image_sec,
+            route_key="z_image_turbo",
+            support_state="vibecomfy_supported",
+            selected_template_id="image/z_image",
+            route_runtime=route_runtime,
         ),
         MatrixCase(
             name="z_image_turbo_i2i",
@@ -225,8 +553,12 @@ def build_matrix(
             fixture_key="z_image_turbo_i2i_basic",
             param_overrides={"image_url": anchor_image_a},
             timeout_sec=timeout_image_sec,
+            route_key="z_image_turbo_i2i",
+            support_state="wgp_only",
+            route_runtime=route_runtime,
         ),
     ]
+    return filter_matrix(cases, case_names=case_names, task_types=task_types, route_keys=route_keys)
 
 
 MATRIX = build_matrix()
@@ -273,10 +605,13 @@ def run_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[TaskResult]
 __all__ = [
     "MATRIX",
     "MatrixCase",
+    "RouteRuntimeOptions",
     "TRAVEL_LTX_FIXTURE_KEY",
     "TRAVEL_WAN_FIXTURE_KEY",
+    "Z_IMAGE_TURBO_FIXTURE_KEY",
     "build_case_params_overrides",
     "build_matrix",
+    "filter_matrix",
     "render_case_payload",
     "resolve_case_fixture",
     "run_matrix",

@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 from scripts.live_test.completion_poller import TaskResult, poll_until_complete
 from scripts.live_test.heartbeat_waiter import WorkerReadyTimeoutError, wait_until_ready
 from scripts.live_test.launch_command import build_direct_worker_command, build_run_worker_command
-from scripts.live_test.matrix import MATRIX, MatrixCase, run_matrix
+from scripts.live_test.matrix import MATRIX, MatrixCase, build_matrix, render_case_payload, run_matrix
 from scripts.live_test import main as live_test_main
 from scripts.live_test.preflight import (
     LIVE_TEST_PROJECT_NAME,
@@ -32,6 +32,7 @@ from scripts.live_test.ssh_bootstrap import (
     KILL_COMMAND,
     WorkerProcessInfo,
     capture_current_worker_cmdline,
+    clone_and_install_vibecomfy,
     kill_supervisor_and_worker,
 )
 from scripts.live_test.task_spoofer import insert_spoof_task
@@ -250,6 +251,101 @@ def test_completion_poller_returns_on_complete(monkeypatch: pytest.MonkeyPatch):
     assert result.error_summary is None
 
 
+def test_completion_poller_links_orchestrator_child_generations(monkeypatch: pytest.MonkeyPatch):
+    parent_created_at = _iso_now(-20)
+    child_created_at = _iso_now(-10)
+    db = FakeDB(
+        tables={
+            "tasks": [
+                {
+                    "id": "parent-1",
+                    "project_id": "project-1",
+                    "task_type": "travel_orchestrator",
+                    "status": "Complete",
+                    "created_at": parent_created_at,
+                },
+                {
+                    "id": "child-1",
+                    "project_id": "project-1",
+                    "task_type": "travel_segment",
+                    "status": "Complete",
+                    "created_at": child_created_at,
+                    "params": {"orchestrator_task_id_ref": "parent-1"},
+                },
+            ],
+            "generations": [
+                {
+                    "id": "gen-child-1",
+                    "project_id": "project-1",
+                    "created_at": _iso_now(-5),
+                    "tasks": ["child-1"],
+                    "params": {},
+                    "location": "https://out.example/segment.mp4",
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.sleep", lambda _interval: None)
+    result = poll_until_complete(
+        db,
+        "parent-1",
+        "project-1",
+        timeout_sec=1,
+        interval_sec=0,
+        task_type="travel_orchestrator",
+    )
+    assert result.final_status == "Complete"
+    assert result.generation_ids == ["gen-child-1"]
+    assert result.output_location == "https://out.example/segment.mp4"
+    assert result.error_summary is None
+
+
+def test_completion_poller_links_orchestrator_child_generations_from_details(monkeypatch: pytest.MonkeyPatch):
+    db = FakeDB(
+        tables={
+            "tasks": [
+                {
+                    "id": "join-parent-1",
+                    "project_id": "project-1",
+                    "task_type": "join_clips_orchestrator",
+                    "status": "Complete",
+                    "created_at": _iso_now(-20),
+                },
+                {
+                    "id": "join-child-1",
+                    "project_id": "project-1",
+                    "task_type": "join_clips_segment",
+                    "status": "Complete",
+                    "created_at": _iso_now(-10),
+                    "params": {"orchestrator_details": {"orchestrator_task_id": "join-parent-1"}},
+                },
+            ],
+            "generations": [
+                {
+                    "id": "gen-join-1",
+                    "project_id": "project-1",
+                    "created_at": _iso_now(-5),
+                    "tasks": "join-child-1",
+                    "params": {},
+                    "location": "https://out.example/joined.mp4",
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.sleep", lambda _interval: None)
+    result = poll_until_complete(
+        db,
+        "join-parent-1",
+        "project-1",
+        timeout_sec=1,
+        interval_sec=0,
+        task_type="join_clips_orchestrator",
+    )
+    assert result.generation_ids == ["gen-join-1"]
+    assert result.output_location == "https://out.example/joined.mp4"
+    assert result.error_summary is None
+
+
 def test_completion_poller_times_out(monkeypatch: pytest.MonkeyPatch):
     db = FakeDB(
         tables={
@@ -289,11 +385,12 @@ def test_completion_poller_records_failure(monkeypatch: pytest.MonkeyPatch):
     assert result.error_summary == "backend exploded"
 
 
-def test_heartbeat_waiter_requires_dwell_not_startup_phase(monkeypatch: pytest.MonkeyPatch):
+def test_heartbeat_waiter_requires_dwell_and_ready_for_tasks(monkeypatch: pytest.MonkeyPatch):
     workers = SequenceResponder(
         [
-            [{"id": "worker-1", "last_heartbeat": _iso_now(), "startup_phase": None}],
-            [{"id": "worker-1", "last_heartbeat": _iso_now(), "startup_phase": None}],
+            [{"id": "worker-1", "last_heartbeat": _iso_now(), "metadata": {"ready_for_tasks": False}}],
+            [{"id": "worker-1", "last_heartbeat": _iso_now(), "metadata": {"ready_for_tasks": True}}],
+            [{"id": "worker-1", "last_heartbeat": _iso_now(), "metadata": {"ready_for_tasks": True}}],
         ]
     )
     db = FakeDB(sources={"workers": workers})
@@ -461,10 +558,118 @@ def test_kill_supervisor_and_worker_patterns_cover_both_families(monkeypatch: py
     assert "pgrep -af source.runtime.worker" in ssh.commands[1][0]
 
 
-def test_matrix_contains_exactly_eight_cases():
-    assert len(MATRIX) == 8
+def test_matrix_contains_route_specific_z_image_turbo_case():
+    assert len(MATRIX) == 15
+    assert [case.name for case in MATRIX].count("z_image_turbo") == 1
     assert [case.name for case in MATRIX].count("z_image_turbo_i2i") == 1
-    assert any(case.task_type == "z_image_turbo_i2i" for case in MATRIX)
+    z_image_case = next(case for case in MATRIX if case.name == "z_image_turbo")
+    z_image_i2i_case = next(case for case in MATRIX if case.name == "z_image_turbo_i2i")
+    assert z_image_case.task_type == "z_image_turbo"
+    assert z_image_case.route_key == "z_image_turbo"
+    assert z_image_case.support_state == "vibecomfy_supported"
+    assert z_image_case.selected_template_id == "image/z_image"
+    assert z_image_i2i_case.task_type == "z_image_turbo_i2i"
+    assert z_image_i2i_case.route_key == "z_image_turbo_i2i"
+    assert z_image_i2i_case.support_state == "wgp_only"
+
+
+def test_route_specific_matrix_stamps_selector_contract():
+    cases = build_matrix(
+        selected_backend="vibecomfy",
+        selector_namespace="canary-a",
+        selector_version="2026-05-06",
+        worker_contract_version=1,
+        selected_profile="z-image-default",
+        route_keys=["z_image_turbo"],
+    )
+
+    assert [case.name for case in cases] == ["z_image_turbo"]
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    params = payload["params"]
+    contract = params["route_contract"]
+    snapshot = contract["route_selection_snapshot"]
+    assert payload["task_type"] == "z_image_turbo"
+    assert contract["route_key"] == "z_image_turbo"
+    assert contract["selected_backend"] == "vibecomfy"
+    assert contract["selector_namespace"] == "canary-a"
+    assert contract["selector_version"] == "2026-05-06"
+    assert contract["worker_contract_version"] == 1
+    assert contract["selected_profile"] == "z-image-default"
+    assert contract["support_state"] == "vibecomfy_supported"
+    assert contract["selected_template_id"] == "image/z_image"
+    assert snapshot["live_test_run_id"] == "live-test-z_image_turbo-abc123"
+    assert params["live_test"] is True
+
+
+def test_travel_live_matrix_disables_prompt_enhancement_download():
+    cases = build_matrix(case_names=["travel_orchestrator_wan2_1seg"])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    details = payload["params"]["orchestrator_details"]
+
+    assert details["enhance_prompt"] is False
+    assert details["enhanced_prompts_expanded"] == [""]
+
+
+def test_travel_orchestrator_live_matrix_stamps_parent_route_contract():
+    cases = build_matrix(case_names=["travel_orchestrator_wan2_1seg"])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    contract = payload["params"]["route_contract"]
+
+    assert contract["route_key"] == "travel_orchestrator"
+    assert contract["selected_backend"] == "wgp"
+    assert contract["support_state"] == "wgp_only"
+    assert contract["route_selection_snapshot"]["route_key"] == "travel_orchestrator"
+    assert contract["route_selection_snapshot"]["live_test_run_id"] == "live-test-travel_orchestrator_wan2_1seg-abc123"
+
+
+def test_live_matrix_includes_documented_wgp_only_direct_routes():
+    cases = {case.name: case for case in build_matrix()}
+    for name, task_type in {
+        "wan_2_2_t2i": "wan_2_2_t2i",
+        "image_inpaint": "image_inpaint",
+        "annotated_image_edit": "annotated_image_edit",
+        "travel_stitch": "travel_stitch",
+        "join_clips_orchestrator": "join_clips_orchestrator",
+        "edit_video_orchestrator": "edit_video_orchestrator",
+    }.items():
+        case = cases[name]
+        assert case.task_type == task_type
+        assert case.route_key == task_type
+        assert case.support_state == "wgp_only"
+
+
+@pytest.mark.parametrize(
+    ("case_name", "route_key"),
+    [
+        ("qwen_image_t2i", "qwen_image"),
+        ("qwen_image_2512", "qwen_image_2512"),
+        ("qwen_image_edit", "qwen_image_edit"),
+        ("qwen_image_style", "qwen_image_style"),
+        ("z_image_turbo_i2i", "z_image_turbo_i2i"),
+        ("wan_2_2_t2i", "wan_2_2_t2i"),
+        ("image_inpaint", "image_inpaint"),
+        ("annotated_image_edit", "annotated_image_edit"),
+        ("travel_stitch", "travel_stitch"),
+        ("join_clips_orchestrator", "join_clips_orchestrator"),
+        ("edit_video_orchestrator", "edit_video_orchestrator"),
+    ],
+)
+def test_live_matrix_stamps_direct_route_contracts(case_name: str, route_key: str):
+    cases = build_matrix(case_names=[case_name])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    contract = payload["params"]["route_contract"]
+    assert contract["route_key"] == route_key
+    assert contract["support_state"] == "wgp_only"
+    assert payload["params"]["selected_backend"] == "wgp"
+
+
+@pytest.mark.parametrize("case_name", ["join_clips_orchestrator", "edit_video_orchestrator"])
+def test_live_matrix_orchestrator_cases_use_unique_run_ids(case_name: str):
+    cases = build_matrix(case_names=[case_name])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    details = payload["params"]["orchestrator_details"]
+    assert details["run_id"] == f"live-test-{case_name}-abc123"
+    assert details["orchestrator_task_id"] == f"live-test-{case_name}-abc123"
 
 
 def test_run_matrix_continues_after_individual_case_failures(monkeypatch: pytest.MonkeyPatch):
@@ -576,6 +781,15 @@ def test_variant_fresh_dry_run_uses_livetest_workspace_and_env_exports(capsys, m
         anchor_image_a="https://example.com/a.png",
         anchor_image_b="https://example.com/b.png",
         ref="main",
+        backend="vibecomfy",
+        selector_namespace="canary-a",
+        selector_version="2026-05-06",
+        worker_contract_version=1,
+        worker_profile="z-image-default",
+        case=[],
+        task_type=[],
+        route_key=[],
+        wgp_rollback=False,
     )
     assert run_variant_fresh(args) == 0
     output = capsys.readouterr().out
@@ -585,6 +799,37 @@ def test_variant_fresh_dry_run_uses_livetest_workspace_and_env_exports(capsys, m
     assert "SUPABASE_SERVICE_ROLE_KEY" in output
     assert "SUPABASE_URL" in output
     assert "WORKER_DB_CLIENT_AUTH_MODE" in output
+    assert "REIGH_BACKEND" in output
+    assert "REIGH_SELECTOR_NAMESPACE" in output
+    assert "REIGH_WORKER_CONTRACT_VERSION" in output
+    assert "VibeComfy clone target: /workspace/vibecomfy" in output
+    assert "VIBECOMFY_PATH" in output
+
+
+def test_clone_and_install_vibecomfy_validates_required_manifests():
+    calls = []
+
+    class DummySSH:
+        def execute_command(self, command, timeout=600):
+            calls.append((command, timeout))
+            return 0, "", ""
+
+    clone_and_install_vibecomfy(
+        DummySSH(),
+        repo_url="https://github.com/peteromallet/VibeComfy.git",
+        branch="branch-a",
+        workdir="/workspace/vibecomfy",
+        python_path="python3.11",
+    )
+
+    command, timeout = calls[0]
+    assert timeout == 3600
+    assert "git clone --branch branch-a --single-branch https://github.com/peteromallet/VibeComfy.git /workspace/vibecomfy" in command
+    assert "python3.11 -m pip install -e /workspace/vibecomfy" in command
+    assert "python3.11 -m pip install" in command
+    assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
+    assert "test -f /workspace/vibecomfy/template_index.json" in command
+    assert "test -f /workspace/vibecomfy/workflow_corpus/manifests/coverage.json" in command
 
 
 def test_spawn_takeover_pod_calls_create_record_before_spawn_and_start(monkeypatch: pytest.MonkeyPatch):
@@ -843,9 +1088,18 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
 def test_main_defaults_terminate_for_fresh_and_no_terminate_for_update(monkeypatch: pytest.MonkeyPatch):
     seen = []
 
-    monkeypatch.setattr("scripts.live_test.main.run_variant_fresh", lambda args: seen.append(("fresh", args.no_terminate)) or 0)
-    monkeypatch.setattr("scripts.live_test.main.run_variant_update", lambda args: seen.append(("update", args.no_terminate)) or 0)
+    monkeypatch.setattr(
+        "scripts.live_test.main.run_variant_fresh",
+        lambda args: seen.append(("fresh", args.no_terminate, args.backend, args.route_key)) or 0,
+    )
+    monkeypatch.setattr(
+        "scripts.live_test.main.run_variant_update",
+        lambda args: seen.append(("update", args.no_terminate, args.backend, args.route_key)) or 0,
+    )
 
-    assert live_test_main.main(["--variant", "fresh", "--dry-run"]) == 0
-    assert live_test_main.main(["--variant", "update", "--pod-id", "pod-1", "--dry-run"]) == 0
-    assert seen == [("fresh", False), ("update", True)]
+    assert live_test_main.main(["--variant", "fresh", "--dry-run", "--backend", "vibecomfy", "--route-key", "z_image_turbo"]) == 0
+    assert live_test_main.main(["--variant", "update", "--pod-id", "pod-1", "--dry-run", "--wgp-rollback", "--route-key", "z_image_turbo"]) == 0
+    assert seen == [
+        ("fresh", False, "vibecomfy", ["z_image_turbo"]),
+        ("update", True, "wgp", ["z_image_turbo"]),
+    ]
