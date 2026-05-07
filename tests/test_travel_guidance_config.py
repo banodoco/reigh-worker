@@ -61,6 +61,15 @@ def test_parse_each_travel_guidance_kind():
     assert none_cfg.kind == "none"
 
 
+def test_travel_guidance_video_accepts_url_alias():
+    config = TravelGuidanceConfig.from_payload(
+        {"travel_guidance": {"kind": "vace", "mode": "raw", "videos": [{"url": "https://example.test/guide.mp4"}]}},
+        VACE_MODEL,
+    )
+
+    assert config.videos[0].path == "https://example.test/guide.mp4"
+
+
 def test_parse_ltx_control_cameraman():
     config = TravelGuidanceConfig.from_payload(
         {"travel_guidance": {"kind": "ltx_control", "mode": "cameraman", "videos": [VIDEO_ENTRY]}},

@@ -48,7 +48,7 @@ class StructureVideoEntry:
     def from_dict(cls, d: Dict[str, Any]) -> 'StructureVideoEntry':
         """Parse from dict format (e.g., from structure_videos array)."""
         return cls(
-            path=d.get("path", ""),
+            path=d.get("path") or d.get("url") or d.get("video_path") or d.get("video_url") or "",
             start_frame=d.get("start_frame", 0),
             end_frame=d.get("end_frame"),
             treatment=normalize_structure_treatment(d.get("treatment", "adjust")),
