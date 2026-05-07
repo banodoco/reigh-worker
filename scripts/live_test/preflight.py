@@ -131,14 +131,13 @@ def ensure_live_test_route_selectors(
     )
     existing_keys = {str(row.get("route_key")) for row in _coerce_rows(existing) if row.get("route_key")}
     missing_keys = [route_key for route_key in unique_route_keys if route_key not in existing_keys]
-    if not missing_keys:
-        return 0
+    created = 0
 
     production = (
         db.supabase.table("route_backend_selectors")
         .select("route_key, selected_backend, selector_version, enabled, expires_at, min_worker_version, reason, metadata")
         .eq("selector_namespace", "production")
-        .in_("route_key", missing_keys)
+        .in_("route_key", missing_keys or ["__none__"])
         .execute()
     )
     production_by_key = {str(row.get("route_key")): row for row in _coerce_rows(production) if row.get("route_key")}
@@ -151,7 +150,6 @@ def ensure_live_test_route_selectors(
             + ", ".join(unhandled_missing)
         )
 
-    created = 0
     for route_key in missing_keys:
         source = production_by_key.get(route_key)
         fallback = fallback_selectors.get(route_key, {})
@@ -187,6 +185,46 @@ def ensure_live_test_route_selectors(
         }
         db.supabase.table("route_backend_selectors").insert(payload).execute()
         created += 1
+
+    fallback_capability_keys = [
+        route_key
+        for route_key in unique_route_keys
+        if route_key in fallback_selectors
+    ]
+    if fallback_capability_keys:
+        existing_capabilities = (
+            db.supabase.table("route_backend_capabilities")
+            .select("route_key")
+            .eq("backend", backend)
+            .in_("route_key", fallback_capability_keys)
+            .execute()
+        )
+        existing_capability_keys = {
+            str(row.get("route_key"))
+            for row in _coerce_rows(existing_capabilities)
+            if row.get("route_key")
+        }
+        for route_key in fallback_capability_keys:
+            if route_key in existing_capability_keys:
+                continue
+            fallback = fallback_selectors.get(route_key, {})
+            db.supabase.table("route_backend_capabilities").insert(
+                {
+                    "backend": backend,
+                    "route_key": route_key,
+                    "supports_route": True,
+                    "supports_missing_selector": False,
+                    "enabled": True,
+                    "capability_version": 1,
+                    "metadata": {
+                        "live_test": True,
+                        "source": "matrix",
+                        "support_state": fallback.get("support_state"),
+                        "selected_template_id": fallback.get("selected_template_id"),
+                    },
+                }
+            ).execute()
+            created += 1
     return created
 
 

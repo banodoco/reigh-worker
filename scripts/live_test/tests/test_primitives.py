@@ -915,7 +915,7 @@ def test_ensure_live_test_route_selectors_synthesizes_matrix_fallback_rows():
         },
     )
 
-    assert created == 1
+    assert created == 2
     inserted = db.supabase.inserted["route_backend_selectors"][0]
     assert inserted["selector_namespace"] == "livet-20260507215500"
     assert inserted["route_key"] == "branch_only_route"
@@ -924,6 +924,12 @@ def test_ensure_live_test_route_selectors_synthesizes_matrix_fallback_rows():
     assert inserted["metadata"]["source_selector_namespace"] == "matrix"
     assert inserted["metadata"]["support_state"] == "vibecomfy_supported"
     assert inserted["metadata"]["selected_template_id"] == "image/qwen_image_2512"
+    capability = db.supabase.inserted["route_backend_capabilities"][0]
+    assert capability["backend"] == "vibecomfy"
+    assert capability["route_key"] == "branch_only_route"
+    assert capability["supports_route"] is True
+    assert capability["metadata"]["source"] == "matrix"
+    assert capability["metadata"]["selected_template_id"] == "image/qwen_image_2512"
 
 
 def test_travel_live_matrix_disables_prompt_enhancement_download():
