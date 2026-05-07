@@ -1,5 +1,7 @@
 """Resolution parsing and snapping utilities."""
 
+import os
+
 from source.runtime.wgp_bridge import get_model_def
 
 __all__ = [
@@ -32,6 +34,8 @@ def get_model_grid_size(model_name: str | None) -> int:
     """
     if not model_name:
         return 16
+    if os.getenv("REIGH_BACKEND", "").strip().lower() == "vibecomfy":
+        return _heuristic_model_grid_size(model_name)
     try:
         model_def = get_model_def(model_name)
         if model_def is None:
@@ -40,9 +44,13 @@ def get_model_grid_size(model_name: str | None) -> int:
         family = model_def.get("family")
         if family == "ltx2":
             return 64
-    except (ImportError, TypeError, ValueError, KeyError, AttributeError):
+    except (ImportError, TypeError, ValueError, KeyError, AttributeError, SystemExit):
         pass
     # Fallback: check model name heuristically
+    return _heuristic_model_grid_size(model_name)
+
+
+def _heuristic_model_grid_size(model_name: str | None) -> int:
     if model_name and "ltx2" in model_name.lower():
         return 64
     return 16

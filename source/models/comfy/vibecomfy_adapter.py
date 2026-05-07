@@ -201,6 +201,7 @@ def _build_vibecomfy_command(resolved: ResolvedTask, run_workspace: Path) -> lis
         workflow_ref,
         "--runtime",
         "embedded",
+        "--ensure-packs",
     ]
     if ready:
         command.append("--ready")
