@@ -399,6 +399,24 @@ def test_heartbeat_waiter_requires_dwell_and_ready_for_tasks(monkeypatch: pytest
     assert worker["id"] == "worker-1"
 
 
+def test_heartbeat_waiter_fails_fast_on_terminal_worker_status():
+    db = FakeDB(
+        tables={
+            "workers": [
+                {
+                    "id": "worker-1",
+                    "status": "terminated",
+                    "last_heartbeat": None,
+                    "metadata": {"termination_reason": "early_termination_over_capacity (2 > 1)"},
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(WorkerReadyTimeoutError, match="early_termination_over_capacity"):
+        wait_until_ready(db, "worker-1", timeout_sec=30, interval_sec=0)
+
+
 def test_safety_gate_rejects_fresh_in_progress_for_user():
     db = FakeDB(
         tables={

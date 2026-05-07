@@ -55,12 +55,20 @@ def wait_until_ready(
 
     while time.monotonic() < deadline:
         rows = _coerce_rows(
-            db.supabase.table("workers").select("id, last_heartbeat, metadata").eq("id", worker_id).execute()
+            db.supabase.table("workers").select("id, status, last_heartbeat, metadata").eq("id", worker_id).execute()
         )
         worker = rows[0] if rows else None
+        status = str(worker.get("status") or "") if worker else ""
         last_heartbeat = _parse_timestamp(worker.get("last_heartbeat") if worker else None)
         metadata = worker.get("metadata") if worker else None
         ready_for_tasks = bool(metadata.get("ready_for_tasks")) if isinstance(metadata, dict) else False
+
+        if status in {"error", "terminated"}:
+            reason = None
+            if isinstance(metadata, dict):
+                reason = metadata.get("termination_reason") or metadata.get("error_reason") or metadata.get("error_code")
+            suffix = f": {reason}" if reason else ""
+            raise WorkerReadyTimeoutError(f"Worker {worker_id} entered terminal status {status}{suffix}")
 
         # Heartbeat alone starts before WGP import and task-queue startup finish. The worker
         # publishes ready_for_tasks only after backend preflight and queue startup pass.
