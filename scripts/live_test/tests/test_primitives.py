@@ -1109,6 +1109,9 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     assert "python3.11 -m pip install -e /workspace/vibecomfy" in command
     assert "python3.11 -m pip install" in command
     assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
+    assert "cd /workspace/vibecomfy" in command
+    assert "test -f custom_nodes.lock" in command
+    assert "python3.11 -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock" in command
     assert "test -f /workspace/vibecomfy/template_index.json" in command
     assert "test -f /workspace/vibecomfy/workflow_corpus/manifests/coverage.json" in command
 

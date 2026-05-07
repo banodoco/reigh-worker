@@ -146,6 +146,9 @@ def clone_and_install_vibecomfy(
             f"{_quote(python_path)} -m pip install "
             "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
             "'comfy-script[default]'\n"
+            f"cd {_quote(workdir)}\n"
+            "test -f custom_nodes.lock\n"
+            f"{_quote(python_path)} -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock\n"
             f"test -f {_quote(workdir)}/template_index.json\n"
             f"test -f {_quote(workdir)}/workflow_corpus/manifests/coverage.json\n"
         )
