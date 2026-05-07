@@ -202,6 +202,36 @@ def test_output_discovery_from_parsed_stdout(monkeypatch, tmp_path):
     assert completion_card["exit_code"] == 0
 
 
+def test_output_discovery_prefers_existing_absolute_output_line(monkeypatch, tmp_path):
+    def _run(command, cwd, env, text, capture_output, check):
+        run_dir = Path(env["VIBECOMFY_WORKER_RUN_DIR"])
+        output = run_dir / "output" / "final.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"fake")
+        return _completed(stdout=f"output: final.mp4\noutput: {output}\n")
+
+    def _validate_video_artifact(path, contract):
+        assert Path(path) == tmp_path / "vibecomfy_runs" / "adapter-task" / "output" / "final.mp4"
+        return SimpleNamespace(
+            content_type="video/mp4",
+            frame_count=None,
+            fps=None,
+            duration_seconds=None,
+            has_audio=False,
+            audio_duration_seconds=None,
+            width=None,
+            height=None,
+        )
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", _validate_video_artifact)
+
+    ok, result = handle_vibecomfy_resolved_task(_resolved(), tmp_path)
+
+    assert ok is True
+    assert result and result.endswith("output/final.mp4")
+
+
 def test_output_discovery_from_metadata(monkeypatch, tmp_path):
     def _run(command, cwd, env, text, capture_output, check):
         metadata = Path(cwd) / "out" / "runs" / "run-1" / "metadata.json"

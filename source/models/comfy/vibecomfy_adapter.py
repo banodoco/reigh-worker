@@ -986,15 +986,27 @@ def _video_metadata_for_log(metadata: Any) -> dict[str, Any] | None:
 
 
 def _discover_output_path(*, stdout: str, run_workspace: Path) -> str | None:
+    output_lines: list[str] = []
     for line in stdout.splitlines():
         if line.startswith("output: "):
-            return _resolve_output_path(line.removeprefix("output: ").strip(), run_workspace)
+            output_lines.append(line.removeprefix("output: ").strip())
+    for raw_output in output_lines:
+        resolved = _resolve_output_path(raw_output, run_workspace)
+        if Path(resolved).is_file():
+            return resolved
+    for raw_output in reversed(output_lines):
+        resolved = _resolve_output_path(raw_output, run_workspace)
+        if Path(raw_output).is_absolute():
+            return resolved
 
     metadata_path = _metadata_path_from_stdout(stdout, run_workspace)
     if metadata_path and metadata_path.exists():
         output = _output_from_metadata(metadata_path, run_workspace)
         if output:
             return output
+
+    if output_lines:
+        return _resolve_output_path(output_lines[-1], run_workspace)
 
     for output_path in _candidate_output_files(run_workspace):
         return str(output_path)
