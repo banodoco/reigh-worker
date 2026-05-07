@@ -84,7 +84,7 @@ def _initialize_db_runtime(cli_args, *, access_token: str | None, debug_mode_ena
         supabase_service_key=os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY"),
         supabase_video_bucket=db_config.SUPABASE_VIDEO_BUCKET,
         supabase_client=client,
-        supabase_access_token=access_token,
+        supabase_access_token=client_key,
         supabase_edge_complete_task_url=db_config.SUPABASE_EDGE_COMPLETE_TASK_URL,
         supabase_edge_create_task_url=db_config.SUPABASE_EDGE_CREATE_TASK_URL,
         supabase_edge_claim_task_url=db_config.SUPABASE_EDGE_CLAIM_TASK_URL,

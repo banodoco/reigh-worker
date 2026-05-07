@@ -237,6 +237,34 @@ def test_resolve_worker_db_client_key_precedence(monkeypatch: pytest.MonkeyPatch
     assert server._resolve_worker_db_client_key(cli_args, access_token=None) == "anon-key"
 
 
+def test_initialize_db_runtime_uses_resolved_service_key_for_edge_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli_args = Namespace(supabase_url="https://supabase.example", supabase_anon_key=None)
+    captured = {}
+
+    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "service")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
+    monkeypatch.setattr(server, "create_client", lambda url, key: ("client", url, key))
+    monkeypatch.setattr(server.db_config, "validate_config", lambda runtime_config: [])
+
+    original_initialize = server.db_config.initialize_db_runtime
+
+    def fake_initialize_db_runtime(**kwargs):
+        captured.update(kwargs)
+        return original_initialize(**kwargs)
+
+    monkeypatch.setattr(server.db_config, "initialize_db_runtime", fake_initialize_db_runtime)
+
+    runtime, client_key = server._initialize_db_runtime(
+        cli_args,
+        access_token="pat-token",
+        debug_mode_enabled=False,
+    )
+
+    assert client_key == "service-role"
+    assert captured["supabase_access_token"] == "service-role"
+    assert runtime.supabase_access_token == "service-role"
+
+
 def test_poll_next_task_outcome_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(task_claim, "check_task_counts_supabase", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(task_claim._cfg, "SUPABASE_URL", "https://example.supabase.co")
