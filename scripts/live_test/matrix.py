@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -622,42 +621,55 @@ def build_matrix(
 MATRIX = build_matrix()
 
 
-def run_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[TaskResult]:
-    results: list[TaskResult] = []
+def queue_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[tuple[MatrixCase, str]]:
+    queued: list[tuple[MatrixCase, str]] = []
     for case in cases:
-        started = time.monotonic()
-        try:
-            suffix = uuid.uuid4().hex[:12]
-            fixture_payload = resolve_case_fixture(case)
-            overrides = build_case_params_overrides(case, unique_suffix=suffix)
-            task_id = insert_spoof_task(
-                db,
-                project_id,
-                case.task_type,
-                overrides,
-                fixture_payload=fixture_payload,
-            )
-            result = poll_until_complete(
-                db,
-                task_id,
-                project_id,
-                timeout_sec=case.timeout_sec,
-                case_name=case.name,
-                task_type=case.task_type,
-            )
-        except Exception as exc:
-            result = TaskResult(
-                task_id=f"insert-failed:{case.name}",
-                case_name=case.name,
-                task_type=case.task_type,
+        suffix = uuid.uuid4().hex[:12]
+        fixture_payload = resolve_case_fixture(case)
+        overrides = build_case_params_overrides(case, unique_suffix=suffix)
+        task_id = insert_spoof_task(
+            db,
+            project_id,
+            case.task_type,
+            overrides,
+            fixture_payload=fixture_payload,
+        )
+        queued.append((case, task_id))
+    return queued
+
+
+def poll_queued_matrix(db, project_id: str, queued: list[tuple[MatrixCase, str]]) -> list[TaskResult]:
+    results: list[TaskResult] = []
+    for case, task_id in queued:
+        result = poll_until_complete(
+            db,
+            task_id,
+            project_id,
+            timeout_sec=case.timeout_sec,
+            case_name=case.name,
+            task_type=case.task_type,
+        )
+        results.append(result)
+    return results
+
+
+def run_matrix(db, project_id: str, cases: list[MatrixCase]) -> list[TaskResult]:
+    try:
+        queued = queue_matrix(db, project_id, cases)
+    except Exception as exc:
+        return [
+            TaskResult(
+                task_id="insert-failed:matrix",
+                case_name="matrix",
+                task_type="",
                 final_status="Insert Failed",
                 output_location=None,
                 generation_ids=[],
-                elapsed_sec=round(time.monotonic() - started, 3),
+                elapsed_sec=0,
                 error_summary=str(exc),
             )
-        results.append(result)
-    return results
+        ]
+    return poll_queued_matrix(db, project_id, queued)
 
 
 __all__ = [
@@ -670,6 +682,8 @@ __all__ = [
     "build_case_params_overrides",
     "build_matrix",
     "filter_matrix",
+    "poll_queued_matrix",
+    "queue_matrix",
     "render_case_payload",
     "resolve_case_fixture",
     "run_matrix",

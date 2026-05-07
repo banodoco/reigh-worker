@@ -13,7 +13,7 @@ from scripts.live_test import config
 from scripts.live_test.heartbeat_waiter import wait_until_ready
 from scripts.live_test.launch_command import build_run_worker_command
 from scripts.live_test.logger import get_logger
-from scripts.live_test.matrix import build_matrix, render_case_payload, run_matrix
+from scripts.live_test.matrix import build_matrix, poll_queued_matrix, queue_matrix, render_case_payload
 from scripts.live_test.preflight import assert_user_queue_clean, get_or_create_live_test_project
 from scripts.live_test.report import write_report
 from scripts.live_test.ssh_bootstrap import (
@@ -311,11 +311,13 @@ def run(args) -> int:
         )
         with _phase("launch_worker", pod_id=pod_id):
             launch_worker_detached(ssh, export_env(worker_env) + " && " + command)
+        with _phase("queue_matrix", pod_id=pod_id, cases=len(cases)):
+            queued = queue_matrix(db, project_id, cases)
         with _phase("wait_worker_ready", pod_id=pod_id):
             wait_until_ready(db, worker_id=pod_id, timeout_sec=900, progress_every_sec=60)
 
         with _phase("run_matrix", pod_id=pod_id, cases=len(cases)):
-            results = run_matrix(db, project_id, cases)
+            results = poll_queued_matrix(db, project_id, queued)
         with _phase("write_report", pod_id=pod_id, out_dir=str(out_dir)):
             write_report(results, FRESH_VARIANT, pod_id, out_dir)
         return 0

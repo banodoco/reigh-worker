@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 from scripts.live_test.completion_poller import TaskResult, poll_until_complete
 from scripts.live_test.heartbeat_waiter import WorkerReadyTimeoutError, wait_until_ready
 from scripts.live_test.launch_command import build_direct_worker_command, build_run_worker_command
-from scripts.live_test.matrix import MATRIX, MatrixCase, build_matrix, render_case_payload, run_matrix
+from scripts.live_test.matrix import MATRIX, MatrixCase, build_matrix, queue_matrix, render_case_payload, run_matrix
 from scripts.live_test import main as live_test_main
 from scripts.live_test.preflight import (
     LIVE_TEST_PROJECT_NAME,
@@ -768,6 +768,24 @@ def test_run_matrix_continues_after_individual_case_failures(monkeypatch: pytest
     assert polled == inserted
 
 
+def test_queue_matrix_inserts_all_cases_before_polling(monkeypatch: pytest.MonkeyPatch):
+    cases = [
+        MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=5),
+        MatrixCase(name="case-b", task_type="qwen_image_style", fixture_key="qwen_image_style_db_task", timeout_sec=5),
+    ]
+    inserted = []
+
+    def fake_insert(_db, _project_id, task_type, _params_overrides, **_kwargs):
+        task_id = f"{task_type}-task-{len(inserted) + 1}"
+        inserted.append(task_id)
+        return task_id
+
+    monkeypatch.setattr("scripts.live_test.matrix.insert_spoof_task", fake_insert)
+    queued = queue_matrix(object(), "project-1", cases)
+    assert [case.name for case, _task_id in queued] == ["case-a", "case-b"]
+    assert [task_id for _case, task_id in queued] == ["qwen_image-task-1", "qwen_image_style-task-2"]
+
+
 def test_write_report_outputs_json_and_markdown(tmp_path: Path):
     results = [
         TaskResult(
@@ -909,7 +927,8 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
     monkeypatch.setattr("scripts.live_test.variant_fresh.clone_and_install_vibecomfy", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_fresh.launch_worker_detached", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_fresh.wait_until_ready", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("scripts.live_test.variant_fresh.run_matrix", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("scripts.live_test.variant_fresh.queue_matrix", lambda _db, _project_id, _cases: [(cases[0], "task-1")])
+    monkeypatch.setattr("scripts.live_test.variant_fresh.poll_queued_matrix", lambda _db, _project_id, _queued: [])
     monkeypatch.setattr("scripts.live_test.variant_fresh.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_fresh.fetch_worker_logs", lambda *_args, **_kwargs: "logs")
     monkeypatch.setattr("scripts.live_test.variant_fresh.guarded_terminate", lambda *_args, **_kwargs: False)
