@@ -31,6 +31,7 @@ from scripts.live_test.safety_gate import assert_safe_to_take_over
 from scripts.live_test.ssh_bootstrap import (
     WorkerProcessInfo,
     capture_current_worker_cmdline,
+    clone_and_install_vibecomfy,
     export_env,
     fetch_worker_logs,
     kill_supervisor_and_worker,
@@ -43,6 +44,9 @@ from scripts.live_test.token_resolver import resolve_token_to_user_id
 
 UPDATE_VARIANT = "update"
 UPDATE_WORKDIR = "/workspace/Reigh-Worker"
+VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
+VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
+VIBECOMFY_PYTHON = "python3.11"
 REMOTE_UV_BOOTSTRAP = (
     'export PATH="$HOME/.local/bin:$PATH" && '
     "if ! command -v uv >/dev/null 2>&1; then "
@@ -84,20 +88,29 @@ def _build_matrix_cases(args) -> list:
 
 
 def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args=None) -> dict[str, str]:
+    backend = getattr(args, "backend", "wgp")
     env = {
         "REIGH_ACCESS_TOKEN": token,
-        "REIGH_BACKEND": getattr(args, "backend", "wgp"),
+        "REIGH_BACKEND": backend,
         "REIGH_SELECTOR_NAMESPACE": getattr(args, "selector_namespace", "production"),
         "REIGH_WORKER_CONTRACT_VERSION": str(getattr(args, "worker_contract_version", 1)),
         "REIGH_WORKER_PROFILE": getattr(args, "worker_profile", "default"),
         "SUPABASE_SERVICE_ROLE_KEY": service_role_key,
         "SUPABASE_URL": supabase_url,
-        "WORKER_DB_CLIENT_AUTH_MODE": "worker",
+        "WORKER_DB_CLIENT_AUTH_MODE": "service" if backend == "vibecomfy" else "worker",
         "REIGH_CLAIM_TELEMETRY": "1",
     }
     selector_version = getattr(args, "selector_version", None)
     if selector_version:
         env["REIGH_SELECTOR_VERSION"] = str(selector_version)
+    if backend == "vibecomfy":
+        env.update(
+            {
+                "VIBECOMFY_CWD": VIBECOMFY_WORKDIR,
+                "VIBECOMFY_PATH": VIBECOMFY_WORKDIR,
+                "VIBECOMFY_PYTHON": VIBECOMFY_PYTHON,
+            }
+        )
     return env
 
 
@@ -401,6 +414,14 @@ def run(args) -> int:
             worker_id = _resolve_existing_worker_id(db, pod_id, prev_proc)
 
         _remote_checkout_and_sync(ssh, branch)
+        if getattr(args, "backend", "wgp") == "vibecomfy":
+            clone_and_install_vibecomfy(
+                ssh,
+                repo_url=VIBECOMFY_REPO_URL,
+                branch=getattr(args, "vibecomfy_ref", "megaplan/production-parity-templates"),
+                workdir=VIBECOMFY_WORKDIR,
+                python_path=VIBECOMFY_PYTHON,
+            )
         kill_supervisor_and_worker(ssh)
         launch_worker_detached(
             ssh,

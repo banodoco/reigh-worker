@@ -1539,6 +1539,7 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
     )
     monkeypatch.setattr("scripts.live_test.variant_update._resolve_existing_worker_id", lambda _db, _pod_id, _prev_proc: "worker-prev")
     monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch: None)
+    monkeypatch.setattr("scripts.live_test.variant_update.clone_and_install_vibecomfy", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update.launch_worker_detached", lambda _ssh, _command: None)
     monkeypatch.setattr(
@@ -1565,10 +1566,104 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
         anchor_image_a="https://example.com/a.png",
         anchor_image_b="https://example.com/b.png",
         ref="main",
+        backend="wgp",
     )
     assert run_variant_update(args) == 0
     assert safety_calls == [("pod-existing", "user-1", False)]
     assert wait_calls == [("worker-prev", 900)]
+
+
+def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    refresh_calls = []
+    launched = []
+
+    cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update._prepare_context",
+        lambda _args: {
+            "db": object(),
+            "token": "token-1",
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "cases": cases,
+        },
+    )
+    monkeypatch.setattr("scripts.live_test.variant_update._validate_cases", lambda _cases, _project_id: None)
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update.config.require_env",
+        lambda name: {
+            "RUNPOD_API_KEY": "api-key",
+            "SUPABASE_URL": "https://supabase.example",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        }[name],
+    )
+    monkeypatch.setattr("scripts.live_test.variant_update._runs_root", lambda: tmp_path)
+    monkeypatch.setattr("scripts.live_test.variant_update.assert_safe_to_take_over", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_update.snapshot_local_state", lambda _path: "snapshot")
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update.push_working_copy_to_temp_branch",
+        lambda _path, _snapshot: ("live-test/branch", "sha-1"),
+    )
+
+    class DummySSH:
+        def execute_command(self, _command, timeout=600):
+            return 0, "", ""
+
+        def disconnect(self):
+            return None
+
+    monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh: "main")
+    monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh: "sha-prev")
+    monkeypatch.setattr("scripts.live_test.variant_update.capture_current_worker_cmdline", lambda _ssh: None)
+    monkeypatch.setattr("scripts.live_test.variant_update._resolve_existing_worker_id", lambda _db, _pod_id, _prev_proc: "worker-prev")
+    monkeypatch.setattr("scripts.live_test.variant_update._remote_checkout_and_sync", lambda _ssh, _branch: None)
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update.clone_and_install_vibecomfy",
+        lambda _ssh, **kwargs: refresh_calls.append(kwargs),
+    )
+    monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
+    monkeypatch.setattr("scripts.live_test.variant_update.launch_worker_detached", lambda _ssh, command: launched.append(command))
+    monkeypatch.setattr("scripts.live_test.variant_update.wait_until_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases: [])
+    monkeypatch.setattr("scripts.live_test.variant_update.write_report", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr("scripts.live_test.variant_update._restore_remote_state", lambda _ssh, **_kwargs: None)
+    monkeypatch.setattr("scripts.live_test.variant_update.cleanup_temp_branch", lambda branch, preserve, submodule_path='reigh-worker': branch)
+    monkeypatch.setattr("scripts.live_test.variant_update.restore_local_state", lambda _path, _snapshot: None)
+    monkeypatch.setattr("scripts.live_test.variant_update.fetch_worker_logs", lambda _ssh, _workdir: "logs")
+    monkeypatch.setattr("scripts.live_test.variant_update.guarded_terminate", lambda *_args, **_kwargs: False)
+
+    args = SimpleNamespace(
+        dry_run=False,
+        spawn_takeover=False,
+        pod_id="pod-existing",
+        no_terminate=True,
+        wgp_profile=3,
+        timeout_image=900,
+        timeout_travel_segment=1500,
+        timeout_travel_orchestrator=2400,
+        anchor_image_a="https://example.com/a.png",
+        anchor_image_b="https://example.com/b.png",
+        ref="main",
+        backend="vibecomfy",
+        vibecomfy_ref="vibe-branch",
+        selector_namespace="production",
+        selector_version=None,
+        worker_contract_version=1,
+        worker_profile="default",
+    )
+    assert run_variant_update(args) == 0
+    assert refresh_calls == [
+        {
+            "repo_url": "https://github.com/peteromallet/VibeComfy.git",
+            "branch": "vibe-branch",
+            "workdir": "/workspace/vibecomfy",
+            "python_path": "python3.11",
+        }
+    ]
+    assert launched
+    assert "WORKER_DB_CLIENT_AUTH_MODE=service" in launched[0]
+    assert "VIBECOMFY_CWD=/workspace/vibecomfy" in launched[0]
 
 
 def test_main_defaults_terminate_for_fresh_and_no_terminate_for_update(monkeypatch: pytest.MonkeyPatch):
