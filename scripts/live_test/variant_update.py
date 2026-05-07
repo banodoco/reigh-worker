@@ -267,7 +267,11 @@ def _create_worker_row_if_missing(db, worker_id: str, pod_id: str) -> None:
     except TypeError:
         created = asyncio.run(create(worker_id, config.RUNPOD_GPU_TYPE))
     if not created:
-        raise RuntimeError(f"Failed to create update live-test worker row {worker_id} for pod {pod_id}")
+        log.warning(
+            "worker row %s was not created for pod %s; continuing because status reactivation may still succeed",
+            worker_id,
+            pod_id,
+        )
 
 
 def _build_supervisor_restore_command(workdir: str, cli_args: list[str]) -> str:
