@@ -1381,6 +1381,12 @@ def _handle_travel_segment_via_queue_impl(task_params_dict: dict, main_output_di
         route_params["_source_task_type"] = (
             "individual_travel_segment" if is_standalone else "travel_segment"
         )
+        if start_ref_path := getattr(image_refs, "start_ref_path", None):
+            route_params.setdefault("start_image", str(Path(start_ref_path).resolve()))
+            route_params.setdefault("start_image_url", str(Path(start_ref_path).resolve()))
+        if end_ref_path := getattr(image_refs, "end_ref_path", None):
+            route_params.setdefault("end_image", str(Path(end_ref_path).resolve()))
+            route_params.setdefault("end_image_url", str(Path(end_ref_path).resolve()))
         if generation_params.get("video_source") or image_refs.prefix_video_for_source:
             route_params["continuity_case"] = "video_source"
         override_profile = _get_param(

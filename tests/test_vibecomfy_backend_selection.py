@@ -648,6 +648,92 @@ def test_travel_child_queue_payload_prefers_travel_guidance_over_structure_field
     assert parameters["continuity_case"] == "video_source"
 
 
+def test_vibecomfy_wan_vace_travel_payload_preserves_anchor_images(monkeypatch, tmp_path):
+    task_registry = _import_task_registry(monkeypatch)
+    monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
+    start_path = tmp_path / "start.png"
+    end_path = tmp_path / "end.png"
+    start_path.write_bytes(b"start")
+    end_path.write_bytes(b"end")
+    captured = []
+    ctx = SimpleNamespace(
+        individual_params={
+            "travel_guidance": {"kind": "vace", "mode": "raw"},
+            "continuity_case": "first_last",
+            "override_profile": "default",
+        },
+        segment_params={},
+        orchestrator_details={},
+        orchestrator_task_id_ref="orchestrator-1",
+        orchestrator_run_id="run-1",
+        segment_idx=0,
+    )
+
+    def fake_execute(*, resolved, context, build_wgp_generation_task):
+        captured.append(resolved)
+        return True, str(tmp_path / "out.mp4")
+
+    monkeypatch.setattr(task_registry, "log_ram_usage", _noop)
+    monkeypatch.setattr(task_registry, "_resolve_segment_context", lambda *_args: ctx)
+    monkeypatch.setattr(
+        task_registry,
+        "_resolve_generation_inputs",
+        lambda *_args: SimpleNamespace(
+            model_name="wan_2_2_vace_lightning_baseline_2_2_2",
+            prompt_for_wgp="guided bridge",
+            generation_policy=object(),
+            segment_processing_dir=tmp_path,
+        ),
+    )
+    monkeypatch.setattr(
+        task_registry,
+        "_resolve_image_references",
+        lambda *_args: SimpleNamespace(
+            start_ref_path=str(start_path),
+            end_ref_path=str(end_path),
+            active_svi_continuation=False,
+            prefix_video_for_source=None,
+        ),
+    )
+    monkeypatch.setattr(task_registry, "_process_structure_guidance", lambda *_args: object())
+    monkeypatch.setattr(
+        task_registry,
+        "_build_generation_params",
+        lambda *_args: {
+            "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
+            "prompt": "guided bridge",
+            "travel_guidance": {"kind": "vace", "mode": "raw"},
+            "continuity_case": "first_last",
+        },
+    )
+    monkeypatch.setattr(task_registry, "_apply_video_source_continuation", _noop)
+    monkeypatch.setattr(task_registry, "_apply_uni3c_config", _noop)
+    monkeypatch.setattr(task_registry, "execute_resolved_direct_task", fake_execute)
+
+    ok, result = task_registry._handle_travel_segment_via_queue_impl(
+        task_params_dict={"prompt": "travel"},
+        main_output_dir_base=tmp_path,
+        task_id="travel-child-vace",
+        colour_match_videos=False,
+        mask_active_frames=False,
+        task_queue=_Queue(fail_on_submit=True),
+        is_standalone=True,
+    )
+
+    assert ok is True
+    assert result == str(tmp_path / "out.mp4")
+    assert captured
+    resolved = captured[0]
+    assert (
+        resolved.route_key
+        == "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default"
+    )
+    assert resolved.params["start_image"] == str(start_path)
+    assert resolved.params["start_image_url"] == str(start_path)
+    assert resolved.params["end_image"] == str(end_path)
+    assert resolved.params["end_image_url"] == str(end_path)
+
+
 def test_travel_child_queue_payload_preserves_legacy_structure_contract_without_travel_guidance(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.delenv("REIGH_BACKEND", raising=False)

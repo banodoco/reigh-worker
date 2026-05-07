@@ -1245,6 +1245,9 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     command, timeout = calls[0]
     assert timeout == 3600
     assert "git clone --branch branch-a --single-branch https://github.com/peteromallet/VibeComfy.git /workspace/vibecomfy" in command
+    assert "git -C /workspace/vibecomfy fetch origin branch-a" in command
+    assert "git -C /workspace/vibecomfy reset --hard FETCH_HEAD" in command
+    assert 'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"' in command
     assert "python3.11 -m pip install -e /workspace/vibecomfy" in command
     assert "python3.11 -m pip install" in command
     assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
