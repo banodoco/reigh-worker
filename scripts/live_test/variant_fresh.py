@@ -17,6 +17,7 @@ from scripts.live_test.matrix import build_matrix, poll_queued_matrix, queue_mat
 from scripts.live_test.preflight import (
     assert_user_queue_clean,
     close_stale_live_test_tasks,
+    ensure_live_test_route_selectors,
     ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
@@ -151,6 +152,18 @@ def _prepare_context(args) -> dict[str, Any]:
     assert_user_queue_clean(db, user_id)
     project_id = get_or_create_live_test_project(db, user_id)
     cases = _build_matrix_cases(args)
+    created_selectors = ensure_live_test_route_selectors(
+        db,
+        getattr(args, "selector_namespace", "production"),
+        [case.route_key for case in cases if case.route_key],
+        backend=getattr(args, "backend", "wgp"),
+    )
+    if created_selectors:
+        log.info(
+            "created isolated live-test route selectors",
+            selector_namespace=getattr(args, "selector_namespace", "production"),
+            count=created_selectors,
+        )
     return {
         "db": db,
         "token": token,

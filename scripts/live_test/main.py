@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 
 from scripts.live_test import config
 from scripts.live_test.variant_fresh import run as run_variant_fresh
@@ -105,9 +106,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _live_test_selector_namespace() -> str:
+    return datetime.now(timezone.utc).strftime("livet-%Y%m%d%H%M%S")
+
+
 def _finalize_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> argparse.Namespace:
     if args.wgp_rollback:
         args.backend = "wgp"
+    elif args.backend == "vibecomfy" and args.selector_namespace == "production":
+        args.selector_namespace = _live_test_selector_namespace()
 
     if args.variant == "fresh":
         if args.pod_id or args.spawn_takeover:

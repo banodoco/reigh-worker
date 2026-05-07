@@ -104,6 +104,63 @@ def ensure_user_cloud_generation_enabled(db, user_id: str) -> bool:
     return True
 
 
+def ensure_live_test_route_selectors(db, selector_namespace: str, route_keys: list[str], *, backend: str) -> int:
+    """Clone production route selectors into an isolated live-test namespace."""
+    unique_route_keys = sorted({route_key for route_key in route_keys if route_key})
+    if backend != "vibecomfy" or selector_namespace == "production" or not unique_route_keys:
+        return 0
+
+    existing = (
+        db.supabase.table("route_backend_selectors")
+        .select("route_key")
+        .eq("selector_namespace", selector_namespace)
+        .in_("route_key", unique_route_keys)
+        .execute()
+    )
+    existing_keys = {str(row.get("route_key")) for row in _coerce_rows(existing) if row.get("route_key")}
+    missing_keys = [route_key for route_key in unique_route_keys if route_key not in existing_keys]
+    if not missing_keys:
+        return 0
+
+    production = (
+        db.supabase.table("route_backend_selectors")
+        .select("route_key, selected_backend, selector_version, enabled, expires_at, min_worker_version, reason, metadata")
+        .eq("selector_namespace", "production")
+        .in_("route_key", missing_keys)
+        .execute()
+    )
+    production_by_key = {str(row.get("route_key")): row for row in _coerce_rows(production) if row.get("route_key")}
+    still_missing = [route_key for route_key in missing_keys if route_key not in production_by_key]
+    if still_missing:
+        raise RuntimeError(
+            "Cannot isolate live-test selector namespace; production route selectors are missing for: "
+            + ", ".join(still_missing)
+        )
+
+    created = 0
+    for route_key in missing_keys:
+        source = production_by_key[route_key]
+        metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+        payload = {
+            "selector_namespace": selector_namespace,
+            "route_key": route_key,
+            "selected_backend": source.get("selected_backend") or backend,
+            "selector_version": source.get("selector_version") or 1,
+            "enabled": source.get("enabled") is not False,
+            "expires_at": source.get("expires_at"),
+            "min_worker_version": source.get("min_worker_version"),
+            "reason": f"live-test isolation cloned from production for {route_key}",
+            "metadata": {
+                **metadata,
+                "live_test": True,
+                "source_selector_namespace": "production",
+            },
+        }
+        db.supabase.table("route_backend_selectors").insert(payload).execute()
+        created += 1
+    return created
+
+
 def get_or_create_live_test_project(db, user_id: str) -> str:
     """Return the dedicated live-test project ID for the target user."""
     existing = (

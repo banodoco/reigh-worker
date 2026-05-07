@@ -26,6 +26,7 @@ from scripts.live_test.preflight import (
     UnexpectedUserWorkError,
     assert_user_queue_clean,
     close_stale_live_test_tasks,
+    ensure_live_test_route_selectors,
     ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
@@ -822,6 +823,79 @@ def test_route_specific_matrix_stamps_selector_contract():
     assert contract["selected_template_id"] == "image/z_image"
     assert snapshot["live_test_run_id"] == "live-test-z_image_turbo-abc123"
     assert params["live_test"] is True
+
+
+def test_vibecomfy_live_test_defaults_to_isolated_selector_namespace(monkeypatch):
+    monkeypatch.setattr(live_test_main, "_live_test_selector_namespace", lambda: "livet-20260507215500")
+    parser = live_test_main.build_parser()
+    args = live_test_main._finalize_args(
+        parser.parse_args(["--variant", "update", "--pod-id", "pod-1", "--backend", "vibecomfy"]),
+        parser,
+    )
+
+    assert args.selector_namespace == "livet-20260507215500"
+    assert args.no_terminate is True
+
+
+def test_wgp_rollback_keeps_production_selector_namespace(monkeypatch):
+    monkeypatch.setattr(live_test_main, "_live_test_selector_namespace", lambda: "livet-20260507215500")
+    parser = live_test_main.build_parser()
+    args = live_test_main._finalize_args(
+        parser.parse_args(
+            ["--variant", "update", "--pod-id", "pod-1", "--backend", "vibecomfy", "--wgp-rollback"]
+        ),
+        parser,
+    )
+
+    assert args.backend == "wgp"
+    assert args.selector_namespace == "production"
+
+
+def test_ensure_live_test_route_selectors_clones_production_rows():
+    db = FakeDB(
+        tables={
+            "route_backend_selectors": [
+                {
+                    "selector_namespace": "production",
+                    "route_key": "z_image_turbo_i2i",
+                    "selected_backend": "vibecomfy",
+                    "selector_version": 3,
+                    "enabled": True,
+                    "expires_at": None,
+                    "min_worker_version": None,
+                    "reason": "production",
+                    "metadata": {"template": "image/z_image_img2img"},
+                }
+            ]
+        }
+    )
+
+    created = ensure_live_test_route_selectors(
+        db,
+        "livet-20260507215500",
+        ["z_image_turbo_i2i", "z_image_turbo_i2i"],
+        backend="vibecomfy",
+    )
+
+    assert created == 1
+    inserted = db.supabase.inserted["route_backend_selectors"][0]
+    assert inserted["selector_namespace"] == "livet-20260507215500"
+    assert inserted["route_key"] == "z_image_turbo_i2i"
+    assert inserted["selected_backend"] == "vibecomfy"
+    assert inserted["selector_version"] == 3
+    assert inserted["metadata"]["live_test"] is True
+
+
+def test_ensure_live_test_route_selectors_fails_when_production_selector_missing():
+    db = FakeDB(tables={"route_backend_selectors": []})
+
+    with pytest.raises(RuntimeError, match="production route selectors are missing"):
+        ensure_live_test_route_selectors(
+            db,
+            "livet-20260507215500",
+            ["missing_route"],
+            backend="vibecomfy",
+        )
 
 
 def test_travel_live_matrix_disables_prompt_enhancement_download():
