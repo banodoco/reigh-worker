@@ -897,6 +897,35 @@ def test_ensure_live_test_route_selectors_fails_when_production_selector_missing
         )
 
 
+def test_ensure_live_test_route_selectors_synthesizes_matrix_fallback_rows():
+    db = FakeDB(tables={"route_backend_selectors": []})
+
+    created = ensure_live_test_route_selectors(
+        db,
+        "livet-20260507215500",
+        ["branch_only_route"],
+        backend="vibecomfy",
+        fallback_selectors={
+            "branch_only_route": {
+                "selected_backend": "vibecomfy",
+                "selector_version": None,
+                "support_state": "vibecomfy_supported",
+                "selected_template_id": "image/qwen_image_2512",
+            }
+        },
+    )
+
+    assert created == 1
+    inserted = db.supabase.inserted["route_backend_selectors"][0]
+    assert inserted["selector_namespace"] == "livet-20260507215500"
+    assert inserted["route_key"] == "branch_only_route"
+    assert inserted["selected_backend"] == "vibecomfy"
+    assert inserted["selector_version"] == 1
+    assert inserted["metadata"]["source_selector_namespace"] == "matrix"
+    assert inserted["metadata"]["support_state"] == "vibecomfy_supported"
+    assert inserted["metadata"]["selected_template_id"] == "image/qwen_image_2512"
+
+
 def test_travel_live_matrix_disables_prompt_enhancement_download():
     cases = build_matrix(case_names=["travel_orchestrator_wan2_1seg"])
     payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")

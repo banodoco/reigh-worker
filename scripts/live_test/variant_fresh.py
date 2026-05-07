@@ -157,6 +157,16 @@ def _prepare_context(args) -> dict[str, Any]:
         getattr(args, "selector_namespace", "production"),
         [case.route_key for case in cases if case.route_key],
         backend=getattr(args, "backend", "wgp"),
+        fallback_selectors={
+            str(case.route_key): {
+                "selected_backend": case.route_runtime.selected_backend,
+                "selector_version": case.route_runtime.selector_version,
+                "support_state": case.support_state,
+                "selected_template_id": case.selected_template_id,
+            }
+            for case in cases
+            if case.route_key and case.support_state == "vibecomfy_supported"
+        },
     )
     if created_selectors:
         log.info(

@@ -104,8 +104,20 @@ def ensure_user_cloud_generation_enabled(db, user_id: str) -> bool:
     return True
 
 
-def ensure_live_test_route_selectors(db, selector_namespace: str, route_keys: list[str], *, backend: str) -> int:
-    """Clone production route selectors into an isolated live-test namespace."""
+def ensure_live_test_route_selectors(
+    db,
+    selector_namespace: str,
+    route_keys: list[str],
+    *,
+    backend: str,
+    fallback_selectors: dict[str, dict[str, Any]] | None = None,
+) -> int:
+    """Clone production route selectors into an isolated live-test namespace.
+
+    Branch-only route promotions may not have production selector rows yet. In
+    that case the live matrix can provide a fallback selector contract so the
+    isolated namespace remains testable without mutating production selectors.
+    """
     unique_route_keys = sorted({route_key for route_key in route_keys if route_key})
     if backend != "vibecomfy" or selector_namespace == "production" or not unique_route_keys:
         return 0
@@ -131,15 +143,32 @@ def ensure_live_test_route_selectors(db, selector_namespace: str, route_keys: li
     )
     production_by_key = {str(row.get("route_key")): row for row in _coerce_rows(production) if row.get("route_key")}
     still_missing = [route_key for route_key in missing_keys if route_key not in production_by_key]
-    if still_missing:
+    fallback_selectors = fallback_selectors or {}
+    unhandled_missing = [route_key for route_key in still_missing if route_key not in fallback_selectors]
+    if unhandled_missing:
         raise RuntimeError(
             "Cannot isolate live-test selector namespace; production route selectors are missing for: "
-            + ", ".join(still_missing)
+            + ", ".join(unhandled_missing)
         )
 
     created = 0
     for route_key in missing_keys:
-        source = production_by_key[route_key]
+        source = production_by_key.get(route_key)
+        fallback = fallback_selectors.get(route_key, {})
+        if source is None:
+            source = {
+                "route_key": route_key,
+                "selected_backend": fallback.get("selected_backend") or backend,
+                "selector_version": fallback.get("selector_version") or 1,
+                "enabled": True,
+                "expires_at": None,
+                "min_worker_version": None,
+                "reason": f"live-test isolation synthesized from matrix for {route_key}",
+                "metadata": {
+                    "support_state": fallback.get("support_state"),
+                    "selected_template_id": fallback.get("selected_template_id"),
+                },
+            }
         metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
         payload = {
             "selector_namespace": selector_namespace,
@@ -149,11 +178,11 @@ def ensure_live_test_route_selectors(db, selector_namespace: str, route_keys: li
             "enabled": source.get("enabled") is not False,
             "expires_at": source.get("expires_at"),
             "min_worker_version": source.get("min_worker_version"),
-            "reason": f"live-test isolation cloned from production for {route_key}",
+            "reason": str(source.get("reason") or f"live-test isolation cloned from production for {route_key}"),
             "metadata": {
                 **metadata,
                 "live_test": True,
-                "source_selector_namespace": "production",
+                "source_selector_namespace": "production" if route_key in production_by_key else "matrix",
             },
         }
         db.supabase.table("route_backend_selectors").insert(payload).execute()
