@@ -848,6 +848,7 @@ def test_fresh_vibecomfy_default_matrix_excludes_wgp_only_cases():
 
     assert cases
     assert {case.support_state for case in cases} == {"vibecomfy_supported"}
+    assert [case.name for case in cases[:3]] == ["z_image_turbo", "z_image_turbo_i2i", "qwen_image_2512"]
     assert "travel_orchestrator_wan2_1seg" not in {case.name for case in cases}
 
 

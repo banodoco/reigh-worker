@@ -35,6 +35,17 @@ FRESH_REPO_URL = "https://github.com/banodoco/Reigh-Worker.git"
 VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
 VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
 VIBECOMFY_PYTHON = "python3.11"
+VIBECOMFY_DEFAULT_CASE_ORDER = {
+    "z_image_turbo": 0,
+    "z_image_turbo_i2i": 1,
+    "qwen_image_2512": 2,
+    "qwen_image_edit": 3,
+    "image_inpaint": 4,
+    "annotated_image_edit": 5,
+    "qwen_image_style": 6,
+    "wan_2_2_t2i": 7,
+    "individual_travel_segment_wan22_vace": 8,
+}
 
 log = get_logger(__name__)
 
@@ -61,7 +72,11 @@ def _build_matrix_cases(args) -> list:
     )
     explicit_selection = bool(getattr(args, "case", []) or getattr(args, "task_type", []) or getattr(args, "route_key", []))
     if getattr(args, "backend", "wgp") == "vibecomfy" and not explicit_selection:
-        return [case for case in cases if case.support_state == "vibecomfy_supported"]
+        filtered = [case for case in cases if case.support_state == "vibecomfy_supported"]
+        return sorted(
+            filtered,
+            key=lambda case: VIBECOMFY_DEFAULT_CASE_ORDER.get(case.name, len(VIBECOMFY_DEFAULT_CASE_ORDER)),
+        )
     return cases
 
 
