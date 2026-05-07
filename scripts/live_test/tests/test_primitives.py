@@ -4,6 +4,7 @@ import copy
 import json
 import sys
 import types
+import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -279,15 +280,17 @@ def test_preflight_enables_cloud_generation_for_live_test_user():
 
 def test_task_spoofer_stamps_live_test_and_queued_status():
     db = FakeDB(tables={"tasks": []})
+    fixture_id = str(uuid.uuid4())
     task_id = insert_spoof_task(
         db,
         "project-1",
         "qwen_image",
         {"prompt": "overridden"},
-        fixture_payload={"notes": "strip me", "params": {"prompt": "base prompt"}},
+        fixture_payload={"id": fixture_id, "notes": "strip me", "params": {"prompt": "base prompt"}},
     )
     inserted = db.supabase.inserted["tasks"][0]
     assert task_id == inserted["id"]
+    assert inserted["id"] != fixture_id
     assert inserted["status"] == "Queued"
     assert inserted["params"]["prompt"] == "overridden"
     assert inserted["params"]["live_test"] is True

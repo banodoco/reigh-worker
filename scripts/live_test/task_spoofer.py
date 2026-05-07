@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 from typing import Any
+import uuid
 
 from scripts.live_test import config
 
@@ -76,6 +77,7 @@ def insert_spoof_task(
     payload = copy.deepcopy(source_payload)
     payload.pop("notes", None)
     payload.pop("description", None)
+    payload["id"] = str(uuid.uuid4())
     payload["project_id"] = project_id
     payload["task_type"] = task_type
     payload["status"] = "Queued"
