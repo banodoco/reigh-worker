@@ -705,8 +705,8 @@ def main():
     cleanup_legacy_lora_collisions()
     sweep_lora_cache_from_env(task_id="worker_startup")
 
-    # Initialize Task Queue
-    from headless_model_management import HeadlessTaskQueue
+    # Initialize Task Queue. Keep the WGP queue import inside the WGP branch:
+    # importing it pulls in WGP-heavy modules even when VibeComfy owns execution.
     worker_profile = os.environ.get(
         "REIGH_WORKER_PROFILE",
         os.environ.get("WGP_PROFILE", str(cli_args.wgp_profile or "1")),
@@ -727,6 +727,8 @@ def main():
     if _uses_vibecomfy_backend():
         queue_start_check = PreflightCheck("task_queue_start", True, "skipped for vibecomfy backend", required=False)
     else:
+        from headless_model_management import HeadlessTaskQueue
+
         _publish_preflight(
             WorkerPreflightResult(
                 status=PREFLIGHT_STATUS_RUNNING,
@@ -813,6 +815,9 @@ def main():
         idle_release.config_from_cli(cli_args, client_key=client_key)
     )
     idle_tracker.mark_onboarded()
+    headless_logger.essential(
+        f"Task claim loop started backend={worker_backend} worker_id={cli_args.worker or 'local'}"
+    )
 
     try:
         while True:
