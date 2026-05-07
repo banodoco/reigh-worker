@@ -295,7 +295,7 @@ def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace:
         return str(_write_z_image_scratchpad(resolved, run_workspace)), False
     if resolved.route_key == "z_image_turbo_i2i":
         return str(_write_z_image_img2img_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key == "qwen_image_2512":
+    if resolved.route_key in {"qwen_image", "qwen_image_2512"}:
         return str(_write_qwen_image_2512_scratchpad(resolved, run_workspace)), False
     if resolved.route_key in {
         "qwen_image_edit",

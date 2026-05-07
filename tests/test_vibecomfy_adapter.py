@@ -374,7 +374,8 @@ def test_non_default_resolution_is_patched_through_scratchpad(monkeypatch, tmp_p
     assert "workflow.set_steps(5)" in scratchpad_source
 
 
-def test_qwen_2512_uses_ready_template_scratchpad(monkeypatch, tmp_path):
+@pytest.mark.parametrize("route_key", ["qwen_image", "qwen_image_2512"])
+def test_qwen_text_to_image_uses_ready_template_scratchpad(monkeypatch, tmp_path, route_key):
     commands = []
 
     def _run(command, cwd, env, text, capture_output, check):
@@ -385,7 +386,7 @@ def test_qwen_2512_uses_ready_template_scratchpad(monkeypatch, tmp_path):
 
     monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
     resolved = _resolved_route(
-        "qwen_image_2512",
+        route_key,
         {"resolution": "1536x864", "seed": 2512, "num_inference_steps": 4},
     )
 
@@ -398,12 +399,12 @@ def test_qwen_2512_uses_ready_template_scratchpad(monkeypatch, tmp_path):
     source = scratchpad.read_text(encoding="utf-8")
     assert "load_workflow_any('image/qwen_image_2512')" in source
     assert "resolution(1536, 864)" in source
-    assert 'workflow.set_prompt("qwen_image_2512 prompt")' in source
+    assert f'workflow.set_prompt("{route_key} prompt")' in source
     assert "workflow.set_seed(2512)" in source
     assert "workflow.nodes['238:224'].inputs['value'] = 4" in source
     comfy_config = json.loads(env["VIBECOMFY_COMFY_CONFIGURATION"])
-    assert comfy_config["input_directory"].endswith("qwen_image_2512-task/input")
-    assert comfy_config["output_directory"].endswith("qwen_image_2512-task/output")
+    assert comfy_config["input_directory"].endswith(f"{route_key}-task/input")
+    assert comfy_config["output_directory"].endswith(f"{route_key}-task/output")
 
 
 def test_qwen_edit_materializes_input_image_and_scratchpad(monkeypatch, tmp_path):

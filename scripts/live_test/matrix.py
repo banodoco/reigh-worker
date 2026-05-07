@@ -535,7 +535,8 @@ def build_matrix(
             fixture_key="qwen_image_basic",
             timeout_sec=timeout_image_sec,
             route_key="qwen_image",
-            support_state="wgp_only",
+            support_state="vibecomfy_supported",
+            selected_template_id="image/qwen_image_2512",
             route_runtime=route_runtime,
         ),
         MatrixCase(

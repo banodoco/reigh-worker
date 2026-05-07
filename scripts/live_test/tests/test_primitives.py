@@ -935,6 +935,7 @@ def test_live_matrix_includes_documented_wgp_only_direct_routes():
 def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
     cases = {case.name: case for case in build_matrix()}
     expected = {
+        "qwen_image_t2i": ("qwen_image", "image/qwen_image_2512"),
         "qwen_image_2512": ("qwen_image_2512", "image/qwen_image_2512"),
         "qwen_image_edit": ("qwen_image_edit", "edit/qwen_image_edit"),
         "qwen_image_style": ("qwen_image_style", "edit/qwen_image_edit"),

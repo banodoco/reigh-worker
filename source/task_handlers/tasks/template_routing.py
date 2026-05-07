@@ -119,8 +119,8 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
         ),
         "qwen_image": RouteSelectorEntry(
             route_key="qwen_image",
-            support_state=RouteSupportState.WGP_ONLY,
-            template_id=None,
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="image/qwen_image_2512",
         ),
         "qwen_image_edit": RouteSelectorEntry(
             route_key="qwen_image_edit",

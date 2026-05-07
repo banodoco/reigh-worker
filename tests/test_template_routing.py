@@ -104,31 +104,9 @@ def test_direct_route_aliases_match_canonical_selector_keys(
 
 
 @pytest.mark.parametrize(
-    "task_type",
-    [
-        "qwen_image",
-    ],
-)
-def test_sprint_qwen_direct_routes_are_explicit_wgp_only(routing, task_type: str) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="task-unsupported",
-        task_type=task_type,
-        params={"prompt": "edit this"},
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == task_type
-    assert resolved.support_state == routing.RouteSupportState.WGP_ONLY
-    assert resolved.template_id is None
-    assert resolved.should_use_vibecomfy is False
-    assert resolved.fail_closed_reason
-    assert "wgp_only" in resolved.fail_closed_reason
-    assert "will not fall back to WGP" in resolved.fail_closed_reason
-
-
-@pytest.mark.parametrize(
     ("task_type", "template_id"),
     [
+        ("qwen_image", "image/qwen_image_2512"),
         ("qwen_image_2512", "image/qwen_image_2512"),
         ("qwen_image_edit", "edit/qwen_image_edit"),
         ("qwen_image_style", "edit/qwen_image_edit"),

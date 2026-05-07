@@ -211,6 +211,7 @@ def test_wgp_default_direct_route_preserves_builder_and_queue(monkeypatch, tmp_p
         "z_image_turbo",
         "z_image_turbo_i2i",
         "wan_2_2_t2i",
+        "qwen_image",
         "qwen_image_2512",
         "qwen_image_edit",
         "qwen_image_style",
@@ -323,42 +324,25 @@ def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
     assert card["decision"] == "vibecomfy_adapter"
 
 
-def test_vibecomfy_wgp_only_direct_route_fails_closed_without_wgp_fallback(
-    monkeypatch, tmp_path
-):
+def test_qwen_image_direct_route_uses_vibecomfy_without_wgp_fallback(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
 
     def _builder(*_args, **_kwargs):
         raise AssertionError("WGP builder should not run")
 
-    monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
+    def _adapter(resolved, main_output_dir_base):
+        assert resolved.route_key == "qwen_image"
+        assert resolved.template_id == "image/qwen_image_2512"
+        assert resolved.should_use_vibecomfy is True
+        assert main_output_dir_base == tmp_path
+        return True, "qwen_image.png"
 
-    ok, message = task_registry.TaskRegistry._handle_direct_queue_task(
-        "qwen_image",
-        _context(_Queue(fail_on_submit=True), tmp_path),
+    monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
+    monkeypatch.setattr(
+        "source.task_handlers.tasks.task_execution._load_vibecomfy_handler",
+        lambda: _adapter,
     )
-
-    assert ok is False
-    assert message
-    assert "fail-closed" in message
-    assert "wgp_only" in message
-
-
-@pytest.mark.parametrize(
-    "task_type",
-    [
-        "qwen_image",
-    ],
-)
-def test_sprint_qwen_routes_fail_closed_without_wgp_fallback(monkeypatch, tmp_path, task_type: str):
-    task_registry = _import_task_registry(monkeypatch)
-    monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
-
-    def _builder(*_args, **_kwargs):
-        raise AssertionError("WGP builder should not run")
-
-    monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
     context = _context(_Queue(fail_on_submit=True), tmp_path)
     context["task_params_dict"] = {
         "prompt": "direct",
@@ -368,13 +352,10 @@ def test_sprint_qwen_routes_fail_closed_without_wgp_fallback(monkeypatch, tmp_pa
         "mask_url": "https://example.com/mask.png",
     }
 
-    ok, message = task_registry.TaskRegistry._handle_direct_queue_task(task_type, context)
+    ok, result = task_registry.TaskRegistry._handle_direct_queue_task("qwen_image", context)
 
-    assert ok is False
-    assert message
-    assert "fail-closed" in message
-    assert task_type in message
-    assert "wgp_only" in message
+    assert ok is True
+    assert result == "qwen_image.png"
 
 
 @pytest.mark.parametrize(
