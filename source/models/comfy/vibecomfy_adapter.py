@@ -586,6 +586,17 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_vace_cocktail')",
                 f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg={cfg}, shift={shift}, seed={seed})",
+                "    block_swap = workflow.nodes['39'].inputs",
+                "    block_swap['blocks_to_swap'] = max(int(block_swap.get('blocks_to_swap', block_swap.get('widget_0', 0)) or 0), 30)",
+                "    block_swap['widget_0'] = block_swap['blocks_to_swap']",
+                "    block_swap['offload_txt_emb'] = True",
+                "    block_swap['offload_img_emb'] = True",
+                "    block_swap['offload_img_emb_nonblock'] = True",
+                "    block_swap['widget_1'] = True",
+                "    block_swap['widget_2'] = True",
+                "    block_swap['widget_3'] = True",
+                "    block_swap['vace_blocks_to_swap'] = max(int(block_swap.get('vace_blocks_to_swap', block_swap.get('widget_4', 0)) or 0), 8)",
+                "    block_swap['widget_4'] = block_swap['vace_blocks_to_swap']",
                 f"    workflow.nodes['64'].inputs['image'] = {json.dumps(start_name)}",
                 f"    workflow.nodes['112'].inputs['image'] = {json.dumps(end_name)}",
                 f"    control_name = {json.dumps(control_name)}",
@@ -836,6 +847,7 @@ def _prepare_run_workspace(main_output_dir_base: str | Path, task_id: str) -> Pa
 
 def _build_subprocess_env(run_workspace: Path) -> dict[str, str]:
     env = os.environ.copy()
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     env["VIBECOMFY_WORKER_RUN_DIR"] = str(run_workspace)
     input_dir = run_workspace / "input"
     output_dir = run_workspace / "output"

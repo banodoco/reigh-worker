@@ -405,6 +405,7 @@ def test_qwen_text_to_image_uses_ready_template_scratchpad(monkeypatch, tmp_path
     comfy_config = json.loads(env["VIBECOMFY_COMFY_CONFIGURATION"])
     assert comfy_config["input_directory"].endswith(f"{route_key}-task/input")
     assert comfy_config["output_directory"].endswith(f"{route_key}-task/output")
+    assert env["PYTORCH_CUDA_ALLOC_CONF"] == "expandable_segments:True"
 
 
 def test_qwen_edit_materializes_input_image_and_scratchpad(monkeypatch, tmp_path):
@@ -598,6 +599,10 @@ def test_wan_vace_materializes_anchors_control_and_scratchpad(monkeypatch, tmp_p
     assert "_patch_wanvideo_defaults(workflow, steps=6, cfg=3.0, shift=5.0, seed=123)" in source
     assert "node.inputs['force_offload'] = node.inputs.get('force_offload'" in source
     assert "node.inputs['blocks_to_swap'] = node.inputs.get('blocks_to_swap'" in source
+    assert "block_swap['blocks_to_swap'] = max(int(block_swap.get('blocks_to_swap'" in source
+    assert "block_swap['offload_txt_emb'] = True" in source
+    assert "block_swap['offload_img_emb'] = True" in source
+    assert "block_swap['vace_blocks_to_swap'] = max(int(block_swap.get('vace_blocks_to_swap'" in source
     assert "node.inputs['num_frames'] = node.inputs.get('num_frames'" in source
     assert "node.inputs['empty_frame_level'] = node.inputs.get('empty_frame_level'" in source
     assert "workflow.nodes['139'].inputs['frame_rate'] = 16" in source
