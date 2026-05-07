@@ -559,7 +559,7 @@ def test_kill_supervisor_and_worker_patterns_cover_both_families(monkeypatch: py
 
 
 def test_matrix_contains_route_specific_z_image_turbo_case():
-    assert len(MATRIX) == 15
+    assert len(MATRIX) == 16
     assert [case.name for case in MATRIX].count("z_image_turbo") == 1
     assert [case.name for case in MATRIX].count("z_image_turbo_i2i") == 1
     z_image_case = next(case for case in MATRIX if case.name == "z_image_turbo")
