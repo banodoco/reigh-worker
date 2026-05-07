@@ -426,6 +426,44 @@ def test_completion_poller_fails_fast_when_worker_errors(monkeypatch: pytest.Mon
     assert "Worker worker-1 reached error status" in (result.error_summary or "")
 
 
+def test_completion_poller_fails_fast_when_worker_terminates(monkeypatch: pytest.MonkeyPatch):
+    db = FakeDB(
+        tables={
+            "tasks": [
+                {
+                    "id": "task-1",
+                    "project_id": "project-1",
+                    "task_type": "qwen_image",
+                    "status": "In Progress",
+                    "created_at": _iso_now(-10),
+                }
+            ],
+            "workers": [
+                {
+                    "id": "worker-1",
+                    "status": "terminated",
+                    "metadata": {"termination_reason": "scale_down_idle (capacity 2 > desired 1)"},
+                }
+            ],
+            "generations": [],
+        }
+    )
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.sleep", lambda _interval: None)
+
+    result = poll_until_complete(
+        db,
+        "task-1",
+        "project-1",
+        timeout_sec=300,
+        interval_sec=0,
+        worker_id="worker-1",
+    )
+
+    assert result.final_status == "In Progress"
+    assert "Worker worker-1 reached terminated status" in (result.error_summary or "")
+    assert "scale_down_idle" in (result.error_summary or "")
+
+
 def test_heartbeat_waiter_requires_dwell_and_ready_for_tasks(monkeypatch: pytest.MonkeyPatch):
     workers = SequenceResponder(
         [

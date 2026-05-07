@@ -98,11 +98,16 @@ def _fetch_worker_row(db, worker_id: str | None) -> dict[str, Any] | None:
 
 
 def _worker_error_summary(worker_row: dict[str, Any] | None) -> str | None:
-    if not worker_row or worker_row.get("status") != "error":
+    if not worker_row or worker_row.get("status") not in {"error", "terminated"}:
         return None
     metadata = worker_row.get("metadata") if isinstance(worker_row.get("metadata"), dict) else {}
-    reason = metadata.get("error_reason") or metadata.get("error_code") or "worker row reached error status"
-    return f"Worker {worker_row.get('id')} reached error status: {reason}"
+    reason = (
+        metadata.get("error_reason")
+        or metadata.get("termination_reason")
+        or metadata.get("error_code")
+        or f"worker row reached {worker_row.get('status')} status"
+    )
+    return f"Worker {worker_row.get('id')} reached {worker_row.get('status')} status: {reason}"
 
 
 def _orchestrator_child_task_ids(rows: list[dict[str, Any]], parent_task_id: str) -> list[str]:
