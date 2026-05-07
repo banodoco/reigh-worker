@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -248,11 +249,36 @@ def _spawn_takeover_pod(db, api_key: str) -> tuple[str, str]:
     }
     asyncio.run(db.update_worker_status(worker_id, "spawning", metadata))
 
+    _wait_for_spawned_pod_ssh(spawner, worker_id, pod_id)
     started = asyncio.run(spawner.start_worker_process(pod_id, worker_id, has_pending_tasks=False))
     if not started:
         raise RuntimeError(f"start_worker_process failed for worker {worker_id} on pod {pod_id}")
 
     return worker_id, pod_id
+
+
+def _wait_for_spawned_pod_ssh(spawner, worker_id: str, pod_id: str, *, timeout_sec: int = 300, poll_interval: int = 5) -> None:
+    check = getattr(spawner, "check_and_initialize_worker", None)
+    if check is None:
+        return
+
+    deadline = time.monotonic() + timeout_sec
+    last_status: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        last_status = asyncio.run(check(worker_id, pod_id))
+        if last_status.get("ready") is True:
+            return
+        if last_status.get("status") == "error":
+            raise RuntimeError(
+                f"Spawned pod {pod_id} became unhealthy before SSH was ready: "
+                f"{last_status.get('error') or last_status.get('message')}"
+            )
+        time.sleep(poll_interval)
+
+    raise RuntimeError(
+        f"Spawned pod {pod_id} did not expose SSH details within {timeout_sec}s; "
+        f"last_status={last_status}"
+    )
 
 
 def _print_dry_run_plan(*, cases: list, token: str, args) -> None:

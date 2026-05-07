@@ -899,6 +899,50 @@ def test_spawn_takeover_pod_calls_create_record_before_spawn_and_start(monkeypat
     ]
 
 
+def test_spawn_takeover_waits_for_ssh_before_start(monkeypatch: pytest.MonkeyPatch):
+    from scripts.live_test import variant_update
+
+    events = []
+
+    class FakeDB:
+        async def create_worker_record(self, worker_id, instance_type):
+            return True
+
+        async def update_worker_status(self, worker_id, status, metadata):
+            return True
+
+    class FakeSpawner:
+        gpu_type = "NVIDIA GeForce RTX 4090"
+
+        def generate_worker_id(self):
+            return "worker-123"
+
+        async def spawn_worker(self, worker_id):
+            return {"runpod_id": "pod-456", "pod_details": {"id": "pod-456"}}
+
+        async def check_and_initialize_worker(self, worker_id, pod_id):
+            events.append(("check", worker_id, pod_id))
+            return {"status": "spawning"} if len(events) == 1 else {"status": "spawning", "ready": True}
+
+        async def start_worker_process(self, pod_id, worker_id, has_pending_tasks=False):
+            events.append(("start", pod_id, worker_id, has_pending_tasks))
+            return True
+
+    monkeypatch.setitem(
+        sys.modules,
+        "gpu_orchestrator.worker_spawner",
+        types.SimpleNamespace(create_worker_spawner=lambda config, db: FakeSpawner()),
+    )
+    monkeypatch.setattr(variant_update.time, "sleep", lambda _interval: None)
+
+    assert _spawn_takeover_pod(FakeDB(), "api-key") == ("worker-123", "pod-456")
+    assert events == [
+        ("check", "worker-123", "pod-456"),
+        ("check", "worker-123", "pod-456"),
+        ("start", "pod-456", "worker-123", False),
+    ]
+
+
 def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     safety_calls = []
     wait_calls = []
