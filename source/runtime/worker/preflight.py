@@ -33,6 +33,7 @@ class WorkerPreflightResult:
     checks: list[PreflightCheck]
     started_at: float
     completed_at: float
+    phase: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -50,6 +51,7 @@ class WorkerPreflightResult:
             "preflight_checks": [asdict(check) for check in self.checks],
             "preflight_started_at": self.started_at,
             "preflight_completed_at": self.completed_at,
+            "preflight_phase": self.phase or self.status,
         }
 
 
@@ -126,6 +128,7 @@ def finalize_preflight_result(
         checks=checks,
         started_at=base.started_at,
         completed_at=time.time(),
+        phase=status,
     )
 
 

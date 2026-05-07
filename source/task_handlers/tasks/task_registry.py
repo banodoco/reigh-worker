@@ -1556,7 +1556,7 @@ class TaskRegistry:
         params = context["task_params_dict"]
 
         # 1. Direct Queue Tasks
-        if task_type in DIRECT_QUEUE_TASK_TYPES and context["task_queue"]:
+        if task_type in DIRECT_QUEUE_TASK_TYPES:
             return TaskRegistry._handle_direct_queue_task(task_type, context)
 
         # 2. Orchestrator & Specialized Handlers

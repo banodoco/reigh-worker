@@ -192,6 +192,7 @@ def test_publish_preflight_metadata_merges_existing_metadata_and_ready_flag(tmp_
     metadata = client.updated_payload["metadata"]
     assert metadata["existing"] == "kept"
     assert metadata["preflight_status"] == "passed"
+    assert metadata["preflight_phase"] == "passed"
     assert metadata["ready_for_tasks"] is True
     assert json.loads(preflight_state_path("worker-1").read_text(encoding="utf-8"))["preflight_status"] == "passed"
 

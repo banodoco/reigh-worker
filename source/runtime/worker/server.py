@@ -217,6 +217,14 @@ def process_single_task(
     return TaskResult.success(output_location_to_db) if generation_success else TaskResult.failed("generation failed")
 
 
+def _worker_backend_name() -> str:
+    return os.environ.get("REIGH_BACKEND", os.environ.get("WORKER_BACKEND", "wgp")).strip().lower()
+
+
+def _uses_vibecomfy_backend() -> bool:
+    return _worker_backend_name() == "vibecomfy"
+
+
 def parse_args():
     parser = argparse.ArgumentParser("WanGP Worker Server")
     parser.add_argument("--main-output-dir", type=str, default="./outputs")
@@ -583,11 +591,12 @@ def main():
                 },
             )
 
+    worker_backend = _worker_backend_name()
     static_preflight = run_worker_preflight(
         repo_root=Path(repo_root),
         wan2gp_path=Path(wan2gp_path),
         main_output_dir=main_output_dir,
-        backend=os.environ.get("REIGH_BACKEND", os.environ.get("WORKER_BACKEND", "wgp")),
+        backend=worker_backend,
     )
     if not static_preflight.ok:
         _publish_preflight(static_preflight, ready_for_tasks=False)
@@ -598,6 +607,7 @@ def main():
             checks=static_preflight.checks,
             started_at=static_preflight.started_at,
             completed_at=static_preflight.completed_at,
+            phase="startup",
         ),
         ready_for_tasks=False,
     )
@@ -633,47 +643,62 @@ def main():
     from source.runtime.worker.status_display import show_loading_message
     show_loading_message()
 
-    # Apply WGP overrides
-    original_cwd = os.getcwd()
-    original_argv = sys.argv[:]
-    try:
-        os.chdir(wan2gp_path)
-        sys.path.insert(0, wan2gp_path)
-        sys.argv = ["worker.py"]
-        import wgp as wgp_mod
-        sys.argv = original_argv
-
-        if cli_args.wgp_attention_mode: wgp_mod.attention_mode = cli_args.wgp_attention_mode
-        if cli_args.wgp_compile: wgp_mod.compile = cli_args.wgp_compile
-        if cli_args.wgp_profile:
-            wgp_mod.force_profile_no = cli_args.wgp_profile
-            wgp_mod.default_profile = cli_args.wgp_profile
-        if cli_args.wgp_vae_config: wgp_mod.vae_config = cli_args.wgp_vae_config
-        if cli_args.wgp_boost: wgp_mod.boost = cli_args.wgp_boost
-        if cli_args.wgp_transformer_quantization: wgp_mod.transformer_quantization = cli_args.wgp_transformer_quantization
-        if cli_args.wgp_transformer_dtype_policy: wgp_mod.transformer_dtype_policy = cli_args.wgp_transformer_dtype_policy
-        if cli_args.wgp_text_encoder_quantization: wgp_mod.text_encoder_quantization = cli_args.wgp_text_encoder_quantization
-        if cli_args.wgp_vae_precision: wgp_mod.server_config["vae_precision"] = cli_args.wgp_vae_precision
-        if cli_args.wgp_mixed_precision: wgp_mod.server_config["mixed_precision"] = cli_args.wgp_mixed_precision
-        if cli_args.wgp_preload_policy: wgp_mod.server_config["preload_model_policy"] = [x.strip() for x in cli_args.wgp_preload_policy.split(',')]
-        if cli_args.wgp_preload: wgp_mod.server_config["preload_in_VRAM"] = cli_args.wgp_preload
-        if "transformer_types" not in wgp_mod.server_config: wgp_mod.server_config["transformer_types"] = []
-
-        headless_logger.essential("WGP imported OK")
-        wgp_import_check = PreflightCheck("wgp_import", True, "wgp imported", required=True)
-
-    except (ImportError, RuntimeError, AttributeError, KeyError) as e:
-        headless_logger.essential(f"WGP import failed: {e}")
+    task_queue = None
+    if _uses_vibecomfy_backend():
+        headless_logger.essential("VibeComfy backend active; skipping WGP import and queue startup")
+        wgp_import_check = PreflightCheck("wgp_import", True, "skipped for vibecomfy backend", required=False)
+    else:
         _publish_preflight(
-            finalize_preflight_result(
-                static_preflight,
-                extra_checks=[PreflightCheck("wgp_import", False, str(e), required=True)],
+            WorkerPreflightResult(
+                status=PREFLIGHT_STATUS_RUNNING,
+                checks=static_preflight.checks,
+                started_at=static_preflight.started_at,
+                completed_at=static_preflight.completed_at,
+                phase="wgp_import",
             ),
             ready_for_tasks=False,
         )
-        sys.exit(1)
-    finally:
-        os.chdir(original_cwd)
+        # Apply WGP overrides
+        original_cwd = os.getcwd()
+        original_argv = sys.argv[:]
+        try:
+            os.chdir(wan2gp_path)
+            sys.path.insert(0, wan2gp_path)
+            sys.argv = ["worker.py"]
+            import wgp as wgp_mod
+            sys.argv = original_argv
+
+            if cli_args.wgp_attention_mode: wgp_mod.attention_mode = cli_args.wgp_attention_mode
+            if cli_args.wgp_compile: wgp_mod.compile = cli_args.wgp_compile
+            if cli_args.wgp_profile:
+                wgp_mod.force_profile_no = cli_args.wgp_profile
+                wgp_mod.default_profile = cli_args.wgp_profile
+            if cli_args.wgp_vae_config: wgp_mod.vae_config = cli_args.wgp_vae_config
+            if cli_args.wgp_boost: wgp_mod.boost = cli_args.wgp_boost
+            if cli_args.wgp_transformer_quantization: wgp_mod.transformer_quantization = cli_args.wgp_transformer_quantization
+            if cli_args.wgp_transformer_dtype_policy: wgp_mod.transformer_dtype_policy = cli_args.wgp_transformer_dtype_policy
+            if cli_args.wgp_text_encoder_quantization: wgp_mod.text_encoder_quantization = cli_args.wgp_text_encoder_quantization
+            if cli_args.wgp_vae_precision: wgp_mod.server_config["vae_precision"] = cli_args.wgp_vae_precision
+            if cli_args.wgp_mixed_precision: wgp_mod.server_config["mixed_precision"] = cli_args.wgp_mixed_precision
+            if cli_args.wgp_preload_policy: wgp_mod.server_config["preload_model_policy"] = [x.strip() for x in cli_args.wgp_preload_policy.split(',')]
+            if cli_args.wgp_preload: wgp_mod.server_config["preload_in_VRAM"] = cli_args.wgp_preload
+            if "transformer_types" not in wgp_mod.server_config: wgp_mod.server_config["transformer_types"] = []
+
+            headless_logger.essential("WGP imported OK")
+            wgp_import_check = PreflightCheck("wgp_import", True, "wgp imported", required=True)
+
+        except (ImportError, RuntimeError, AttributeError, KeyError) as e:
+            headless_logger.essential(f"WGP import failed: {e}")
+            _publish_preflight(
+                finalize_preflight_result(
+                    static_preflight,
+                    extra_checks=[PreflightCheck("wgp_import", False, str(e), required=True)],
+                ),
+                ready_for_tasks=False,
+            )
+            sys.exit(1)
+        finally:
+            os.chdir(original_cwd)
 
     # Clean up legacy collision-prone LoRA files
     from source.models.lora.lora_utils import cleanup_legacy_lora_collisions, sweep_lora_cache_from_env
@@ -682,7 +707,6 @@ def main():
 
     # Initialize Task Queue
     from headless_model_management import HeadlessTaskQueue
-    worker_backend = os.environ.get("REIGH_BACKEND", os.environ.get("WORKER_BACKEND", "wgp"))
     worker_profile = os.environ.get(
         "REIGH_WORKER_PROFILE",
         os.environ.get("WGP_PROFILE", str(cli_args.wgp_profile or "1")),
@@ -700,28 +724,42 @@ def main():
             warm_cache_plan,
             status="warmup" if warm_cache_plan.enabled else "skipped",
         )
-    try:
-        task_queue = HeadlessTaskQueue(
-            wan_dir=wan2gp_path,
-            max_workers=cli_args.queue_workers,
-            debug_mode=debug_mode,
-            main_output_dir=str(main_output_dir)
-        )
-        preload_model = warm_cache_plan.preload_model
-        task_queue.start(preload_model=preload_model)
-    except (RuntimeError, ValueError, OSError) as e:
-        headless_logger.essential(f"Queue init failed: {e}")
+    if _uses_vibecomfy_backend():
+        queue_start_check = PreflightCheck("task_queue_start", True, "skipped for vibecomfy backend", required=False)
+    else:
         _publish_preflight(
-            finalize_preflight_result(
-                static_preflight,
-                extra_checks=[
-                    wgp_import_check,
-                    PreflightCheck("task_queue_start", False, str(e), required=True),
-                ],
+            WorkerPreflightResult(
+                status=PREFLIGHT_STATUS_RUNNING,
+                checks=[*static_preflight.checks, wgp_import_check],
+                started_at=static_preflight.started_at,
+                completed_at=static_preflight.completed_at,
+                phase="task_queue_start",
             ),
             ready_for_tasks=False,
         )
-        sys.exit(1)
+        try:
+            task_queue = HeadlessTaskQueue(
+                wan_dir=wan2gp_path,
+                max_workers=cli_args.queue_workers,
+                debug_mode=debug_mode,
+                main_output_dir=str(main_output_dir)
+            )
+            preload_model = warm_cache_plan.preload_model
+            task_queue.start(preload_model=preload_model)
+            queue_start_check = PreflightCheck("task_queue_start", True, "task queue started", required=True)
+        except (RuntimeError, ValueError, OSError) as e:
+            headless_logger.essential(f"Queue init failed: {e}")
+            _publish_preflight(
+                finalize_preflight_result(
+                    static_preflight,
+                    extra_checks=[
+                        wgp_import_check,
+                        PreflightCheck("task_queue_start", False, str(e), required=True),
+                    ],
+                ),
+                ready_for_tasks=False,
+            )
+            sys.exit(1)
     if cli_args.worker:
         publish_warm_cache_state(
             cli_args.worker,
@@ -733,7 +771,7 @@ def main():
             static_preflight,
             extra_checks=[
                 wgp_import_check,
-                PreflightCheck("task_queue_start", True, "task queue started", required=True),
+                queue_start_check,
             ],
         ),
         ready_for_tasks=True,

@@ -246,6 +246,33 @@ def test_vibecomfy_supported_direct_routes_bypass_wgp_queue(
     assert result == f"{task_type}.png"
 
 
+def test_vibecomfy_direct_dispatch_does_not_require_wgp_queue(monkeypatch, tmp_path):
+    task_registry = _import_task_registry(monkeypatch)
+    monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
+
+    def _builder(*_args, **_kwargs):
+        raise AssertionError("WGP builder should not run")
+
+    def _adapter(resolved, main_output_dir_base):
+        assert resolved.route_key == "qwen_image_2512"
+        assert main_output_dir_base == tmp_path
+        return True, "qwen.png"
+
+    monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
+    monkeypatch.setattr(
+        "source.task_handlers.tasks.task_execution._load_vibecomfy_handler",
+        lambda: _adapter,
+    )
+    context = _context(_Queue(fail_on_submit=True), tmp_path)
+    context["task_queue"] = None
+    context["task_params_dict"] = {"prompt": "direct dispatch", "resolution": "1536x864"}
+
+    ok, result = task_registry.TaskRegistry.dispatch("qwen_image_2512", context)
+
+    assert ok is True
+    assert result == "qwen.png"
+
+
 def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
