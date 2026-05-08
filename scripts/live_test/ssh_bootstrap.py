@@ -20,15 +20,17 @@ APT_INSTALL_PACKAGES = (
     "wget",
 )
 PROCESS_SCAN_COMMAND = (
-    r"ps -eo pid=,args= | awk '/run_worker[.]py|python worker[.]py|source[.]runtime[.]worker/ {print}'"
+    r"ps -eo pid=,args= | awk '/run_worker[.]py|python[^ ]* .*worker[.]py|source[.]runtime[.]worker/ {print}'"
 )
 KILL_COMMAND = (
     "pkill -f 'run_worker[.]py'; "
     "pkill -f 'python worker[.]py'; "
+    "pkill -f 'python[^ ]* .*worker[.]py'; "
     "pkill -f 'source[.]runtime[.]worker'; "
     "sleep 5; "
     "pkill -9 -f 'run_worker[.]py' || true; "
     "pkill -9 -f 'python worker[.]py' || true; "
+    "pkill -9 -f 'python[^ ]* .*worker[.]py' || true; "
     "pkill -9 -f 'source[.]runtime[.]worker' || true; "
     "sleep 2"
 )

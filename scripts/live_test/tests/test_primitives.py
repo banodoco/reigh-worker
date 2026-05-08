@@ -763,6 +763,34 @@ def test_capture_cmdline_detects_direct_family_from_template_ps():
     )
 
 
+def test_capture_cmdline_detects_direct_family_from_absolute_worker_path():
+    ssh = ScriptedSSH(
+        [
+            (
+                "ps -eo pid=,args=",
+                (
+                    0,
+                    "333 /workspace/Reigh-Worker-LiveTest/.venv/bin/python3 -u "
+                    "/workspace/Reigh-Worker-LiveTest/worker.py --worker pod-1\n",
+                    "",
+                ),
+            )
+        ]
+    )
+    info = capture_current_worker_cmdline(ssh)
+    assert info == WorkerProcessInfo(
+        family="direct",
+        cmdline=[
+            "/workspace/Reigh-Worker-LiveTest/.venv/bin/python3",
+            "-u",
+            "/workspace/Reigh-Worker-LiveTest/worker.py",
+            "--worker",
+            "pod-1",
+        ],
+        pid=333,
+    )
+
+
 def test_kill_supervisor_and_worker_patterns_cover_both_families(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("scripts.live_test.ssh_bootstrap.time.sleep", lambda _interval: None)
     ssh = ScriptedSSH(
@@ -776,8 +804,10 @@ def test_kill_supervisor_and_worker_patterns_cover_both_families(monkeypatch: py
     assert ssh.commands[0][0] == KILL_COMMAND
     assert "run_worker[.]py" in ssh.commands[0][0]
     assert "python worker[.]py" in ssh.commands[0][0]
+    assert "python[^ ]* .*worker[.]py" in ssh.commands[0][0]
     assert "source[.]runtime[.]worker" in ssh.commands[0][0]
     assert "awk" in ssh.commands[1][0]
+    assert "python[^ ]* .*worker[.]py" in ssh.commands[1][0]
     assert "source[.]runtime[.]worker" in ssh.commands[1][0]
 
 
