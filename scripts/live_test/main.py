@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime, timezone
 
 from scripts.live_test import config
+from scripts.live_test.inspect import main as run_inspect
 from scripts.live_test.variant_fresh import run as run_variant_fresh
 from scripts.live_test.variant_update import run as run_variant_update
 
@@ -131,8 +133,11 @@ def _finalize_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 
 
 def main(argv: list[str] | None = None) -> int:
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    if effective_argv and effective_argv[0] == "inspect":
+        return run_inspect(effective_argv[1:])
     parser = build_parser()
-    args = _finalize_args(parser.parse_args(argv), parser)
+    args = _finalize_args(parser.parse_args(effective_argv), parser)
     if args.variant == "fresh":
         return run_variant_fresh(args)
     return run_variant_update(args)

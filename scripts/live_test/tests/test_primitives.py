@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.live_test.completion_poller import TaskResult, poll_until_complete
 from scripts.live_test.heartbeat_waiter import WorkerReadyTimeoutError, wait_until_ready
+from scripts.live_test.inspect import build_status_bundle, render_status_bundle
 from scripts.live_test.launch_command import build_direct_worker_command, build_run_worker_command
 from scripts.live_test.matrix import MATRIX, MatrixCase, build_matrix, queue_matrix, render_case_payload, run_matrix
 from scripts.live_test import main as live_test_main
@@ -876,6 +877,131 @@ def test_open_session_connect_timeout_includes_latest_pod_status(monkeypatch: py
     assert "ip=5.6.7.8" in message
     assert "ports=22->2201" in message
     assert "connection refused" in message
+
+
+def test_inspect_bundle_resolves_task_worker_pod_and_heartbeat_age(monkeypatch: pytest.MonkeyPatch):
+    now = datetime(2026, 5, 8, 16, 2, tzinfo=timezone.utc)
+    db = FakeDB(
+        tables={
+            "tasks": [
+                {
+                    "id": "task-1",
+                    "task_type": "z_image_turbo",
+                    "status": "Complete",
+                    "worker_id": "worker-1",
+                    "attempts": 1,
+                    "output_location": "https://out.example/result.png",
+                    "error_message": None,
+                    "created_at": "2026-05-08T16:00:00Z",
+                    "params": {
+                        "route_contract": {
+                            "route_key": "z_image_turbo",
+                            "selected_backend": "vibecomfy",
+                            "selected_template_id": "image/z_image",
+                        }
+                    },
+                }
+            ],
+            "workers": [
+                {
+                    "id": "worker-1",
+                    "status": "active",
+                    "last_heartbeat": "2026-05-08T16:01:30Z",
+                    "created_at": "2026-05-08T15:55:00Z",
+                    "metadata": {
+                        "runpod_id": "pod-1",
+                        "ready_for_tasks": True,
+                        "worker_backend": "vibecomfy",
+                        "worker_pool": "gpu-vibecomfy-live",
+                    },
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_status",
+        lambda _pod_id, _api_key: {
+            "desired_status": "RUNNING",
+            "actual_status": "RUNNING",
+            "ip": "1.2.3.4",
+            "ports": [{"privatePort": 22, "publicPort": 31022}],
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_ssh_details",
+        lambda _pod_id, _api_key: {"ip": "1.2.3.4", "port": 31022},
+    )
+
+    bundle = build_status_bundle(
+        db,
+        task_id="task-1",
+        api_key="api-key",
+        include_ssh=False,
+        now=now,
+    )
+
+    assert bundle["resolved"] == {"task_id": "task-1", "worker_id": "worker-1", "pod_id": "pod-1"}
+    assert bundle["worker"]["heartbeat_age_sec"] == 30
+    assert bundle["runpod"]["desired_status"] == "RUNNING"
+    assert bundle["runpod"]["ports"] == "22->31022"
+    rendered = render_status_bundle(bundle)
+    assert "ids: task=task-1 worker=worker-1 pod=pod-1" in rendered
+    assert "worker: id=worker-1 status=active" in rendered
+    assert "task_output: https://out.example/result.png" in rendered
+    assert "task_route: route=z_image_turbo backend=vibecomfy template=image/z_image" in rendered
+
+
+def test_inspect_bundle_uses_pod_worker_lookup_and_records_ssh_hints(monkeypatch: pytest.MonkeyPatch):
+    db = FakeDB(
+        tables={
+            "tasks": [{"id": "task-1", "status": "In Progress", "worker_id": None, "params": {}}],
+            "workers": [
+                {
+                    "id": "worker-from-pod",
+                    "status": "active",
+                    "last_heartbeat": "2026-05-08T16:00:00Z",
+                    "metadata": {"runpod_id": "pod-1", "worker_backend": "vibecomfy"},
+                }
+            ],
+        }
+    )
+
+    class InspectSSH:
+        def __init__(self):
+            self.commands = []
+
+        def execute_command(self, command, timeout=600):
+            self.commands.append((command, timeout))
+            if "logs/startup.log" in command:
+                return 0, "=== startup.log ===\nbooted\n", ""
+            if "logs/worker.log" in command:
+                return 0, "=== worker.log ===\nTask task-1 running\n", ""
+            if "vibecomfy_runs" in command:
+                return 0, "=== vibecomfy artifacts: /workspace/Reigh-Worker-LiveTest/outputs/vibecomfy_runs/task-1 ===\noutput/result.png\nmetadata.json\n", ""
+            return 0, "", ""
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_status",
+        lambda _pod_id, _api_key: {"desired_status": "RUNNING", "actual_status": "RUNNING", "ports": []},
+    )
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_ssh_details",
+        lambda _pod_id, _api_key: {"ip": "1.2.3.4", "port": 31022},
+    )
+    monkeypatch.setattr("scripts.live_test.inspect.open_session", lambda *_args, **_kwargs: InspectSSH())
+
+    bundle = build_status_bundle(db, task_id="task-1", pod_id="pod-1", api_key="api-key", log_lines=10)
+
+    assert bundle["resolved"]["worker_id"] == "worker-from-pod"
+    assert bundle["ssh"]["available"] is True
+    assert "Task task-1 running" in bundle["ssh"]["log_tail"]
+    assert "metadata.json" in bundle["ssh"]["vibecomfy_hints"]
+    rendered = render_status_bundle(bundle)
+    assert "vibecomfy_hints:" in rendered
+    assert "worker_log_tail:" in rendered
 
 
 def test_build_direct_worker_command_roundtrips_template_cmdline():
