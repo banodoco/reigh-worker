@@ -188,6 +188,42 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
             template_id="video/wanvideo_wrapper_22_14b_t2i",
             default_resolution="832x480",
         ),
+        "wan_2_2_i2v": RouteSelectorEntry(
+            route_key="wan_2_2_i2v",
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            disposition="APP_ACTIVE_BLOCKED",
+            blocking_reason="Travel turbo mode still needs an explicit VibeComfy I2V route/template and worker dispatch proof.",
+        ),
+        "image-upscale": RouteSelectorEntry(
+            route_key="image-upscale",
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            disposition="APP_ACTIVE_NON_WORKER",
+            blocking_reason="App image upscale is a non-Rayworker route and has not been ported to VibeComfy.",
+        ),
+        "image_upscale": RouteSelectorEntry(
+            route_key="image_upscale",
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            disposition="APP_ACTIVE_NON_WORKER",
+            blocking_reason="App image upscale family is a non-Rayworker route and has not been ported to VibeComfy.",
+        ),
+        "video_enhance": RouteSelectorEntry(
+            route_key="video_enhance",
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            disposition="APP_ACTIVE_NON_WORKER",
+            blocking_reason="App video enhance is a non-Rayworker route and has not been ported to VibeComfy.",
+        ),
+        "animate_character": RouteSelectorEntry(
+            route_key="animate_character",
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            disposition="APP_ACTIVE_NON_WORKER",
+            blocking_reason="App character animation is a non-Rayworker route and has not been ported to VibeComfy.",
+        ),
+        "flux_klein_edit": RouteSelectorEntry(
+            route_key="flux_klein_edit",
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            disposition="APP_ACTIVE_NON_WORKER",
+            blocking_reason="App Klein edit is a non-Rayworker route and has not been ported to VibeComfy.",
+        ),
     }
 )
 

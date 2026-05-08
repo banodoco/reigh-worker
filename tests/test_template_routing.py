@@ -135,6 +135,36 @@ def test_qwen_ready_template_routes_are_vibecomfy_supported(
     assert resolved.fail_closed_reason is None
 
 
+@pytest.mark.parametrize(
+    "task_type",
+    [
+        "wan_2_2_i2v",
+        "image-upscale",
+        "image_upscale",
+        "video_enhance",
+        "animate_character",
+        "flux_klein_edit",
+    ],
+)
+def test_app_active_unported_direct_routes_fail_closed_for_vibecomfy(
+    routing,
+    task_type: str,
+) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="task-unported",
+        task_type=task_type,
+        params={"prompt": "do the active app thing"},
+        backend="vibecomfy",
+    )
+
+    assert resolved.route_key == task_type
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
+    assert resolved.template_id is None
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason
+    assert "will not fall back to WGP" in resolved.fail_closed_reason
+
+
 def test_routing_telemetry_fields_are_compact_and_stable(routing) -> None:
     resolved = routing.resolve_task_route(
         task_id="telemetry-task",
