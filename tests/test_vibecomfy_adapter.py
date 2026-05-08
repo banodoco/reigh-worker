@@ -169,6 +169,50 @@ def test_wan_routes_default_to_minimum_memory_profile(monkeypatch, tmp_path):
     assert commands[0][commands[0].index("--memory-profile") + 1] == "5"
 
 
+def test_animate_character_scratchpad_binds_requested_frame_count(monkeypatch, tmp_path):
+    commands = []
+    reference = tmp_path / "reference.png"
+    motion = tmp_path / "motion.mp4"
+    reference.write_bytes(b"image")
+    motion.write_bytes(b"video")
+
+    def _run(command, cwd, env, text, capture_output, check):
+        commands.append(command)
+        output = Path(cwd) / "out.mp4"
+        output.write_bytes(b"fake")
+        return _completed(stdout="output: out.mp4\n")
+
+    def _validate_video_artifact(_path, contract):
+        assert contract.expected_frame_count == 49
+        return None
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", _validate_video_artifact)
+
+    ok, result = handle_vibecomfy_resolved_task(
+        _resolved_route(
+            "animate_character",
+            {
+                "character_image_url": str(reference),
+                "motion_video_url": str(motion),
+                "resolution": "832x480",
+                "num_frames": 49,
+                "video_length": 49,
+                "fps": 16,
+            },
+        ),
+        tmp_path,
+    )
+
+    assert ok is True
+    assert result and result.endswith("out.mp4")
+    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    assert "load_workflow_any('video/wan22_animate_native_first_stage')" in source
+    assert "workflow.nodes['232:62'].inputs['length'] = 49" in source
+    assert "workflow.nodes['232:230'].inputs['length'] = 49" in source
+    assert "workflow.nodes['232:15'].inputs['fps'] = 16" in source
+
+
 def test_subprocess_failure_returns_bounded_telemetry(monkeypatch, tmp_path):
     long_stderr = "x" * 5000
     logger = _LogCapture()

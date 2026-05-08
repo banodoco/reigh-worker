@@ -848,6 +848,7 @@ def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: P
     seed = int(resolved.params.get("seed", resolved.params.get("seed_to_use", -1)))
     steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 4)))
     fps = int(float(resolved.params.get("fps") or 16))
+    frames = int(resolved.params.get("num_frames") or resolved.params.get("video_length") or 49)
     scratchpad = run_workspace / "animate_character_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -867,6 +868,8 @@ def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: P
                 f"    workflow.nodes['1'].inputs['text'] = {json.dumps(negative)}",
                 f"    workflow.nodes['232:63'].inputs['steps'] = {steps}",
                 f"    workflow.nodes['232:63'].inputs['seed'] = {seed}",
+                f"    workflow.nodes['232:62'].inputs['length'] = {frames}",
+                f"    workflow.nodes['232:230'].inputs['length'] = {frames}",
                 f"    workflow.nodes['232:15'].inputs['fps'] = {fps}",
                 "    workflow.nodes['19'].inputs['filename_prefix'] = 'Wanimate'",
                 "    workflow.nodes['19'].inputs['format'] = 'mp4'",
