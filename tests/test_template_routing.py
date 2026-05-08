@@ -464,7 +464,7 @@ def test_sprint12_route_docs_cover_selector_maps_section3a_and_app_snapshots(rou
         ),
     ],
 )
-def test_section3a_ltx_first_last_rows_remain_blocked_until_adapter_wiring(
+def test_section3a_ltx_first_last_rows_are_supported_after_adapter_wiring(
     routing, model_name: str, expected_route_key: str
 ) -> None:
     resolved = routing.resolve_task_route(
@@ -479,19 +479,16 @@ def test_section3a_ltx_first_last_rows_remain_blocked_until_adapter_wiring(
     )
 
     assert resolved.route_key == expected_route_key
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
-    assert resolved.template_id is None
-    assert resolved.fail_closed_reason
-    assert "will not fall back to WGP" in resolved.fail_closed_reason
-    assert resolved.should_use_vibecomfy is False
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.template_id == "video/ltx2_3_runexx_first_last_frame"
+    assert resolved.fail_closed_reason is None
+    assert resolved.should_use_vibecomfy is True
 
 
 @pytest.mark.parametrize(
     "route_key",
     [
         "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
     ],

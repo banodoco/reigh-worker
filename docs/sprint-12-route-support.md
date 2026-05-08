@@ -42,12 +42,11 @@
 | `individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/wanvideo_wrapper_22_14b_vace_cocktail` |
 | `join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default` | supported | vibecomfy_supported | `video/wanvideo_wrapper_22_14b_vace_cocktail` |
 | `travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-| `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-| `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
+| `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_runexx_first_last_frame` |
+| `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_runexx_first_last_frame` |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-
 | `animate_character` | `video/wan22_animate_native_first_stage` |

@@ -752,3 +752,52 @@ def test_wan_vace_materializes_anchors_control_and_scratchpad(monkeypatch, tmp_p
     assert "workflow.nodes['87'].inputs['cfg'] = 1.0" in source
     assert "workflow.nodes['197'].inputs['cfg'] = 1.0" in source
     assert "workflow.nodes['197'].inputs['widget_3'] = 123" in source
+
+
+def test_ltx_first_last_materializes_anchors_and_scratchpad(monkeypatch, tmp_path):
+    commands = []
+    first = tmp_path / "first.png"
+    last = tmp_path / "last.png"
+    first.write_bytes(b"first")
+    last.write_bytes(b"last")
+
+    def _run(command, cwd, env, text, capture_output, check):
+        commands.append(command)
+        output = Path(cwd) / "out.mp4"
+        output.write_bytes(b"fake")
+        return _completed(stdout="output: out.mp4\n")
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda *_args, **_kwargs: None)
+    resolved = resolve_task_route(
+        task_id="ltx-task",
+        task_type="travel_segment",
+        params={
+            "model_name": "ltx2_22B_distilled_1_1",
+            "input_image_paths_resolved": [str(first), str(last)],
+            "continuity_case": "first_last",
+            "resolution": "768x512",
+            "num_frames": 97,
+            "fps": 24,
+            "prompt": "ltx bridge prompt",
+            "negative_prompt": "ltx negative",
+            "seed": 321,
+        },
+        backend="vibecomfy",
+    )
+
+    ok, result = handle_vibecomfy_resolved_task(resolved, tmp_path)
+
+    assert ok is True
+    assert result and result.endswith("out.mp4")
+    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    assert "load_workflow_any('video/ltx2_3_runexx_first_last_frame')" in source
+    assert "ltx_first_ltx-task.png" in source
+    assert "ltx_last_ltx-task.png" in source
+    assert 'workflow.nodes[\'2103\'].inputs[\'value\'] = "ltx bridge prompt"' in source
+    assert 'workflow.nodes[\'11\'].inputs[\'text\'] = "ltx negative"' in source
+    assert "workflow.nodes['14'].inputs['noise_seed'] = 321" in source
+    assert "workflow.nodes['2078'].inputs['value'] = 97" in source
+    assert "workflow.nodes['2079'].inputs['value'] = 512" in source
+    assert "workflow.nodes['2080'].inputs['value'] = 768" in source
+    assert "workflow.nodes['2076'].inputs['value'] = 24" in source

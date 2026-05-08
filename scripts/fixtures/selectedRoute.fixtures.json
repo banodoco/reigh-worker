@@ -212,5 +212,42 @@
         "task_id": "route-fixture-travel-segment"
       }
     }
+  },
+  {
+    "name": "travel_segment_ltx_first_last",
+    "input": {
+      "task_id": "route-fixture-ltx",
+      "task_type": "travel_segment",
+      "params": {
+        "model_name": "ltx2_22B_distilled_1_1",
+        "guidance_kind": "none",
+        "continuity_case": "first_last",
+        "profile": "default"
+      },
+      "backend": "vibecomfy"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+      "selected_backend": "vibecomfy",
+      "selector_version": null,
+      "support_state": "vibecomfy_supported",
+      "selected_profile": "default",
+      "selected_template_id": "video/ltx2_3_runexx_first_last_frame",
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+        "selected_backend": "vibecomfy",
+        "selector_version": null,
+        "support_state": "vibecomfy_supported",
+        "template_id": "video/ltx2_3_runexx_first_last_frame",
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-ltx"
+      }
+    }
   }
 ]

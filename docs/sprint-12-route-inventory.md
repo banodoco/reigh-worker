@@ -54,8 +54,8 @@
 | `individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default` | NEW |  |
 | `join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default` | NEW |  |
 | `travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default` | NEW | Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion. |
-| `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | BLOCKED | The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics. |
-| `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | BLOCKED | The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics. |
+| `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | NEW |  |
+| `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | NEW |  |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for a full-length control guide. |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides. |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides. |
@@ -67,3 +67,4 @@
 | animate_character | `animate_character` |
 | travel_orchestrator | `travel_orchestrator` |
 | travel_segment_wan22_vace_raw_video_source | `travel_segment__model-wan2_2_vace__guidance-vace_raw__continuity-video_source__profile-default` |
+| travel_segment_ltx_first_last | `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` |
