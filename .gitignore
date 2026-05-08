@@ -98,6 +98,7 @@ tests/*
 !tests/test_ltx_hybrid_travel.py
 !tests/test_idle_release.py
 !tests/test_travel_guidance_ic_lora_override.py
+!tests/test_capability_contracts.py
 !tests/test_task_registry_ic_lora_dedup.py
 !tests/runtime/
 !tests/runtime/test_vibecomfy_profile.py
