@@ -112,10 +112,14 @@ def test_direct_route_aliases_match_canonical_selector_keys(
         ("qwen_image_style", "edit/qwen_image_edit"),
         ("image_inpaint", "edit/qwen_image_edit"),
         ("annotated_image_edit", "edit/qwen_image_edit"),
+        ("image-upscale", "image/basic_image_upscale"),
+        ("image_upscale", "image/basic_image_upscale"),
         ("z_image_turbo_i2i", "image/z_image_img2img"),
         ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
         ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
         ("animate_character", "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai"),
+        ("video_enhance", "video/basic_video_enhance"),
+        ("flux_klein_edit", "edit/flux2_klein_4b_image_edit_distilled"),
     ],
 )
 def test_qwen_ready_template_routes_are_vibecomfy_supported(
@@ -135,34 +139,6 @@ def test_qwen_ready_template_routes_are_vibecomfy_supported(
     assert resolved.template_id == template_id
     assert resolved.should_use_vibecomfy is True
     assert resolved.fail_closed_reason is None
-
-
-@pytest.mark.parametrize(
-    "task_type",
-    [
-        "image-upscale",
-        "image_upscale",
-        "video_enhance",
-        "flux_klein_edit",
-    ],
-)
-def test_app_active_unported_direct_routes_fail_closed_for_vibecomfy(
-    routing,
-    task_type: str,
-) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="task-unported",
-        task_type=task_type,
-        params={"prompt": "do the active app thing"},
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == task_type
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
-    assert resolved.template_id is None
-    assert resolved.should_use_vibecomfy is False
-    assert resolved.fail_closed_reason
-    assert "will not fall back to WGP" in resolved.fail_closed_reason
 
 
 def test_routing_telemetry_fields_are_compact_and_stable(routing) -> None:

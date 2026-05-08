@@ -196,21 +196,18 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
         ),
         "image-upscale": RouteSelectorEntry(
             route_key="image-upscale",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="APP_ACTIVE_NON_WORKER",
-            blocking_reason="App image upscale is a non-Rayworker route and has not been ported to VibeComfy.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="image/basic_image_upscale",
         ),
         "image_upscale": RouteSelectorEntry(
             route_key="image_upscale",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="APP_ACTIVE_NON_WORKER",
-            blocking_reason="App image upscale family is a non-Rayworker route and has not been ported to VibeComfy.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="image/basic_image_upscale",
         ),
         "video_enhance": RouteSelectorEntry(
             route_key="video_enhance",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="APP_ACTIVE_NON_WORKER",
-            blocking_reason="App video enhance is a non-Rayworker route and has not been ported to VibeComfy.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="video/basic_video_enhance",
         ),
         "animate_character": RouteSelectorEntry(
             route_key="animate_character",
@@ -220,9 +217,8 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
         ),
         "flux_klein_edit": RouteSelectorEntry(
             route_key="flux_klein_edit",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="APP_ACTIVE_NON_WORKER",
-            blocking_reason="App Klein edit is a non-Rayworker route and has not been ported to VibeComfy.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="edit/flux2_klein_4b_image_edit_distilled",
         ),
     }
 )

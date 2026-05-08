@@ -297,6 +297,8 @@ def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace:
         return str(_write_z_image_img2img_scratchpad(resolved, run_workspace)), False
     if resolved.route_key in {"qwen_image", "qwen_image_2512"}:
         return str(_write_qwen_image_2512_scratchpad(resolved, run_workspace)), False
+    if resolved.route_key in {"image-upscale", "image_upscale"}:
+        return str(_write_image_upscale_scratchpad(resolved, run_workspace)), False
     if resolved.route_key in {
         "qwen_image_edit",
         "qwen_image_style",
@@ -310,6 +312,10 @@ def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace:
         return str(_write_wan_2_2_i2v_scratchpad(resolved, run_workspace)), False
     if resolved.route_key == "animate_character":
         return str(_write_animate_character_scratchpad(resolved, run_workspace)), False
+    if resolved.route_key == "video_enhance":
+        return str(_write_video_enhance_scratchpad(resolved, run_workspace)), False
+    if resolved.route_key == "flux_klein_edit":
+        return str(_write_flux_klein_edit_scratchpad(resolved, run_workspace)), False
     if _is_wan_vace_route(resolved.route_key):
         return str(_write_wan_2_2_vace_scratchpad(resolved, run_workspace)), False
     return str(resolved.template_id), True
@@ -442,6 +448,37 @@ def _write_z_image_img2img_scratchpad(resolved: ResolvedTask, run_workspace: Pat
                 f"            node.inputs['steps'] = {steps}",
                 f"            node.inputs['denoise'] = {denoise}",
                 f"    workflow.set_prompt({json.dumps(prompt)})",
+                "    return workflow.finalize_metadata()",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return scratchpad
+
+
+def _write_image_upscale_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
+    input_name = _materialize_image_input(
+        resolved,
+        run_workspace,
+        "image",
+        "image_url",
+        fallback_filename=f"image_upscale_{resolved.task_id}.png",
+    )
+    scale = float(resolved.params.get("scale_factor") or resolved.params.get("upscale_factor") or 2)
+    scratchpad = run_workspace / "image_upscale_scratchpad.py"
+    scratchpad.write_text(
+        "\n".join(
+            [
+                "from vibecomfy.cli_loader import load_workflow_any",
+                "",
+                "",
+                "def build():",
+                "    workflow = load_workflow_any('image/basic_image_upscale')",
+                f"    workflow.nodes['1'].inputs['image'] = {json.dumps(input_name)}",
+                f"    workflow.nodes['2'].inputs['scale_by'] = {scale}",
+                "    workflow.nodes['2'].inputs['upscale_method'] = 'lanczos'",
+                "    workflow.nodes['3'].inputs['filename_prefix'] = 'image-upscale'",
                 "    return workflow.finalize_metadata()",
                 "",
             ]
@@ -832,6 +869,93 @@ def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: P
                 f"    workflow.nodes['30'].inputs['frame_rate'] = {fps}",
                 "    workflow.nodes['30'].inputs['format'] = 'video/h264-mp4'",
                 "    workflow.nodes['30'].inputs['save_output'] = True",
+                "    return workflow.finalize_metadata()",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return scratchpad
+
+
+def _write_video_enhance_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
+    video_name = _materialize_optional_video_input(
+        resolved,
+        run_workspace,
+        "video_url",
+        "video",
+        fallback_filename=f"video_enhance_{resolved.task_id}.mp4",
+    )
+    if not video_name:
+        raise ValueError("VibeComfy route 'video_enhance' requires video_url or video")
+    interpolation = resolved.params.get("interpolation")
+    upscale = resolved.params.get("upscale")
+    interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
+    upscale_params = upscale if isinstance(upscale, Mapping) else {}
+    enable_interpolation = _bool_param(resolved.params, "enable_interpolation")
+    enable_upscale = _bool_param(resolved.params, "enable_upscale")
+    multiplier = int(interpolation_params.get("num_frames") or 1) + 1
+    scale = float(upscale_params.get("upscale_factor") or resolved.params.get("upscale_factor") or 2)
+    fps = int(float(interpolation_params.get("fps") or resolved.params.get("fps") or 16))
+    scratchpad = run_workspace / "video_enhance_scratchpad.py"
+    scratchpad.write_text(
+        "\n".join(
+            [
+                "from vibecomfy.cli_loader import load_workflow_any",
+                "",
+                "",
+                "def build():",
+                "    workflow = load_workflow_any('video/basic_video_enhance')",
+                f"    workflow.nodes['1'].inputs['video'] = {json.dumps(video_name)}",
+                f"    workflow.nodes['1'].inputs['force_rate'] = {fps}",
+                f"    workflow.nodes['3'].inputs['widget_1'] = {max(multiplier, 1)}",
+                f"    workflow.nodes['4'].inputs['scale_by'] = {scale}",
+                f"    workflow.nodes['5'].inputs['frame_rate'] = {fps}",
+                "    workflow.nodes['5'].inputs['filename_prefix'] = 'video-enhance'",
+                "    workflow.nodes['5'].inputs['format'] = 'video/h264-mp4'",
+                "    workflow.nodes['5'].inputs['save_output'] = True",
+                f"    enable_interpolation = {enable_interpolation!r}",
+                f"    enable_upscale = {enable_upscale!r}",
+                "    if not enable_interpolation:",
+                "        workflow.replace_edge('4.image', '1.0')",
+                "    if not enable_upscale:",
+                "        workflow.replace_edge('5.images', '3.0' if enable_interpolation else '1.0')",
+                "    return workflow.finalize_metadata()",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return scratchpad
+
+
+def _write_flux_klein_edit_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
+    input_name = _materialize_image_input(
+        resolved,
+        run_workspace,
+        "image",
+        "image_url",
+        fallback_filename=f"flux_klein_edit_{resolved.task_id}.png",
+    )
+    prompt = str(resolved.params.get("prompt") or "")
+    seed = int(resolved.params.get("seed", resolved.params.get("seed_to_use", -1)))
+    steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 8)))
+    scratchpad = run_workspace / "flux_klein_edit_scratchpad.py"
+    scratchpad.write_text(
+        "\n".join(
+            [
+                "from vibecomfy.cli_loader import load_workflow_any",
+                "",
+                "",
+                "def build():",
+                "    workflow = load_workflow_any('edit/flux2_klein_4b_image_edit_distilled')",
+                f"    workflow.nodes['76'].inputs['image'] = {json.dumps(input_name)}",
+                "    if '81' in workflow.nodes:",
+                f"        workflow.nodes['81'].inputs['image'] = {json.dumps(input_name)}",
+                f"    workflow.nodes['75:74'].inputs['text'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['75:73'].inputs['noise_seed'] = {seed}",
+                f"    workflow.nodes['75:62'].inputs['steps'] = {steps}",
+                "    workflow.nodes['9'].inputs['filename_prefix'] = 'Flux2-Klein-Edit'",
                 "    return workflow.finalize_metadata()",
                 "",
             ]
