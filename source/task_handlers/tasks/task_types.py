@@ -107,7 +107,7 @@ TASK_TYPE_TO_MODEL: Dict[str, str] = {
     "ltx2": "ltx2_19B",
     # VibeComfy direct app-active generation/editing tasks
     "wan_2_2_i2v": "wanvideo_wrapper_22_14b_i2v_kijai",
-    "animate_character": "wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+    "animate_character": "wan22_animate_native_first_stage",
     "video_enhance": "basic_video_enhance",
     "image-upscale": "basic_image_upscale",
     "image_upscale": "basic_image_upscale",

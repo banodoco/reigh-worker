@@ -854,7 +854,7 @@ def build_matrix(
             timeout_sec=timeout_travel_segment_sec,
             route_key="animate_character",
             support_state="vibecomfy_supported",
-            selected_template_id="video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+            selected_template_id="video/wan22_animate_native_first_stage",
             route_runtime=route_runtime,
         ),
         MatrixCase(

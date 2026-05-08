@@ -117,7 +117,7 @@ def test_direct_route_aliases_match_canonical_selector_keys(
         ("z_image_turbo_i2i", "image/z_image_img2img"),
         ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
         ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
-        ("animate_character", "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai"),
+        ("animate_character", "video/wan22_animate_native_first_stage"),
         ("video_enhance", "video/basic_video_enhance"),
         ("flux_klein_edit", "edit/flux2_klein_4b_image_edit_distilled"),
     ],
@@ -328,7 +328,7 @@ def test_sprint12_route_docs_cover_selector_maps_section3a_and_app_snapshots(rou
 
     assert "`z_image_turbo` | `dual_supported`" in inventory
     assert "| `z_image_turbo` | supported | supported | `image/z_image`" in support
-    assert "None. Sprint 12 does not close any route as VibeComfy-only" in support
+    assert "| `animate_character` | `video/wan22_animate_native_first_stage`" in support
 
     for route_key in routing.SPRINT_2_SELECTOR_MAP:
         assert f"`{route_key}`" in inventory

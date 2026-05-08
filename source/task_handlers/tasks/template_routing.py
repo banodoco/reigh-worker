@@ -212,7 +212,7 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
         "animate_character": RouteSelectorEntry(
             route_key="animate_character",
             support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+            template_id="video/wan22_animate_native_first_stage",
             default_resolution="832x480",
         ),
         "flux_klein_edit": RouteSelectorEntry(

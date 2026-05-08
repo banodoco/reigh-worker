@@ -1037,7 +1037,7 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         "wan_2_2_i2v": ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
         "animate_character": (
             "animate_character",
-            "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+            "video/wan22_animate_native_first_stage",
         ),
         "image_upscale": ("image-upscale", "image/basic_image_upscale"),
         "video_enhance": ("video_enhance", "video/basic_video_enhance"),
