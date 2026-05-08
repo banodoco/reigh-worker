@@ -419,6 +419,55 @@ def _wan_vace_individual_overrides(
     }
 
 
+def _wan_vace_travel_video_source_overrides(
+    *,
+    mode: str,
+    anchor_image_a: str,
+    anchor_image_b: str,
+) -> dict[str, Any]:
+    model_name = "wan_2_2_vace_lightning_baseline_2_2_2"
+    travel_guidance = {
+        "kind": "vace",
+        "mode": mode,
+        "videos": [{"url": LIVE_TEST_VIDEO_URL}],
+    }
+    return {
+        "model_name": model_name,
+        "model": model_name,
+        "model_family": "wan22_vace",
+        "model_type": "vace",
+        "segment_index": 0,
+        "resolution": "832x480",
+        "parsed_resolution_wh": "832x480",
+        "num_frames": 81,
+        "video_length": 81,
+        "fps": 16,
+        "start_image_url": anchor_image_a,
+        "end_image_url": anchor_image_b,
+        "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+        "video_source": LIVE_TEST_VIDEO_URL,
+        "travel_guidance": travel_guidance,
+        "orchestrator_details": {
+            "model_name": model_name,
+            "model": model_name,
+            "model_family": "wan22_vace",
+            "model_type": "vace",
+            "parsed_resolution_wh": "832x480",
+            "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+            "travel_guidance": travel_guidance,
+        },
+        "individual_segment_params": {
+            "model_name": model_name,
+            "model": model_name,
+            "start_image_url": anchor_image_a,
+            "end_image_url": anchor_image_b,
+            "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+            "num_frames": 81,
+            "travel_guidance": travel_guidance,
+        },
+    }
+
+
 def build_matrix(
     *,
     anchor_image_a: str = config.ANCHOR_IMAGE_A_URL,
@@ -515,6 +564,27 @@ def build_matrix(
                 route_runtime=route_runtime,
             )
             for mode in ("flow", "canny", "depth")
+        ],
+        *[
+            MatrixCase(
+                name=f"travel_segment_wan22_vace_{mode}_video_source",
+                task_type="travel_segment",
+                fixture_key="wan22_i2v_individual_segment",
+                param_overrides=_wan_vace_travel_video_source_overrides(
+                    mode=mode,
+                    anchor_image_a=anchor_image_a,
+                    anchor_image_b=anchor_image_b,
+                ),
+                timeout_sec=timeout_travel_segment_sec,
+                route_key=(
+                    "travel_segment__model-wan22_vace__"
+                    f"guidance-vace_{mode}__continuity-video_source__profile-default"
+                ),
+                support_state="vibecomfy_supported",
+                selected_template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
+                route_runtime=route_runtime,
+            )
+            for mode in ("raw", "flow", "canny", "depth")
         ],
         MatrixCase(
             name="travel_stitch",

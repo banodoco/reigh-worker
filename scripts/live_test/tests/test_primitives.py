@@ -1007,6 +1007,22 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
             "individual_travel_segment_wan22_vace_depth",
             "individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
         ),
+        (
+            "travel_segment_wan22_vace_raw_video_source",
+            "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default",
+        ),
+        (
+            "travel_segment_wan22_vace_flow_video_source",
+            "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default",
+        ),
+        (
+            "travel_segment_wan22_vace_canny_video_source",
+            "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default",
+        ),
+        (
+            "travel_segment_wan22_vace_depth_video_source",
+            "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default",
+        ),
         ("image_inpaint", "image_inpaint"),
         ("annotated_image_edit", "annotated_image_edit"),
         ("travel_stitch", "travel_stitch"),
