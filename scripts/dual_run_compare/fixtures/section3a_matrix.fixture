@@ -153,7 +153,7 @@
       "expected_backend": "wgp",
       "route_key_expectation": "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
       "support_state_expectation": "vibecomfy_unsupported",
-      "blocking_reason": "The pinned LTX first/last template is not yet proven control-capable for a full-length control guide."
+      "blocking_reason": "Raw LTX video guidance uses Wan2GP VG semantics without IC-LoRA; needs a dedicated VibeComfy raw-guide first/last template before promotion."
     },
     {
       "row_id": 10,
@@ -164,11 +164,12 @@
       "guidance_mode": "pose",
       "continuity_case": "first_last",
       "profile": "default",
-      "disposition": "BLOCKED",
+      "disposition": "NEW",
       "expected_backend": "wgp",
       "route_key_expectation": "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
-      "support_state_expectation": "vibecomfy_unsupported",
-      "blocking_reason": "The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides."
+      "support_state_expectation": "vibecomfy_supported",
+      "blocking_reason": null,
+      "template_id_expectation": "video/ltx2_3_first_last_frame_travel_iclora_control"
     },
     {
       "row_id": 11,
@@ -179,11 +180,12 @@
       "guidance_mode": "depth",
       "continuity_case": "first_last",
       "profile": "default",
-      "disposition": "BLOCKED",
+      "disposition": "NEW",
       "expected_backend": "wgp",
       "route_key_expectation": "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
-      "support_state_expectation": "vibecomfy_unsupported",
-      "blocking_reason": "The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides."
+      "support_state_expectation": "vibecomfy_supported",
+      "blocking_reason": null,
+      "template_id_expectation": "video/ltx2_3_first_last_frame_travel_iclora_control"
     },
     {
       "row_id": 12,
@@ -194,11 +196,12 @@
       "guidance_mode": "canny",
       "continuity_case": "first_last",
       "profile": "default",
-      "disposition": "BLOCKED",
+      "disposition": "NEW",
       "expected_backend": "wgp",
       "route_key_expectation": "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
-      "support_state_expectation": "vibecomfy_unsupported",
-      "blocking_reason": "The pinned LTX first/last template is not yet proven control-capable for Canny-preprocessed full-length guides."
+      "support_state_expectation": "vibecomfy_supported",
+      "blocking_reason": null,
+      "template_id_expectation": "video/ltx2_3_first_last_frame_travel_iclora_control"
     },
     {
       "row_id": 13,
@@ -209,11 +212,12 @@
       "guidance_mode": "cameraman",
       "continuity_case": "first_last",
       "profile": "default",
-      "disposition": "BLOCKED",
+      "disposition": "NEW",
       "expected_backend": "wgp",
       "route_key_expectation": "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
-      "support_state_expectation": "vibecomfy_unsupported",
-      "blocking_reason": "The pinned LTX first/last template is not yet proven control-capable for cameraman full-length guides."
+      "support_state_expectation": "vibecomfy_supported",
+      "blocking_reason": null,
+      "template_id_expectation": "video/ltx2_3_first_last_frame_travel_iclora_control"
     }
   ]
 }

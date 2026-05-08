@@ -56,11 +56,11 @@
 | `travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default` | NEW | Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion. |
 | `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | NEW |  |
 | `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | NEW |  |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for a full-length control guide. |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides. |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides. |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for Canny-preprocessed full-length guides. |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default` | BLOCKED | The pinned LTX first/last template is not yet proven control-capable for cameraman full-length guides. |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` | BLOCKED | Raw LTX video guidance uses Wan2GP VG semantics without IC-LoRA; needs a dedicated VibeComfy raw-guide first/last template before promotion. |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | NEW |  |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | NEW |  |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default` | NEW |  |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default` | NEW |  |
 | z_image_turbo | `z_image_turbo` |
 | z_image_alias | `z_image_turbo` |
 | wan_2_2_t2i | `wan_2_2_t2i` |

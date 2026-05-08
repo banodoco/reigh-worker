@@ -511,7 +511,6 @@ def test_section3a_wan_i2v_first_last_is_supported_after_anchor_wiring(routing) 
     "route_key",
     [
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
     ],
 )
 def test_section3a_unsupported_rows_fail_closed_under_explicit_vibecomfy(
@@ -537,6 +536,34 @@ def test_section3a_unsupported_rows_fail_closed_under_explicit_vibecomfy(
     assert resolved.should_use_vibecomfy is False
     assert resolved.fail_closed_reason
     assert "will not fall back to WGP" in resolved.fail_closed_reason
+
+
+@pytest.mark.parametrize("mode", ["pose", "depth", "canny", "cameraman"])
+def test_section3a_ltx_control_first_last_modes_use_iclora_template(routing, mode: str) -> None:
+    resolved = routing.resolve_task_route(
+        task_id=f"ltx-control-{mode}",
+        task_type="travel_segment",
+        params={
+            "_source_task_type": "travel_segment",
+            "model_name": "ltx2_22B_distilled_1_1",
+            "continuity_case": "first_last",
+            "travel_guidance": {
+                "kind": "ltx_control",
+                "mode": mode,
+                "videos": [{"path": f"/tmp/{mode}.mp4"}],
+            },
+        },
+        backend="vibecomfy",
+    )
+
+    assert resolved.route_key == (
+        f"travel_segment__model-ltx2_distilled__guidance-ltx_control_{mode}"
+        "__continuity-first_last__profile-default"
+    )
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.template_id == "video/ltx2_3_first_last_frame_travel_iclora_control"
+    assert resolved.fail_closed_reason is None
+    assert resolved.should_use_vibecomfy is True
 
 
 def test_template_less_vibecomfy_supported_route_fails_closed(routing, monkeypatch) -> None:

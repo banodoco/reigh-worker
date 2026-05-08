@@ -452,6 +452,8 @@ def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace:
         return str(_write_flux_klein_edit_scratchpad(resolved, run_workspace)), False
     if _is_wan_vace_route(resolved.route_key):
         return str(_write_wan_2_2_vace_scratchpad(resolved, run_workspace)), False
+    if _is_ltx_first_last_control_route(resolved.route_key):
+        return str(_write_ltx_first_last_control_scratchpad(resolved, run_workspace)), False
     if _is_ltx_first_last_route(resolved.route_key):
         return str(_write_ltx_first_last_scratchpad(resolved, run_workspace)), False
     return str(resolved.template_id), True
@@ -1407,6 +1409,26 @@ def _is_ltx_first_last_route(route_key: str) -> bool:
     )
 
 
+def _is_ltx_first_last_control_route(route_key: str) -> bool:
+    return (
+        route_key.startswith("travel_segment__model-ltx2_distilled__")
+        and "__guidance-ltx_control_" in route_key
+        and "__continuity-first_last__" in route_key
+    )
+
+
+def _ltx_control_mode_from_route(route_key: str, params: Mapping[str, Any]) -> str:
+    guidance = params.get("travel_guidance")
+    if isinstance(guidance, Mapping):
+        mode = guidance.get("mode")
+        if isinstance(mode, str) and mode.strip():
+            return mode.strip()
+    marker = "__guidance-ltx_control_"
+    if marker in route_key:
+        return route_key.split(marker, 1)[1].split("__", 1)[0]
+    return "video"
+
+
 def _write_ltx_first_last_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
     first_name = _materialize_image_input(
         resolved,
@@ -1490,6 +1512,148 @@ def _write_ltx_first_last_scratchpad(resolved: ResolvedTask, run_workspace: Path
                 f"    workflow.nodes['2076'].inputs['value'] = {fps}",
                 f"    workflow.nodes['2108'].inputs['value'] = {first_strength}",
                 f"    workflow.nodes['2110'].inputs['value'] = {last_strength}",
+                "    return workflow.finalize_metadata()",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return scratchpad
+
+
+def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
+    mode = _ltx_control_mode_from_route(resolved.route_key, resolved.params)
+    if mode == "video":
+        raise ValueError(
+            "VibeComfy LTX first/last raw video guidance is not yet implemented; "
+            "the IC-LoRA scratchpad only covers pose/depth/canny/cameraman control modes"
+        )
+
+    first_name = _materialize_image_input(
+        resolved,
+        run_workspace,
+        "start_image_url",
+        "start_image",
+        "first_frame",
+        "first_frame_url",
+        "image",
+        "image_url",
+        nested_keys=("individual_segment_params", "segment_params", "orchestrator_details"),
+        list_keys=("input_image_paths_resolved",),
+        list_index=0,
+        fallback_filename=f"ltx_first_{resolved.task_id}.png",
+    )
+    last_name = _materialize_image_input(
+        resolved,
+        run_workspace,
+        "end_image_url",
+        "end_image",
+        "last_frame",
+        "last_frame_url",
+        nested_keys=("individual_segment_params", "segment_params", "orchestrator_details"),
+        list_keys=("input_image_paths_resolved",),
+        list_index=1,
+        fallback_filename=f"ltx_last_{resolved.task_id}.png",
+    )
+    control_name = _materialize_optional_video_input(
+        resolved,
+        run_workspace,
+        "control_video",
+        "control_video_url",
+        "video_guide",
+        "guide_video",
+        "guide_video_path",
+        nested_keys=("individual_segment_params", "segment_params", "orchestrator_details"),
+        fallback_filename=f"ltx_control_{resolved.task_id}.mp4",
+    )
+    if not control_name:
+        raise ValueError(f"VibeComfy route {resolved.route_key!r} requires a materialized LTX control guide video")
+
+    width, height = _parse_resolution(
+        resolved.params.get("resolution")
+        or resolved.params.get("parsed_resolution_wh")
+        or _first_nested_string(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "parsed_resolution_wh")
+        or "1280x720"
+    )
+    frames = int(
+        resolved.params.get("num_frames")
+        or resolved.params.get("video_length")
+        or _first_nested_value(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "num_frames", "video_length")
+        or 121
+    )
+    fps = int(float(resolved.params.get("fps") or resolved.params.get("fps_helpers") or 24))
+    prompt = str(
+        resolved.params.get("prompt")
+        or resolved.params.get("base_prompt")
+        or _first_nested_string(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "prompt", "base_prompt")
+        or ""
+    )
+    negative = str(
+        resolved.params.get("negative_prompt")
+        or _first_nested_string(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "negative_prompt")
+        or "blurry, oversaturated, pixelated, low resolution, grainy, distorted, noise, compression artifacts"
+    )
+    seed = int(
+        resolved.params.get("seed")
+        or resolved.params.get("seed_to_use")
+        or _first_nested_value(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "seed", "seed_to_use", "seed_base")
+        or 42
+    )
+    first_strength = float(resolved.params.get("first_frame_strength", resolved.params.get("start_strength", 8)))
+    last_strength = float(resolved.params.get("last_frame_strength", resolved.params.get("end_strength", 8)))
+    guidance = resolved.params.get("travel_guidance")
+    guidance_strength = 1.0
+    if isinstance(guidance, Mapping) and guidance.get("strength") is not None:
+        guidance_strength = float(guidance["strength"])
+    elif mode in {"pose", "depth", "canny"}:
+        guidance_strength = 0.5
+    lora_name = (
+        "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
+        if mode == "cameraman"
+        else "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+    )
+    guide_source_ref = {
+        "pose": "6102.0",
+        "depth": "6103.0",
+        "canny": "5028.0",
+        "cameraman": "6101.0",
+    }.get(mode)
+    if guide_source_ref is None:
+        raise ValueError(f"unsupported LTX control mode for VibeComfy first/last route: {mode!r}")
+
+    scratchpad = run_workspace / "ltx_first_last_control_scratchpad.py"
+    scratchpad.write_text(
+        "\n".join(
+            [
+                "from vibecomfy.cli_loader import load_workflow_any",
+                "",
+                "",
+                "def build():",
+                "    workflow = load_workflow_any('video/ltx2_3_first_last_frame_travel_iclora_control')",
+                f"    workflow.nodes['45'].inputs['image'] = {json.dumps(first_name)}",
+                f"    workflow.nodes['47'].inputs['image'] = {json.dumps(last_name)}",
+                f"    workflow.nodes['5001'].inputs['file'] = {json.dumps(control_name)}",
+                f"    workflow.nodes['5001'].inputs['video'] = {json.dumps(control_name)}",
+                f"    workflow.nodes['5001'].inputs['widget_0'] = {json.dumps(control_name)}",
+                f"    workflow.nodes['6000'].inputs['value'] = {json.dumps(mode)}",
+                f"    workflow.nodes['16'].inputs['text'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['11'].inputs['text'] = {json.dumps(negative)}",
+                f"    workflow.nodes['14'].inputs['noise_seed'] = {seed}",
+                f"    workflow.nodes['15'].inputs['noise_seed'] = {seed}",
+                f"    workflow.nodes['2078'].inputs['widget_0'] = {frames}",
+                f"    workflow.nodes['2078'].inputs['value'] = {frames}",
+                f"    workflow.nodes['2079'].inputs['widget_0'] = {height}",
+                f"    workflow.nodes['2079'].inputs['value'] = {height}",
+                f"    workflow.nodes['2080'].inputs['widget_0'] = {width}",
+                f"    workflow.nodes['2080'].inputs['value'] = {width}",
+                f"    workflow.nodes['2076'].inputs['value'] = {fps}",
+                f"    workflow.nodes['2110'].inputs['value'] = {first_strength}",
+                f"    workflow.nodes['2108'].inputs['value'] = {last_strength}",
+                f"    workflow.nodes['5011'].inputs['lora_name'] = {json.dumps(lora_name)}",
+                f"    workflow.nodes['5011'].inputs['widget_0'] = {json.dumps(lora_name)}",
+                f"    workflow.nodes['5011'].inputs['widget_1'] = {guidance_strength}",
+                f"    workflow.nodes['5012'].inputs['widget_1'] = {guidance_strength}",
+                f"    workflow.replace_edge('5012.image', {json.dumps(guide_source_ref)})",
                 "    return workflow.finalize_metadata()",
                 "",
             ]

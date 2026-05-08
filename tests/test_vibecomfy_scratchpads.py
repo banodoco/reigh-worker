@@ -150,6 +150,47 @@ def test_wan_2_2_i2v_first_last_scratchpad_preserves_image_embeds(tmp_path: Path
     assert (tmp_path / "input" / "wan_2_2_i2v_end_travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default-task.png").exists()
 
 
+def test_ltx_first_last_control_scratchpad_patches_reusable_iclora_template(tmp_path: Path, monkeypatch) -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+    start = tmp_path / "start.png"
+    end = tmp_path / "end.png"
+    control = tmp_path / "pose.mp4"
+    start.write_bytes(b"start")
+    end.write_bytes(b"end")
+    control.write_bytes(b"video")
+    monkeypatch.setattr(adapter, "download_image_if_url", lambda value, *_args, **_kwargs: value)
+    monkeypatch.setattr(adapter, "download_video_if_url", lambda value, *_args, **_kwargs: value)
+
+    scratchpad = adapter._write_ltx_first_last_control_scratchpad(
+        _resolved(
+            "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
+            {
+                "input_image_paths_resolved": [str(start), str(end)],
+                "travel_guidance": {"kind": "ltx_control", "mode": "pose", "videos": [{"path": str(control)}], "strength": 0.6},
+                "prompt": "follow the control guide",
+                "negative_prompt": "bad",
+                "resolution": "640x360",
+                "num_frames": 25,
+                "fps": 12,
+                "seed": 123,
+            },
+        ),
+        tmp_path,
+    )
+
+    text = scratchpad.read_text(encoding="utf-8")
+    assert "video/ltx2_3_first_last_frame_travel_iclora_control" in text
+    assert "workflow.nodes['5001'].inputs['video']" in text
+    assert "workflow.nodes['6000'].inputs['value'] = \"pose\"" in text
+    assert "workflow.nodes['16'].inputs['text'] = \"follow the control guide\"" in text
+    assert "workflow.nodes['5011'].inputs['widget_1'] = 0.6" in text
+    assert "workflow.nodes['5012'].inputs['widget_1'] = 0.6" in text
+    assert "workflow.replace_edge('5012.image', \"6102.0\")" in text
+    assert (tmp_path / "input" / "ltx_first_travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default-task.png").exists()
+    assert (tmp_path / "input" / "ltx_last_travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default-task.png").exists()
+    assert (tmp_path / "input" / "ltx_control_travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default-task.mp4").exists()
+
+
 def test_animate_character_scratchpad_chains_dynamic_loras(tmp_path: Path, monkeypatch) -> None:
     adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
     image = tmp_path / "character.png"

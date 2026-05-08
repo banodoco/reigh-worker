@@ -5031,14 +5031,14 @@
         "Explicit fail-closed route seeded from worker route support map"
       ],
       "blockers": [
-        "The pinned LTX first/last template is not yet proven control-capable for a full-length control guide."
+        "Raw LTX video guidance uses Wan2GP VG semantics without IC-LoRA; needs a dedicated VibeComfy raw-guide first/last template before promotion."
       ]
     },
     {
-      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default",
+      "capability_id": "cap.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default",
       "name": "travel segment / model-ltx2 distilled / guidance-ltx control pose / continuity-first last / profile-default",
-      "status": "unsupported_fail_closed",
-      "implementation": "unsupported",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
       "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
       "route_keys": [],
       "task_types": [
@@ -5066,8 +5066,8 @@
             "ltx_control",
             "uni3c"
           ],
-          "coverage": "Route key and adapter decide which control modes are supported.",
-          "fail_closed": true
+          "coverage": "This route covers LTX first/last pose control via the reusable IC-LoRA control template; raw video control remains a separate fail-closed route.",
+          "fail_closed": false
         },
         {
           "name": "source_media",
@@ -5078,7 +5078,7 @@
             "mask",
             "first_last"
           ],
-          "coverage": "Task params and route key select source-media shape.",
+          "coverage": "Dedicated scratchpad materializes first/last image anchors and a full-length guide video.",
           "fail_closed": false
         },
         {
@@ -5141,20 +5141,20 @@
       ],
       "live_evidence": [],
       "static_evidence": [
+        "vibecomfy_template_index:video/ltx2_3_first_last_frame_travel_iclora_control",
         "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default"
       ],
       "notes": [
-        "Explicit fail-closed route seeded from worker route support map"
+        "Uses reusable LTX first/last IC-LoRA control template; pose branch is selected by scratchpad edge rewiring. Runtime promotion requires committed live report evidence."
       ],
-      "blockers": [
-        "The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides."
-      ]
+      "blockers": [],
+      "template_id": "video/ltx2_3_first_last_frame_travel_iclora_control"
     },
     {
-      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-depth-continuity-first-last-profile-default",
+      "capability_id": "cap.travel-segment-model-ltx2-distilled-guidance-ltx-control-depth-continuity-first-last-profile-default",
       "name": "travel segment / model-ltx2 distilled / guidance-ltx control depth / continuity-first last / profile-default",
-      "status": "unsupported_fail_closed",
-      "implementation": "unsupported",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
       "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
       "route_keys": [],
       "task_types": [
@@ -5182,8 +5182,8 @@
             "ltx_control",
             "uni3c"
           ],
-          "coverage": "Route key and adapter decide which control modes are supported.",
-          "fail_closed": true
+          "coverage": "This route covers LTX first/last depth control via the reusable IC-LoRA control template; raw video control remains a separate fail-closed route.",
+          "fail_closed": false
         },
         {
           "name": "source_media",
@@ -5194,7 +5194,7 @@
             "mask",
             "first_last"
           ],
-          "coverage": "Task params and route key select source-media shape.",
+          "coverage": "Dedicated scratchpad materializes first/last image anchors and a full-length guide video.",
           "fail_closed": false
         },
         {
@@ -5257,20 +5257,20 @@
       ],
       "live_evidence": [],
       "static_evidence": [
+        "vibecomfy_template_index:video/ltx2_3_first_last_frame_travel_iclora_control",
         "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default"
       ],
       "notes": [
-        "Explicit fail-closed route seeded from worker route support map"
+        "Uses reusable LTX first/last IC-LoRA control template; depth branch is selected by scratchpad edge rewiring. Runtime promotion requires committed live report evidence."
       ],
-      "blockers": [
-        "The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides."
-      ]
+      "blockers": [],
+      "template_id": "video/ltx2_3_first_last_frame_travel_iclora_control"
     },
     {
-      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-canny-continuity-first-last-profile-default",
+      "capability_id": "cap.travel-segment-model-ltx2-distilled-guidance-ltx-control-canny-continuity-first-last-profile-default",
       "name": "travel segment / model-ltx2 distilled / guidance-ltx control canny / continuity-first last / profile-default",
-      "status": "unsupported_fail_closed",
-      "implementation": "unsupported",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
       "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
       "route_keys": [],
       "task_types": [
@@ -5298,8 +5298,8 @@
             "ltx_control",
             "uni3c"
           ],
-          "coverage": "Route key and adapter decide which control modes are supported.",
-          "fail_closed": true
+          "coverage": "This route covers LTX first/last canny control via the reusable IC-LoRA control template; raw video control remains a separate fail-closed route.",
+          "fail_closed": false
         },
         {
           "name": "source_media",
@@ -5310,7 +5310,7 @@
             "mask",
             "first_last"
           ],
-          "coverage": "Task params and route key select source-media shape.",
+          "coverage": "Dedicated scratchpad materializes first/last image anchors and a full-length guide video.",
           "fail_closed": false
         },
         {
@@ -5373,20 +5373,20 @@
       ],
       "live_evidence": [],
       "static_evidence": [
+        "vibecomfy_template_index:video/ltx2_3_first_last_frame_travel_iclora_control",
         "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default"
       ],
       "notes": [
-        "Explicit fail-closed route seeded from worker route support map"
+        "Uses reusable LTX first/last IC-LoRA control template; canny branch is selected by scratchpad edge rewiring. Runtime promotion requires committed live report evidence."
       ],
-      "blockers": [
-        "The pinned LTX first/last template is not yet proven control-capable for Canny-preprocessed full-length guides."
-      ]
+      "blockers": [],
+      "template_id": "video/ltx2_3_first_last_frame_travel_iclora_control"
     },
     {
-      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-cameraman-continuity-first-last-profile-default",
+      "capability_id": "cap.travel-segment-model-ltx2-distilled-guidance-ltx-control-cameraman-continuity-first-last-profile-default",
       "name": "travel segment / model-ltx2 distilled / guidance-ltx control cameraman / continuity-first last / profile-default",
-      "status": "unsupported_fail_closed",
-      "implementation": "unsupported",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
       "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
       "route_keys": [],
       "task_types": [
@@ -5414,8 +5414,8 @@
             "ltx_control",
             "uni3c"
           ],
-          "coverage": "Route key and adapter decide which control modes are supported.",
-          "fail_closed": true
+          "coverage": "This route covers LTX first/last cameraman control via the reusable IC-LoRA control template; raw video control remains a separate fail-closed route.",
+          "fail_closed": false
         },
         {
           "name": "source_media",
@@ -5426,7 +5426,7 @@
             "mask",
             "first_last"
           ],
-          "coverage": "Task params and route key select source-media shape.",
+          "coverage": "Dedicated scratchpad materializes first/last image anchors and a full-length guide video.",
           "fail_closed": false
         },
         {
@@ -5489,14 +5489,14 @@
       ],
       "live_evidence": [],
       "static_evidence": [
+        "vibecomfy_template_index:video/ltx2_3_first_last_frame_travel_iclora_control",
         "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default"
       ],
       "notes": [
-        "Explicit fail-closed route seeded from worker route support map"
+        "Uses reusable LTX first/last IC-LoRA control template; cameraman branch is selected by scratchpad edge rewiring. Runtime promotion requires committed live report evidence."
       ],
-      "blockers": [
-        "The pinned LTX first/last template is not yet proven control-capable for cameraman full-length guides."
-      ]
+      "blockers": [],
+      "template_id": "video/ltx2_3_first_last_frame_travel_iclora_control"
     }
   ]
 }

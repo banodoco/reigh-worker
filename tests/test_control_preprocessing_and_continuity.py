@@ -140,18 +140,17 @@ def test_standalone_regeneration_fields_drive_video_source_continuity_route():
     )
 
 
-@pytest.mark.parametrize("mode", ["pose", "depth", "canny", "cameraman"])
-def test_ltx_control_rows_requiring_control_guides_do_not_use_first_last_template(mode):
+def test_ltx_control_video_row_remains_fail_closed_until_raw_vg_template_exists():
     resolved = resolve_task_route(
-        task_id=f"ltx-control-{mode}",
+        task_id="ltx-control-video",
         task_type="travel_segment",
         params={
             "model_name": "ltx2_22B_distilled",
             "continuity_case": "first_last",
             "travel_guidance": {
                 "kind": "ltx_control",
-                "mode": mode,
-                "videos": [{"path": f"/tmp/{mode}.mp4"}],
+                "mode": "video",
+                "videos": [{"path": "/tmp/video.mp4"}],
             },
         },
         backend="vibecomfy",

@@ -45,8 +45,8 @@
 | `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_runexx_first_last_frame` |
 | `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_runexx_first_last_frame` |
 | `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
-| `travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_first_last_frame_travel_iclora_control` |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_first_last_frame_travel_iclora_control` |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_first_last_frame_travel_iclora_control` |
+| `travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/ltx2_3_first_last_frame_travel_iclora_control` |
 | `animate_character` | `video/wan22_animate_native_first_stage` |
