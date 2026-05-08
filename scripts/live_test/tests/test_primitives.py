@@ -2371,6 +2371,51 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
     assert "VIBECOMFY_CWD=/workspace/vibecomfy" in launched[0]
 
 
+def test_variant_update_reconnects_when_vibecomfy_install_loses_ssh(monkeypatch: pytest.MonkeyPatch):
+    from scripts.live_test import variant_update
+
+    calls = []
+    reopened = []
+
+    class DummySSH:
+        def __init__(self, name):
+            self.name = name
+            self.disconnected = False
+
+        def disconnect(self):
+            self.disconnected = True
+
+    first = DummySSH("first")
+    second = DummySSH("second")
+
+    def fake_clone(ssh, **kwargs):
+        calls.append((ssh.name, kwargs))
+        if ssh is first:
+            raise RuntimeError("Remote command failed with exit -1: SSH session not active")
+
+    monkeypatch.setattr(variant_update, "clone_and_install_vibecomfy", fake_clone)
+    monkeypatch.setattr(
+        variant_update,
+        "open_session",
+        lambda pod_id, api_key, ssh_wait_timeout=180: reopened.append((pod_id, api_key, ssh_wait_timeout)) or second,
+    )
+
+    result = variant_update._clone_and_install_vibecomfy_with_reconnect(
+        first,
+        pod_id="pod-1",
+        api_key="api-key",
+        repo_url="repo",
+        branch="branch",
+        workdir="/workspace/vibecomfy",
+        python_path="python3.11",
+    )
+
+    assert result is second
+    assert first.disconnected is True
+    assert reopened == [("pod-1", "api-key", 180)]
+    assert [name for name, _kwargs in calls] == ["first", "second"]
+
+
 def test_main_defaults_terminate_for_fresh_and_no_terminate_for_update(monkeypatch: pytest.MonkeyPatch):
     seen = []
 
@@ -2389,3 +2434,10 @@ def test_main_defaults_terminate_for_fresh_and_no_terminate_for_update(monkeypat
         ("fresh", False, "vibecomfy", ["z_image_turbo"]),
         ("update", True, "wgp", ["z_image_turbo"]),
     ]
+
+
+def test_main_defaults_to_production_parity_vibecomfy_ref() -> None:
+    parser = live_test_main.build_parser()
+    args = parser.parse_args(["--variant", "update", "--pod-id", "pod-1", "--backend", "vibecomfy"])
+
+    assert args.vibecomfy_ref == "megaplan/production-parity-templates"

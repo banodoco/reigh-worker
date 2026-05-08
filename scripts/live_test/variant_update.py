@@ -229,6 +229,60 @@ def _extract_worker_id_from_cmdline(cmdline: list[str]) -> str | None:
     return None
 
 
+def _is_retryable_ssh_drop(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "ssh session not active" in message
+        or "exit -1" in message
+        or "socket is closed" in message
+        or "connection reset" in message
+        or "connection lost" in message
+        or "broken pipe" in message
+    )
+
+
+def _clone_and_install_vibecomfy_with_reconnect(
+    ssh,
+    *,
+    pod_id: str,
+    api_key: str,
+    repo_url: str,
+    branch: str,
+    workdir: str,
+    python_path: str,
+    attempts: int = 2,
+):
+    current_ssh = ssh
+    for attempt in range(1, attempts + 1):
+        try:
+            clone_and_install_vibecomfy(
+                current_ssh,
+                repo_url=repo_url,
+                branch=branch,
+                workdir=workdir,
+                python_path=python_path,
+            )
+            return current_ssh
+        except Exception as exc:
+            if attempt >= attempts or not _is_retryable_ssh_drop(exc):
+                raise
+            log.warning(
+                "VibeComfy checkout/install lost SSH; reconnecting and retrying",
+                attempt=attempt,
+                attempts=attempts,
+                pod_id=pod_id,
+                error=str(exc),
+            )
+            disconnect = getattr(current_ssh, "disconnect", None)
+            if callable(disconnect):
+                try:
+                    disconnect()
+                except Exception:
+                    pass
+            current_ssh = open_session(pod_id, api_key, ssh_wait_timeout=180)
+    return current_ssh
+
+
 def _worker_matches_pod(row: dict[str, Any], pod_id: str) -> bool:
     if str(row.get("id") or "") == pod_id:
         return True
@@ -645,8 +699,10 @@ def run(args) -> int:
 
         _remote_checkout_and_sync(ssh, branch, workdir)
         if getattr(args, "backend", "wgp") == "vibecomfy":
-            clone_and_install_vibecomfy(
+            ssh = _clone_and_install_vibecomfy_with_reconnect(
                 ssh,
+                pod_id=pod_id,
+                api_key=api_key,
                 repo_url=VIBECOMFY_REPO_URL,
                 branch=getattr(args, "vibecomfy_ref", "megaplan/production-parity-templates"),
                 workdir=VIBECOMFY_WORKDIR,

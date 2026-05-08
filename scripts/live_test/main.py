@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ref", default="main", help="Branch/ref to clone for Variant Fresh.")
     parser.add_argument(
         "--vibecomfy-ref",
-        default="megaplan/vibecomfy-sprint-04-wan-single-frame",
+        default="megaplan/production-parity-templates",
         help="VibeComfy branch/ref to clone for VibeComfy backend live tests.",
     )
     parser.add_argument("--wgp-profile", type=int, default=3)
