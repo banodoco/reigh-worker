@@ -1,0 +1,99 @@
+{
+  "app_root": "../reigh-app",
+  "capabilities": [
+    {
+      "capability_id": "app.animate_character",
+      "source_path": "src/tools/character-animate/hooks/useCharacterAnimateGenerate.ts",
+      "expected_literals": [
+        "character_animate",
+        "createCharacterAnimateTask"
+      ],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.create_task_edge_client",
+      "source_path": "src/shared/lib/taskCreation/createTask.ts",
+      "expected_literals": [],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.edit_video",
+      "source_path": "src/tools/edit-video/hooks/useReplaceMode.ts",
+      "expected_literals": [
+        "edit_video"
+      ],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.image_inpaint",
+      "source_path": "src/shared/lib/tasks/imageEditing/imageInpaint.ts",
+      "expected_literals": [
+        "image_inpaint"
+      ],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.join_clips",
+      "source_path": "src/tools/join-clips/hooks/useJoinClipsGenerate.ts",
+      "expected_literals": [
+        "join"
+      ],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.task_params_utils",
+      "source_path": "src/shared/lib/taskParamsUtils.ts",
+      "expected_literals": [],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.task_type_config_fallback",
+      "source_path": "src/shared/lib/taskTypeConfigFallback.ts",
+      "expected_literals": [],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.travel_between_images",
+      "source_path": "src/tools/travel-between-images/components/ShotEditor/hooks/actions/useGenerateBatch.ts",
+      "expected_literals": [
+        "travel"
+      ],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    },
+    {
+      "capability_id": "app.travel_guidance",
+      "source_path": "src/shared/lib/tasks/travelGuidance.ts",
+      "expected_literals": [
+        "travel"
+      ],
+      "resolver_ids": [],
+      "notes": [
+        "Read-only app source anchor for VibeComfy/Wan2GP parity tracking."
+      ]
+    }
+  ]
+}

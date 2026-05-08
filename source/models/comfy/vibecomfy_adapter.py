@@ -415,6 +415,8 @@ def _vibecomfy_run_help_text(python_executable: str, cwd: str, pythonpath: str) 
             check=False,
             timeout=10,
         )
+    except TypeError:
+        return ""
     except (OSError, subprocess.TimeoutExpired):
         return ""
     return f"{completed.stdout}\n{completed.stderr}"

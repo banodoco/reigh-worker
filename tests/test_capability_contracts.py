@@ -144,6 +144,21 @@ def test_vibecomfy_contracts_have_template_artifact_variant_app_and_static_evide
     assert missing == []
 
 
+def test_vibecomfy_contracts_do_not_keep_stale_template_index_blockers() -> None:
+    stale: list[tuple[str, str]] = []
+    for contract in load_contracts():
+        if contract.implementation != "vibecomfy" or not contract.template_id:
+            continue
+        marker = f"vibecomfy_template_index_missing:{contract.template_id}"
+        haystack = (*contract.static_evidence, *contract.blockers, *contract.notes)
+        if any(marker in value for value in haystack):
+            stale.append((contract.capability_id, contract.template_id))
+        if any("was not present in ../vibecomfy/template_index.json during seed scan" in value for value in haystack):
+            stale.append((contract.capability_id, contract.template_id))
+
+    assert stale == []
+
+
 def test_contracts_encode_parity_critical_variant_axes() -> None:
     missing: list[tuple[str, str]] = []
     weak: list[tuple[str, str]] = []

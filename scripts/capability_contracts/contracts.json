@@ -1,0 +1,5502 @@
+{
+  "contracts": [
+    {
+      "capability_id": "cap.z_image_turbo",
+      "name": "z image turbo",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "z_image_turbo",
+      "route_keys": [
+        "z_image"
+      ],
+      "task_types": [
+        "z_image",
+        "z_image_turbo"
+      ],
+      "template_id": "image/z_image",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "z_image_turbo"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:image/z_image",
+        "worker_route:z_image_turbo"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.z_image_turbo_i2i",
+      "name": "z image turbo i2i",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "z_image_turbo_i2i",
+      "route_keys": [],
+      "task_types": [
+        "z_image_turbo_i2i"
+      ],
+      "template_id": "image/z_image_img2img",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "z_image_turbo_i2i"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:image/z_image_img2img",
+        "worker_route:z_image_turbo_i2i"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.qwen_image_2512",
+      "name": "qwen image 2512",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "qwen_image_2512",
+      "route_keys": [],
+      "task_types": [
+        "qwen_image_2512"
+      ],
+      "template_id": "image/qwen_image_2512",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "qwen_image_2512"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:image/qwen_image_2512",
+        "worker_route:qwen_image_2512"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.qwen_image",
+      "name": "qwen image",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "qwen_image",
+      "route_keys": [],
+      "task_types": [
+        "qwen_image"
+      ],
+      "template_id": "image/qwen_image_2512",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "qwen_image_t2i"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:image/qwen_image_2512",
+        "worker_route:qwen_image"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.qwen_image_edit",
+      "name": "qwen image edit",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "qwen_image_edit",
+      "route_keys": [],
+      "task_types": [
+        "qwen_image_edit"
+      ],
+      "template_id": "edit/qwen_image_edit",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "qwen_image_edit"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:edit/qwen_image_edit",
+        "worker_route:qwen_image_edit"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.qwen_image_style",
+      "name": "qwen image style",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "qwen_image_style",
+      "route_keys": [],
+      "task_types": [
+        "qwen_image_style"
+      ],
+      "template_id": "edit/qwen_image_edit",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "qwen_image_style"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:edit/qwen_image_edit",
+        "worker_route:qwen_image_style"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.image_inpaint",
+      "name": "image inpaint",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "image_inpaint",
+      "route_keys": [],
+      "task_types": [
+        "image_inpaint"
+      ],
+      "template_id": "edit/qwen_image_edit",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.image_inpaint"
+      ],
+      "live_evidence": [
+        "image_inpaint"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:edit/qwen_image_edit",
+        "worker_route:image_inpaint"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.annotated_image_edit",
+      "name": "annotated image edit",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "annotated_image_edit",
+      "route_keys": [],
+      "task_types": [
+        "annotated_image_edit"
+      ],
+      "template_id": "edit/qwen_image_edit",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "annotated_image_edit"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:edit/qwen_image_edit",
+        "worker_route:annotated_image_edit"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel_orchestrator",
+      "name": "travel orchestrator",
+      "status": "wgp_only_contract_validated",
+      "implementation": "wgp",
+      "canonical_route_key": "travel_orchestrator",
+      "route_keys": [],
+      "task_types": [
+        "travel_orchestrator"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        },
+        {
+          "name": "child_creation",
+          "values": [
+            "none",
+            "one",
+            "many"
+          ],
+          "coverage": "WGP orchestration may create and monitor child tasks.",
+          "fail_closed": false
+        },
+        {
+          "name": "route_metadata",
+          "values": [
+            "present"
+          ],
+          "coverage": "Route metadata is persisted for parent/child consistency.",
+          "fail_closed": false
+        },
+        {
+          "name": "artifact_fan_in",
+          "values": [
+            "none",
+            "multiple_children"
+          ],
+          "coverage": "Final artifacts may depend on child artifacts.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "child_tasks",
+          "orchestration_state"
+        ],
+        "db_state": [
+          "parent_task_persists_child_routes",
+          "task_status_updates"
+        ],
+        "storage_paths": [
+          "child_artifacts"
+        ],
+        "notes": "Orchestration remains in Wan2GP/worker code; child routes own generated media."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "travel_orchestrator_wan2_1seg",
+        "travel_orchestrator_ltx"
+      ],
+      "static_evidence": [
+        "worker_route:travel_orchestrator"
+      ],
+      "notes": [
+        "WGP-only path: no VibeComfy template is expected for orchestration/stitching behavior."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.join_clips_orchestrator",
+      "name": "join clips orchestrator",
+      "status": "wgp_only_contract_validated",
+      "implementation": "wgp",
+      "canonical_route_key": "join_clips_orchestrator",
+      "route_keys": [],
+      "task_types": [
+        "join_clips_orchestrator"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        },
+        {
+          "name": "child_creation",
+          "values": [
+            "none",
+            "one",
+            "many"
+          ],
+          "coverage": "WGP orchestration may create and monitor child tasks.",
+          "fail_closed": false
+        },
+        {
+          "name": "route_metadata",
+          "values": [
+            "present"
+          ],
+          "coverage": "Route metadata is persisted for parent/child consistency.",
+          "fail_closed": false
+        },
+        {
+          "name": "artifact_fan_in",
+          "values": [
+            "none",
+            "multiple_children"
+          ],
+          "coverage": "Final artifacts may depend on child artifacts.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "child_tasks",
+          "orchestration_state"
+        ],
+        "db_state": [
+          "parent_task_persists_child_routes",
+          "task_status_updates"
+        ],
+        "storage_paths": [
+          "child_artifacts"
+        ],
+        "notes": "Orchestration remains in Wan2GP/worker code; child routes own generated media."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.join_clips"
+      ],
+      "live_evidence": [
+        "join_clips_orchestrator"
+      ],
+      "static_evidence": [
+        "worker_route:join_clips_orchestrator"
+      ],
+      "notes": [
+        "WGP-only path: no VibeComfy template is expected for orchestration/stitching behavior."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.edit_video_orchestrator",
+      "name": "edit video orchestrator",
+      "status": "wgp_only_contract_validated",
+      "implementation": "wgp",
+      "canonical_route_key": "edit_video_orchestrator",
+      "route_keys": [],
+      "task_types": [
+        "edit_video_orchestrator"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        },
+        {
+          "name": "child_creation",
+          "values": [
+            "none",
+            "one",
+            "many"
+          ],
+          "coverage": "WGP orchestration may create and monitor child tasks.",
+          "fail_closed": false
+        },
+        {
+          "name": "route_metadata",
+          "values": [
+            "present"
+          ],
+          "coverage": "Route metadata is persisted for parent/child consistency.",
+          "fail_closed": false
+        },
+        {
+          "name": "artifact_fan_in",
+          "values": [
+            "none",
+            "multiple_children"
+          ],
+          "coverage": "Final artifacts may depend on child artifacts.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "child_tasks",
+          "orchestration_state"
+        ],
+        "db_state": [
+          "parent_task_persists_child_routes",
+          "task_status_updates"
+        ],
+        "storage_paths": [
+          "child_artifacts"
+        ],
+        "notes": "Orchestration remains in Wan2GP/worker code; child routes own generated media."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.edit_video"
+      ],
+      "live_evidence": [
+        "edit_video_orchestrator"
+      ],
+      "static_evidence": [
+        "worker_route:edit_video_orchestrator"
+      ],
+      "notes": [
+        "WGP-only path: no VibeComfy template is expected for orchestration/stitching behavior."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment",
+      "name": "travel segment",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "No VibeComfy route is currently enabled."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.individual-travel-segment",
+      "name": "individual travel segment",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "individual_travel_segment",
+      "route_keys": [],
+      "task_types": [
+        "individual_travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:individual_travel_segment"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "No VibeComfy route is currently enabled."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.join-clips-segment",
+      "name": "join clips segment",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "join_clips_segment",
+      "route_keys": [],
+      "task_types": [
+        "join_clips_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.join_clips"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:join_clips_segment"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "No VibeComfy route is currently enabled."
+      ]
+    },
+    {
+      "capability_id": "cap.travel_stitch",
+      "name": "travel stitch",
+      "status": "wgp_only_contract_validated",
+      "implementation": "wgp",
+      "canonical_route_key": "travel_stitch",
+      "route_keys": [],
+      "task_types": [
+        "travel_stitch"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        },
+        {
+          "name": "child_creation",
+          "values": [
+            "none",
+            "one",
+            "many"
+          ],
+          "coverage": "WGP orchestration may create and monitor child tasks.",
+          "fail_closed": false
+        },
+        {
+          "name": "route_metadata",
+          "values": [
+            "present"
+          ],
+          "coverage": "Route metadata is persisted for parent/child consistency.",
+          "fail_closed": false
+        },
+        {
+          "name": "artifact_fan_in",
+          "values": [
+            "none",
+            "multiple_children"
+          ],
+          "coverage": "Final artifacts may depend on child artifacts.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location"
+        ],
+        "storage_paths": [
+          "generated_video"
+        ],
+        "notes": "Stitch/final assembly remains WGP-only."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "travel_stitch"
+      ],
+      "static_evidence": [
+        "worker_route:travel_stitch"
+      ],
+      "notes": [
+        "WGP-only path: no VibeComfy template is expected for orchestration/stitching behavior."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.join_final_stitch",
+      "name": "join final stitch",
+      "status": "wgp_only_contract_validated",
+      "implementation": "wgp",
+      "canonical_route_key": "join_final_stitch",
+      "route_keys": [],
+      "task_types": [
+        "join_final_stitch"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        },
+        {
+          "name": "child_creation",
+          "values": [
+            "none",
+            "one",
+            "many"
+          ],
+          "coverage": "WGP orchestration may create and monitor child tasks.",
+          "fail_closed": false
+        },
+        {
+          "name": "route_metadata",
+          "values": [
+            "present"
+          ],
+          "coverage": "Route metadata is persisted for parent/child consistency.",
+          "fail_closed": false
+        },
+        {
+          "name": "artifact_fan_in",
+          "values": [
+            "none",
+            "multiple_children"
+          ],
+          "coverage": "Final artifacts may depend on child artifacts.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location"
+        ],
+        "storage_paths": [
+          "generated_video"
+        ],
+        "notes": "Stitch/final assembly remains WGP-only."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.join_clips"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:join_final_stitch"
+      ],
+      "notes": [
+        "WGP-only path: no VibeComfy template is expected for orchestration/stitching behavior."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.wan_2_2_t2i",
+      "name": "wan 2 2 t2i",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "wan_2_2_t2i",
+      "route_keys": [
+        "optimised_t2i"
+      ],
+      "task_types": [
+        "optimised_t2i",
+        "wan_2_2_t2i"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_t2i",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "wan_2_2_t2i"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_t2i",
+        "worker_route:wan_2_2_t2i"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.wan_2_2_i2v",
+      "name": "wan 2 2 i2v",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "wan_2_2_i2v",
+      "route_keys": [],
+      "task_types": [
+        "wan_2_2_i2v"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_i2v_kijai",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "wan_2_2_i2v"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_i2v_kijai",
+        "worker_route:wan_2_2_i2v"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.image_upscale",
+      "name": "image-upscale",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "image-upscale",
+      "route_keys": [
+        "image_upscale"
+      ],
+      "task_types": [
+        "image-upscale"
+      ],
+      "template_id": "image/basic_image_upscale",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "image_upscale"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:image/basic_image_upscale",
+        "worker_route:image-upscale"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.video_enhance",
+      "name": "video enhance",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "video_enhance",
+      "route_keys": [],
+      "task_types": [
+        "video_enhance"
+      ],
+      "template_id": "video/basic_video_enhance",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "video_enhance"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/basic_video_enhance",
+        "worker_route:video_enhance"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.animate_character",
+      "name": "animate character",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "animate_character",
+      "route_keys": [],
+      "task_types": [
+        "animate_character"
+      ],
+      "template_id": "video/wan22_animate_native_first_stage",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.animate_character"
+      ],
+      "live_evidence": [
+        "animate_character"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wan22_animate_native_first_stage",
+        "worker_route:animate_character"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.flux_klein_edit",
+      "name": "flux klein edit",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "flux_klein_edit",
+      "route_keys": [],
+      "task_types": [
+        "flux_klein_edit"
+      ],
+      "template_id": "edit/flux2_klein_4b_image_edit_distilled",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "image"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "image_uploads",
+          "generated_images"
+        ],
+        "notes": "VibeComfy image output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.task_type_config_fallback"
+      ],
+      "live_evidence": [
+        "flux_klein_edit"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:edit/flux2_klein_4b_image_edit_distilled",
+        "worker_route:flux_klein_edit"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default",
+      "name": "travel segment / model-wan22 i2v / guidance-none / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted."
+      ]
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-flow-continuity-first-last-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace flow / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-flow-continuity-video-source-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace flow / continuity-video source / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "travel_segment_wan22_vace_flow_video_source"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-first-last-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace canny / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-video-source-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace canny / continuity-video source / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "travel_segment_wan22_vace_canny_video_source"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-depth-continuity-first-last-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace depth / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-depth-continuity-video-source-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace depth / continuity-video source / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "travel_segment_wan22_vace_depth_video_source"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-raw-continuity-first-last-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace raw / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-raw-continuity-video-source-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace raw / continuity-video source / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "travel_segment_wan22_vace_raw_video_source"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-continuity-video-source-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-vace / continuity-video source / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.individual-travel-segment-model-wan22-vace-guidance-vace-continuity-first-last-profile-default",
+      "name": "individual travel segment / model-wan22 vace / guidance-vace / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "individual_travel_segment__model-wan22_vace__guidance-vace__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "individual_travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:individual_travel_segment__model-wan22_vace__guidance-vace__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.individual-travel-segment-model-wan22-vace-guidance-vace-flow-continuity-first-last-profile-default",
+      "name": "individual travel segment / model-wan22 vace / guidance-vace flow / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "individual_travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "individual_travel_segment_wan22_vace_flow"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.individual-travel-segment-model-wan22-vace-guidance-vace-canny-continuity-first-last-profile-default",
+      "name": "individual travel segment / model-wan22 vace / guidance-vace canny / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "individual_travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "individual_travel_segment_wan22_vace_canny"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:individual_travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.individual-travel-segment-model-wan22-vace-guidance-vace-depth-continuity-first-last-profile-default",
+      "name": "individual travel segment / model-wan22 vace / guidance-vace depth / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "individual_travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "individual_travel_segment_wan22_vace_depth"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.individual-travel-segment-model-wan22-vace-guidance-vace-raw-continuity-first-last-profile-default",
+      "name": "individual travel segment / model-wan22 vace / guidance-vace raw / continuity-first last / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "individual_travel_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [
+        "individual_travel_segment_wan22_vace"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.join-clips-segment-model-wan22-vace-guidance-vace-continuity-join-bridge-profile-default",
+      "name": "join clips segment / model-wan22 vace / guidance-vace / continuity-join bridge / profile-default",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
+      "canonical_route_key": "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "join_clips_segment"
+      ],
+      "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": false
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.join_clips"
+      ],
+      "live_evidence": [
+        "join_clips_segment_wan22_vace"
+      ],
+      "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "worker_route:join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default"
+      ],
+      "notes": [
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
+      ],
+      "blockers": []
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default",
+      "name": "travel segment / model-wan22 vace / guidance-uni3c / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-guidance-none-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 / guidance-none / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-none-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 distilled / guidance-none / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 distilled / guidance-ltx control video / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The pinned LTX first/last template is not yet proven control-capable for a full-length control guide."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 distilled / guidance-ltx control pose / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-depth-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 distilled / guidance-ltx control depth / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-canny-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 distilled / guidance-ltx control canny / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The pinned LTX first/last template is not yet proven control-capable for Canny-preprocessed full-length guides."
+      ]
+    },
+    {
+      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-cameraman-continuity-first-last-profile-default",
+      "name": "travel segment / model-ltx2 distilled / guidance-ltx control cameraman / continuity-first last / profile-default",
+      "status": "unsupported_fail_closed",
+      "implementation": "unsupported",
+      "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+      "route_keys": [],
+      "task_types": [
+        "travel_segment"
+      ],
+      "variant_axes": [
+        {
+          "name": "lora",
+          "values": [
+            "none",
+            "single",
+            "multiple",
+            "url",
+            "phase_scheduled"
+          ],
+          "coverage": "Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through.",
+          "fail_closed": false
+        },
+        {
+          "name": "control",
+          "values": [
+            "none",
+            "controlnet",
+            "vace",
+            "ltx_control",
+            "uni3c"
+          ],
+          "coverage": "Route key and adapter decide which control modes are supported.",
+          "fail_closed": true
+        },
+        {
+          "name": "source_media",
+          "values": [
+            "text",
+            "image",
+            "video",
+            "mask",
+            "first_last"
+          ],
+          "coverage": "Task params and route key select source-media shape.",
+          "fail_closed": false
+        },
+        {
+          "name": "resolution",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers.",
+          "fail_closed": false
+        },
+        {
+          "name": "frames_fps",
+          "values": [
+            "default",
+            "app_requested"
+          ],
+          "coverage": "Video routes patch frame/fps inputs where the template exposes them.",
+          "fail_closed": false
+        },
+        {
+          "name": "profile",
+          "values": [
+            "default",
+            "memory_profile"
+          ],
+          "coverage": "Route profile is persisted in route_selection_snapshot.",
+          "fail_closed": false
+        },
+        {
+          "name": "postprocess",
+          "values": [
+            "none",
+            "interpolation",
+            "upscale"
+          ],
+          "coverage": "Generation and enhancement routes account for postprocess behavior separately.",
+          "fail_closed": false
+        }
+      ],
+      "artifact_contract": {
+        "output_kinds": [
+          "video"
+        ],
+        "db_state": [
+          "task_status_complete",
+          "output_location",
+          "generation_record"
+        ],
+        "storage_paths": [
+          "video_uploads",
+          "generated_videos"
+        ],
+        "notes": "VibeComfy video output must be uploaded and reflected in task/generation records."
+      },
+      "app_refs": [
+        "app.create_task_edge_client",
+        "app.travel_between_images",
+        "app.travel_guidance"
+      ],
+      "live_evidence": [],
+      "static_evidence": [
+        "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default"
+      ],
+      "notes": [
+        "Explicit fail-closed route seeded from worker route support map"
+      ],
+      "blockers": [
+        "The pinned LTX first/last template is not yet proven control-capable for cameraman full-length guides."
+      ]
+    }
+  ]
+}

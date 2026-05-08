@@ -37,27 +37,26 @@ MODULE_PATH = (
     / "tasks"
     / "template_routing.py"
 )
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REIGH_APP_ROOT = Path(__file__).resolve().parents[2] / "reigh-app"
 SELECTED_ROUTE_FIXTURES_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "reigh-app"
+    REIGH_APP_ROOT
     / "supabase"
     / "functions"
     / "_shared"
     / "selectedRoute.fixtures.json"
 )
+if not SELECTED_ROUTE_FIXTURES_PATH.exists():
+    SELECTED_ROUTE_FIXTURES_PATH = REPO_ROOT / "scripts" / "fixtures" / "selectedRoute.fixtures.json"
 SECTION3A_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1]
+    REPO_ROOT
     / "scripts"
     / "dual_run_compare"
     / "fixtures"
     / "section3a_matrix.fixture"
 )
-SPRINT12_ROUTE_INVENTORY_PATH = (
-    Path(__file__).resolve().parents[2] / "docs" / "sprint-12-route-inventory.md"
-)
-SPRINT12_ROUTE_SUPPORT_PATH = (
-    Path(__file__).resolve().parents[2] / "docs" / "sprint-12-route-support.md"
-)
+SPRINT12_ROUTE_INVENTORY_PATH = REPO_ROOT / "docs" / "sprint-12-route-inventory.md"
+SPRINT12_ROUTE_SUPPORT_PATH = REPO_ROOT / "docs" / "sprint-12-route-support.md"
 
 
 @pytest.fixture()

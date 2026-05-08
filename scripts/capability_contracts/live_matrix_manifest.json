@@ -1,0 +1,340 @@
+{
+  "cases": [
+    {
+      "case_id": "travel_orchestrator_wan2_1seg",
+      "route_key": "travel_orchestrator",
+      "task_type": "travel_orchestrator",
+      "expected_backend": "wgp",
+      "report_case_names": [
+        "travel_orchestrator_wan2_1seg"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_orchestrator_ltx",
+      "route_key": "travel_orchestrator",
+      "task_type": "travel_orchestrator",
+      "expected_backend": "wgp",
+      "report_case_names": [
+        "travel_orchestrator_ltx"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "individual_travel_segment_wan22_vace",
+      "route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+      "task_type": "individual_travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "individual_travel_segment_wan22_vace"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "individual_travel_segment_wan22_vace_flow",
+      "route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+      "task_type": "individual_travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "individual_travel_segment_wan22_vace_flow"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "individual_travel_segment_wan22_vace_canny",
+      "route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+      "task_type": "individual_travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "individual_travel_segment_wan22_vace_canny"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "individual_travel_segment_wan22_vace_depth",
+      "route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+      "task_type": "individual_travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "individual_travel_segment_wan22_vace_depth"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_wan22_vace_raw_video_source",
+      "route_key": "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_wan22_vace_raw_video_source"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_wan22_vace_flow_video_source",
+      "route_key": "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_wan22_vace_flow_video_source"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_wan22_vace_canny_video_source",
+      "route_key": "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_wan22_vace_canny_video_source"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_wan22_vace_depth_video_source",
+      "route_key": "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_wan22_vace_depth_video_source"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_stitch",
+      "route_key": "travel_stitch",
+      "task_type": "travel_stitch",
+      "expected_backend": "wgp",
+      "report_case_names": [
+        "travel_stitch"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "join_clips_orchestrator",
+      "route_key": "join_clips_orchestrator",
+      "task_type": "join_clips_orchestrator",
+      "expected_backend": "wgp",
+      "report_case_names": [
+        "join_clips_orchestrator"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "join_clips_segment_wan22_vace",
+      "route_key": "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+      "task_type": "join_clips_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "join_clips_segment_wan22_vace"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "edit_video_orchestrator",
+      "route_key": "edit_video_orchestrator",
+      "task_type": "edit_video_orchestrator",
+      "expected_backend": "wgp",
+      "report_case_names": [
+        "edit_video_orchestrator"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "qwen_image_style",
+      "route_key": "qwen_image_style",
+      "task_type": "qwen_image_style",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "qwen_image_style"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "qwen_image_t2i",
+      "route_key": "qwen_image",
+      "task_type": "qwen_image",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "qwen_image_t2i"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "qwen_image_2512",
+      "route_key": "qwen_image_2512",
+      "task_type": "qwen_image_2512",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "qwen_image_2512"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "wan_2_2_t2i",
+      "route_key": "wan_2_2_t2i",
+      "task_type": "wan_2_2_t2i",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "wan_2_2_t2i"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "wan_2_2_i2v",
+      "route_key": "wan_2_2_i2v",
+      "task_type": "wan_2_2_i2v",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "wan_2_2_i2v"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "animate_character",
+      "route_key": "animate_character",
+      "task_type": "animate_character",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "animate_character"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "image_upscale",
+      "route_key": "image-upscale",
+      "task_type": "image-upscale",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "image_upscale"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "video_enhance",
+      "route_key": "video_enhance",
+      "task_type": "video_enhance",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "video_enhance"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "flux_klein_edit",
+      "route_key": "flux_klein_edit",
+      "task_type": "flux_klein_edit",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "flux_klein_edit"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "qwen_image_edit",
+      "route_key": "qwen_image_edit",
+      "task_type": "qwen_image_edit",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "qwen_image_edit"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "image_inpaint",
+      "route_key": "image_inpaint",
+      "task_type": "image_inpaint",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "image_inpaint"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "annotated_image_edit",
+      "route_key": "annotated_image_edit",
+      "task_type": "annotated_image_edit",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "annotated_image_edit"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "z_image_turbo",
+      "route_key": "z_image_turbo",
+      "task_type": "z_image_turbo",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "z_image_turbo"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "z_image_turbo_i2i",
+      "route_key": "z_image_turbo_i2i",
+      "task_type": "z_image_turbo_i2i",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "z_image_turbo_i2i"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    }
+  ]
+}

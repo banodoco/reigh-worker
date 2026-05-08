@@ -1,0 +1,216 @@
+[
+  {
+    "name": "z_image_turbo",
+    "input": {
+      "task_id": "route-fixture-z",
+      "task_type": "z_image_turbo",
+      "params": {
+        "prompt": "fixture",
+        "resolution": "1024x1024"
+      },
+      "backend": "vibecomfy",
+      "selector_namespace": "production",
+      "selector_version": 12,
+      "run_id": "fixture-run-z"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "z_image_turbo",
+      "selected_backend": "vibecomfy",
+      "selector_version": 12,
+      "support_state": "vibecomfy_supported",
+      "selected_profile": "default",
+      "selected_template_id": "image/z_image",
+      "route_run_id": "fixture-run-z",
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "z_image_turbo",
+        "selected_backend": "vibecomfy",
+        "selector_version": 12,
+        "support_state": "vibecomfy_supported",
+        "template_id": "image/z_image",
+        "selected_profile": "default",
+        "route_run_id": "fixture-run-z",
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-z"
+      }
+    }
+  },
+  {
+    "name": "z_image_alias",
+    "input": {
+      "task_id": "route-fixture-z-alias",
+      "task_type": "z_image",
+      "params": {
+        "prompt": "fixture"
+      },
+      "backend": "vibecomfy"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "z_image_turbo",
+      "selected_backend": "vibecomfy",
+      "selector_version": null,
+      "support_state": "vibecomfy_supported",
+      "selected_profile": "default",
+      "selected_template_id": "image/z_image",
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "z_image_turbo",
+        "selected_backend": "vibecomfy",
+        "selector_version": null,
+        "support_state": "vibecomfy_supported",
+        "template_id": "image/z_image",
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-z-alias"
+      }
+    }
+  },
+  {
+    "name": "wan_2_2_t2i",
+    "input": {
+      "task_id": "route-fixture-wan",
+      "task_type": "wan_2_2_t2i",
+      "params": {
+        "prompt": "fixture",
+        "resolution": "832x480"
+      },
+      "backend": "vibecomfy"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "wan_2_2_t2i",
+      "selected_backend": "vibecomfy",
+      "selector_version": null,
+      "support_state": "vibecomfy_supported",
+      "selected_profile": "default",
+      "selected_template_id": "video/wanvideo_wrapper_22_14b_t2i",
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "wan_2_2_t2i",
+        "selected_backend": "vibecomfy",
+        "selector_version": null,
+        "support_state": "vibecomfy_supported",
+        "template_id": "video/wanvideo_wrapper_22_14b_t2i",
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-wan"
+      }
+    }
+  },
+  {
+    "name": "animate_character",
+    "input": {
+      "task_id": "route-fixture-animate",
+      "task_type": "animate_character",
+      "params": {
+        "prompt": "fixture"
+      },
+      "backend": "vibecomfy"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "animate_character",
+      "selected_backend": "vibecomfy",
+      "selector_version": null,
+      "support_state": "vibecomfy_supported",
+      "selected_profile": "default",
+      "selected_template_id": "video/wan22_animate_native_first_stage",
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "animate_character",
+        "selected_backend": "vibecomfy",
+        "selector_version": null,
+        "support_state": "vibecomfy_supported",
+        "template_id": "video/wan22_animate_native_first_stage",
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-animate"
+      }
+    }
+  },
+  {
+    "name": "travel_orchestrator",
+    "input": {
+      "task_id": "route-fixture-travel",
+      "task_type": "travel_orchestrator",
+      "params": {},
+      "backend": "wgp",
+      "selector_namespace": "production",
+      "selector_version": 12,
+      "profile": "default"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "travel_orchestrator",
+      "selected_backend": "wgp",
+      "selector_version": 12,
+      "support_state": "wgp_only",
+      "selected_profile": "default",
+      "selected_template_id": null,
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "travel_orchestrator",
+        "selected_backend": "wgp",
+        "selector_version": 12,
+        "support_state": "wgp_only",
+        "template_id": null,
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-travel"
+      }
+    }
+  },
+  {
+    "name": "travel_segment_wan22_vace_raw_video_source",
+    "input": {
+      "task_id": "route-fixture-travel-segment",
+      "task_type": "travel_segment",
+      "params": {
+        "model_name": "wan2_2_vace",
+        "guidance_kind": "vace",
+        "guidance_mode": "raw",
+        "continuity_case": "video_source",
+        "profile": "default"
+      },
+      "backend": "vibecomfy"
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "travel_segment__model-wan2_2_vace__guidance-vace_raw__continuity-video_source__profile-default",
+      "selected_backend": "vibecomfy",
+      "selector_version": null,
+      "support_state": "vibecomfy_unsupported",
+      "selected_profile": "default",
+      "selected_template_id": null,
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "travel_segment__model-wan2_2_vace__guidance-vace_raw__continuity-video_source__profile-default",
+        "selected_backend": "vibecomfy",
+        "selector_version": null,
+        "support_state": "vibecomfy_unsupported",
+        "template_id": null,
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1,
+        "task_id": "route-fixture-travel-segment"
+      }
+    }
+  }
+]

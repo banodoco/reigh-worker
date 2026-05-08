@@ -714,6 +714,20 @@ def validate_capability_evidence(
                         ),
                     )
                 )
+            elif _contract_records_static_blocker(contract, contract.template_id):
+                messages.append(
+                    ValidationMessage(
+                        level="error",
+                        category="vibecomfy_static_evidence",
+                        code="stale_template_index_blocker",
+                        capability_id=contract.capability_id,
+                        route_key=contract.canonical_route_key,
+                        message=(
+                            f"template_id {contract.template_id!r} now exists in "
+                            f"{vibecomfy.template_index_path}; remove stale missing-template blockers"
+                        ),
+                    )
+                )
         if contract.status == "runtime_green":
             _validate_runtime_green_evidence(
                 messages,
