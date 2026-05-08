@@ -52,6 +52,7 @@ from scripts.live_test.variant_update import (
     _resolve_existing_worker_id,
     _resolve_update_workdir,
     _spawn_takeover_pod,
+    _worker_row_exists,
     run as run_variant_update,
 )
 
@@ -61,6 +62,10 @@ def _iso_now(offset_seconds: int = 0) -> str:
 
 
 def _lookup(row: dict, key: str):
+    if "->>" in key:
+        base, nested = key.split("->>", 1)
+        current = row.get(base)
+        return current.get(nested) if isinstance(current, dict) else None
     current = row
     for part in key.split("."):
         if not isinstance(current, dict):
@@ -1537,8 +1542,13 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     assert "test -f /workspace/vibecomfy/workflow_corpus/manifests/coverage.json" in command
 
 
-def test_spawn_takeover_pod_calls_create_record_before_spawn_and_start(monkeypatch: pytest.MonkeyPatch):
+def test_spawn_takeover_pod_calls_create_record_and_waits_for_ssh(monkeypatch: pytest.MonkeyPatch):
     events = []
+
+    class FakeRunpodConfig:
+        def merge(self, **overrides):
+            events.append(("runpod_config_merge", overrides))
+            return self
 
     class FakeDB:
         async def create_worker_record(self, worker_id, instance_type):
@@ -1546,13 +1556,21 @@ def test_spawn_takeover_pod_calls_create_record_before_spawn_and_start(monkeypat
             return True
 
         async def update_worker_status(self, worker_id, status, metadata):
-            events.append(("update_worker_status", worker_id, status, metadata["runpod_id"]))
+            events.append((
+                "update_worker_status",
+                worker_id,
+                status,
+                metadata["runpod_id"],
+                metadata.get("live_test_variant"),
+                metadata.get("worker_pool"),
+            ))
             return True
 
     class FakeSpawner:
         def __init__(self):
             events.append(("init",))
             self.gpu_type = "NVIDIA GeForce RTX 4090"
+            self.runpod_config = FakeRunpodConfig()
 
         def generate_worker_id(self):
             events.append(("generate_worker_id",))
@@ -1561,10 +1579,6 @@ def test_spawn_takeover_pod_calls_create_record_before_spawn_and_start(monkeypat
         async def spawn_worker(self, worker_id):
             events.append(("spawn_worker", worker_id))
             return {"runpod_id": "pod-456", "pod_details": {"id": "pod-456"}}
-
-        async def start_worker_process(self, pod_id, worker_id, has_pending_tasks=False):
-            events.append(("start_worker_process", pod_id, worker_id, has_pending_tasks))
-            return True
 
     def _fake_factory(config, db):
         return FakeSpawner()
@@ -1579,15 +1593,15 @@ def test_spawn_takeover_pod_calls_create_record_before_spawn_and_start(monkeypat
     assert (worker_id, pod_id) == ("worker-123", "pod-456")
     assert events == [
         ("init",),
+        ("runpod_config_merge", {"disk_size_gb": 200, "container_disk_gb": 200}),
         ("generate_worker_id",),
         ("create_worker_record", "worker-123", "NVIDIA GeForce RTX 4090"),
         ("spawn_worker", "worker-123"),
-        ("update_worker_status", "worker-123", "spawning", "pod-456"),
-        ("start_worker_process", "pod-456", "worker-123", False),
+        ("update_worker_status", "worker-123", "spawning", "pod-456", "update", "gpu-live-test"),
     ]
 
 
-def test_spawn_takeover_waits_for_ssh_before_start(monkeypatch: pytest.MonkeyPatch):
+def test_spawn_takeover_waits_for_ssh_without_starting_production_worker(monkeypatch: pytest.MonkeyPatch):
     from scripts.live_test import variant_update
 
     events = []
@@ -1612,10 +1626,6 @@ def test_spawn_takeover_waits_for_ssh_before_start(monkeypatch: pytest.MonkeyPat
             events.append(("check", worker_id, pod_id))
             return {"status": "spawning"} if len(events) == 1 else {"status": "spawning", "ready": True}
 
-        async def start_worker_process(self, pod_id, worker_id, has_pending_tasks=False):
-            events.append(("start", pod_id, worker_id, has_pending_tasks))
-            return True
-
     monkeypatch.setitem(
         sys.modules,
         "gpu_orchestrator.worker_spawner",
@@ -1627,7 +1637,6 @@ def test_spawn_takeover_waits_for_ssh_before_start(monkeypatch: pytest.MonkeyPat
     assert events == [
         ("check", "worker-123", "pod-456"),
         ("check", "worker-123", "pod-456"),
-        ("start", "pod-456", "worker-123", False),
     ]
 
 
@@ -1903,6 +1912,34 @@ def test_variant_update_prefers_pod_worker_row_over_stale_process_cmdline():
         prev_proc,
         allow_pod_id_fallback=True,
     ) == "pod-missing"
+
+
+def test_variant_update_uses_targeted_pod_worker_lookup_when_broad_scan_misses_row():
+    target_row = {
+        "id": "worker-target",
+        "metadata": {"runpod_id": "pod-target"},
+        "status": "active",
+        "created_at": "2026-05-08T10:00:00Z",
+        "last_heartbeat": "2026-05-08T10:01:00Z",
+    }
+
+    def workers_source(query):
+        return [target_row] if query.filters else []
+
+    db = FakeDB(sources={"workers": workers_source})
+
+    assert _resolve_existing_worker_id(db, "pod-target", prev_proc=None) == "worker-target"
+
+
+def test_variant_update_uses_targeted_worker_row_lookup_when_broad_scan_misses_row():
+    target_row = {"id": "worker-target"}
+
+    def workers_source(query):
+        return [target_row] if query.filters else []
+
+    db = FakeDB(sources={"workers": workers_source})
+
+    assert _worker_row_exists(db, "worker-target")
 
 
 def test_variant_update_reuses_fresh_live_test_workdir_for_fresh_pods():

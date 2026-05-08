@@ -46,6 +46,7 @@ from scripts.live_test.token_resolver import resolve_token_to_user_id
 UPDATE_VARIANT = "update"
 UPDATE_WORKDIR = "/workspace/Reigh-Worker"
 FRESH_LIVE_TEST_WORKDIR = "/workspace/Reigh-Worker-LiveTest"
+WORKER_REPO_URL = "https://github.com/banodoco/reigh-worker.git"
 VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
 VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
 VIBECOMFY_PYTHON = "python3.11"
@@ -58,6 +59,15 @@ REMOTE_UV_BOOTSTRAP = (
     'export PATH="$HOME/.local/bin:$PATH"; '
     "fi && "
     "command -v uv >/dev/null 2>&1"
+)
+REMOTE_SYSTEM_DEPS = (
+    "python3.10-venv",
+    "python3.10-dev",
+    "build-essential",
+    "ffmpeg",
+    "git",
+    "curl",
+    "wget",
 )
 
 log = get_logger(__name__)
@@ -217,6 +227,21 @@ def _query_workers(db) -> list[dict[str, Any]]:
 
 
 def _query_workers_for_pod(db, pod_id: str) -> list[dict[str, Any]]:
+    if hasattr(db, "supabase"):
+        try:
+            result = (
+                db.supabase.table("workers")
+                .select("id, metadata, status, created_at, last_heartbeat")
+                .eq("metadata->>runpod_id", pod_id)
+                .execute()
+            )
+            rows = list(getattr(result, "data", None) or [])
+            matching = [row for row in rows if _worker_matches_pod(row, pod_id)]
+            if matching:
+                return matching
+        except Exception as exc:  # pragma: no cover - broad scan fallback covers live DB quirks.
+            log.warning("targeted pod worker lookup failed; falling back to broad scan", pod_id=pod_id, error=str(exc))
+
     rows = _query_workers(db)
     return [row for row in rows if _worker_matches_pod(row, pod_id)]
 
@@ -276,6 +301,13 @@ def _resolve_update_workdir(db, pod_id: str, ssh=None) -> str:
 
 
 def _worker_row_exists(db, worker_id: str) -> bool:
+    if hasattr(db, "supabase"):
+        try:
+            result = db.supabase.table("workers").select("id").eq("id", worker_id).execute()
+            if any(str(row.get("id") or "") == worker_id for row in list(getattr(result, "data", None) or [])):
+                return True
+        except Exception as exc:  # pragma: no cover - broad scan fallback covers non-PostgREST fakes.
+            log.warning("targeted worker row lookup failed; falling back to broad scan", worker_id=worker_id, error=str(exc))
     return any(str(row.get("id") or "") == worker_id for row in _query_workers(db))
 
 
@@ -308,15 +340,26 @@ def _should_skip_restore(branch_name: str) -> bool:
 
 
 def _remote_checkout_and_sync(ssh, branch: str, workdir: str = UPDATE_WORKDIR) -> None:
-    command = (
-        f"cd {shlex.quote(workdir)} && "
-        f"{REMOTE_UV_BOOTSTRAP} && "
-        f"git fetch origin {shlex.quote(branch)}:refs/remotes/origin/{shlex.quote(branch)} && "
-        f"git checkout -B {shlex.quote(branch)} refs/remotes/origin/{shlex.quote(branch)} && "
-        f"git pull --ff-only origin {shlex.quote(branch)} && "
-        "uv sync --locked --extra cuda124"
+    package_list = " ".join(REMOTE_SYSTEM_DEPS)
+    script = (
+        "set -euo pipefail\n"
+        f"if [ ! -d {shlex.quote(workdir)}/.git ]; then\n"
+        f"  mkdir -p {shlex.quote(workdir.rsplit('/', 1)[0] or '/')}\n"
+        f"  rm -rf {shlex.quote(workdir)}\n"
+        f"  git clone --branch {shlex.quote(branch)} --single-branch --recurse-submodules {shlex.quote(WORKER_REPO_URL)} {shlex.quote(workdir)}\n"
+        "fi\n"
+        "apt-get update\n"
+        f"apt-get install -y {package_list}\n"
+        f"cd {shlex.quote(workdir)}\n"
+        f"{REMOTE_UV_BOOTSTRAP}\n"
+        f"git fetch origin {shlex.quote(branch)}:refs/remotes/origin/{shlex.quote(branch)}\n"
+        f"git checkout -B {shlex.quote(branch)} refs/remotes/origin/{shlex.quote(branch)}\n"
+        f"git pull --ff-only origin {shlex.quote(branch)}\n"
+        "uv sync --locked --extra cuda124\n"
+        "uv cache clean || true\n"
+        "python -m pip cache purge >/dev/null 2>&1 || true\n"
     )
-    _ssh_execute(ssh, f"bash -lc {_quote(command)}", timeout=3600)
+    _ssh_execute(ssh, f"bash -lc {_quote(script)}", timeout=3600)
 
 
 def _restore_remote_state(
@@ -360,28 +403,55 @@ def _spawn_takeover_pod(db, api_key: str) -> tuple[str, str]:
     from gpu_orchestrator.worker_spawner import create_worker_spawner
 
     spawner = create_worker_spawner(config=None, db=db)
+    runpod_config = getattr(spawner, "runpod_config", None)
+    merge = getattr(runpod_config, "merge", None)
+    if callable(merge):
+        spawner.runpod_config = merge(
+            disk_size_gb=config.LIVE_TEST_DISK_SIZE_GB,
+            container_disk_gb=config.LIVE_TEST_CONTAINER_DISK_GB,
+        )
     worker_id = spawner.generate_worker_id()
     created = asyncio.run(db.create_worker_record(worker_id, spawner.gpu_type))
     if not created:
         raise RuntimeError(f"Failed to create worker record for {worker_id}")
 
-    spawn_result = asyncio.run(spawner.spawn_worker(worker_id))
-    if not spawn_result or not spawn_result.get("runpod_id"):
-        raise RuntimeError(f"spawn_worker did not return a runpod_id for {worker_id}")
+    try:
+        spawn_result = asyncio.run(spawner.spawn_worker(worker_id))
+        if not spawn_result or not spawn_result.get("runpod_id"):
+            raise RuntimeError(f"spawn_worker did not return a runpod_id for {worker_id}")
 
-    pod_id = str(spawn_result["runpod_id"])
-    metadata = {
-        "runpod_id": pod_id,
-        "pod_details": spawn_result.get("pod_details"),
-        "ram_tier": spawn_result.get("ram_tier"),
-        "storage_volume": spawn_result.get("storage_volume"),
-    }
-    asyncio.run(db.update_worker_status(worker_id, "spawning", metadata))
+        pod_id = str(spawn_result["runpod_id"])
+        metadata = {
+            "runpod_id": pod_id,
+            "pod_details": spawn_result.get("pod_details"),
+            "ram_tier": spawn_result.get("ram_tier"),
+            "storage_volume": spawn_result.get("storage_volume"),
+            "live_test_variant": UPDATE_VARIANT,
+            "live_test": True,
+            "worker_backend": "live-test",
+            "worker_profile": "live-test",
+            "worker_pool": "gpu-live-test",
+        }
+        asyncio.run(db.update_worker_status(worker_id, "spawning", metadata))
 
-    _wait_for_spawned_pod_ssh(spawner, worker_id, pod_id)
-    started = asyncio.run(spawner.start_worker_process(pod_id, worker_id, has_pending_tasks=False))
-    if not started:
-        raise RuntimeError(f"start_worker_process failed for worker {worker_id} on pod {pod_id}")
+        _wait_for_spawned_pod_ssh(spawner, worker_id, pod_id)
+    except Exception as exc:
+        failure_metadata = {
+            "runpod_id": locals().get("pod_id"),
+            "spawn_failed": True,
+            "spawn_error": str(exc),
+            "gpu_type": spawner.gpu_type,
+            "live_test_variant": UPDATE_VARIANT,
+        }
+        try:
+            asyncio.run(db.update_worker_status(worker_id, "inactive", failure_metadata))
+        except Exception as update_exc:
+            log.warning(
+                "failed to mark spawn-takeover worker %s inactive after launch error: %s",
+                worker_id,
+                update_exc,
+            )
+        raise
 
     return worker_id, pod_id
 
@@ -534,8 +604,12 @@ def run(args) -> int:
 
         ssh = open_session(pod_id, api_key)
         workdir = _resolve_update_workdir(db, pod_id, ssh)
-        prev_remote_branch = _read_remote_branch(ssh, workdir)
-        prev_remote_sha = _read_remote_sha(ssh, workdir)
+        if _remote_dir_exists(ssh, workdir):
+            prev_remote_branch = _read_remote_branch(ssh, workdir)
+            prev_remote_sha = _read_remote_sha(ssh, workdir)
+        else:
+            prev_remote_branch = "DETACHED"
+            prev_remote_sha = ""
         prev_proc = capture_current_worker_cmdline(ssh)
 
         if not worker_id:
