@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 import shutil
 import subprocess
@@ -356,9 +357,9 @@ def _build_vibecomfy_command(resolved: ResolvedTask, run_workspace: Path) -> lis
         workflow_ref,
         "--runtime",
         "embedded",
-        "--ensure-packs",
-        "--ensure-models",
     ]
+    if _vibecomfy_run_supports_ensure_flags(run_workspace):
+        command.extend(["--ensure-packs", "--ensure-models"])
     if ready:
         command.append("--ready")
         prompt = resolved.params.get("prompt")
@@ -380,6 +381,43 @@ def _build_vibecomfy_command(resolved: ResolvedTask, run_workspace: Path) -> lis
         )
     )
     return command
+
+
+def _vibecomfy_run_supports_ensure_flags(run_workspace: Path) -> bool:
+    override = os.environ.get("VIBECOMFY_RUN_ENSURE_FLAGS", "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    if override in {"0", "false", "no", "off"}:
+        return False
+
+    cwd = _vibecomfy_cwd(run_workspace)
+    env = _build_subprocess_env(run_workspace)
+    help_text = _vibecomfy_run_help_text(
+        _vibecomfy_python(),
+        str(cwd),
+        env.get("PYTHONPATH", ""),
+    )
+    return "--ensure-packs" in help_text and "--ensure-models" in help_text
+
+
+@lru_cache(maxsize=8)
+def _vibecomfy_run_help_text(python_executable: str, cwd: str, pythonpath: str) -> str:
+    env = os.environ.copy()
+    if pythonpath:
+        env["PYTHONPATH"] = pythonpath
+    try:
+        completed = subprocess.run(
+            [python_executable, "-m", "vibecomfy.cli", "run", "--help"],
+            cwd=cwd,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return f"{completed.stdout}\n{completed.stderr}"
 
 
 def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace: Path) -> tuple[str, bool]:
@@ -423,11 +461,21 @@ def _maybe_postprocess_vibecomfy_output(
         return None
     interpolation = resolved.params.get("interpolation")
     interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
-    exp = int(interpolation_params.get("exp") or interpolation_params.get("rife_exp") or 1)
+    exp = _rife_exp_from_interpolation_params(interpolation_params)
     exp = max(1, min(exp, 2))
     fps = int(float(resolved.params.get("fps") or 16))
     target = run_workspace / "output" / f"video-enhance-rife-x{2 ** exp}.mp4"
     return _rife_interpolate_video(output_path, target, fps=fps, exp=exp)
+
+
+def _rife_exp_from_interpolation_params(interpolation_params: Mapping[str, Any]) -> int:
+    if "exp" in interpolation_params or "rife_exp" in interpolation_params:
+        return int(interpolation_params.get("exp") or interpolation_params.get("rife_exp") or 1)
+    inserted_frames = interpolation_params.get("num_frames")
+    if inserted_frames is None:
+        return 1
+    inserted = max(1, int(inserted_frames))
+    return 2 if inserted >= 3 else 1
 
 
 def _rife_interpolate_video(input_path: Path, output_path: Path, *, fps: int, exp: int) -> Path:
@@ -444,6 +492,11 @@ def _rife_interpolate_video(input_path: Path, output_path: Path, *, fps: int, ex
         raise ValueError(f"RIFE interpolation requires at least two frames, got {len(frames_bgr)} from {input_path}")
 
     height, width = frames_bgr[0].shape[:2]
+    headless_logger.info(
+        "VibeComfy video_enhance RIFE postprocess starting: "
+        f"input={input_path} output={output_path} frames={len(frames_bgr)} "
+        f"size={width}x{height} fps={fps} exp={exp}"
+    )
     frames_rgb = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in frames_bgr]
     sample_np = np.stack(frames_rgb, axis=0).astype(np.float32) / 127.5 - 1.0
     sample = torch.from_numpy(sample_np).permute(3, 0, 1, 2)
@@ -452,6 +505,10 @@ def _rife_interpolate_video(input_path: Path, output_path: Path, *, fps: int, ex
 
     ckpt = _rife_checkpoint_path(prefer_v4=True)
     rife_version = "v4" if ckpt.name == "rife4.26.pkl" else "v3"
+    headless_logger.info(
+        "VibeComfy video_enhance RIFE invoking model: "
+        f"checkpoint={ckpt} rife_version={rife_version} device={device} sample_shape={tuple(sample.shape)}"
+    )
     output = run_rife_temporal_interpolation(str(ckpt), sample, exp, device=device, rife_version=rife_version)
     if output is None:
         raise RuntimeError("RIFE interpolation returned no frames")
@@ -464,7 +521,12 @@ def _rife_interpolate_video(input_path: Path, output_path: Path, *, fps: int, ex
         frames_out.append(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    return create_video_from_frames_list(frames_out, output_path, fps * (2 ** exp), (width, height))
+    written = create_video_from_frames_list(frames_out, output_path, fps * (2 ** exp), (width, height))
+    headless_logger.info(
+        "VibeComfy video_enhance RIFE postprocess finished: "
+        f"output={written} output_frames={len(frames_out)} output_fps={fps * (2 ** exp)}"
+    )
+    return written
 
 
 def _rife_checkpoint_path(*, prefer_v4: bool) -> Path:
@@ -1516,7 +1578,7 @@ def _video_contract_for_resolved_task(resolved: ResolvedTask) -> VideoArtifactCo
     width, height = _expected_dimensions(resolved.params)
     return VideoArtifactContract(
         expected_frame_count=_int_param(resolved.params, "expected_frame_count", "num_frames", "video_length"),
-        expected_fps=_float_param(resolved.params, "expected_fps", "fps", "fps_helpers"),
+        expected_fps=_expected_fps_for_resolved_task(resolved),
         expected_duration_seconds=_float_param(resolved.params, "expected_duration_seconds", "duration_seconds"),
         require_audio=_bool_param(resolved.params, "require_audio", "audio_required", "requires_audio"),
         expected_width=width,
@@ -1524,6 +1586,20 @@ def _video_contract_for_resolved_task(resolved: ResolvedTask) -> VideoArtifactCo
         require_thumbnail=_bool_param(resolved.params, "require_thumbnail", "thumbnail_required", "requires_thumbnail"),
         thumbnail_path=_string_param(resolved.params, "thumbnail_path", "thumbnail_storage_path"),
     )
+
+
+def _expected_fps_for_resolved_task(resolved: ResolvedTask) -> float | None:
+    explicit = _float_param(resolved.params, "expected_fps")
+    if explicit is not None:
+        return explicit
+    fps = _float_param(resolved.params, "fps", "fps_helpers")
+    if fps is None:
+        return None
+    if resolved.route_key == "video_enhance" and _bool_param(resolved.params, "enable_interpolation"):
+        interpolation = resolved.params.get("interpolation")
+        interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
+        return fps * (2 ** _rife_exp_from_interpolation_params(interpolation_params))
+    return fps
 
 
 def _expected_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:

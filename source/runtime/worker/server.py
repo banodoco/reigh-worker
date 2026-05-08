@@ -214,7 +214,7 @@ def process_single_task(
             thumbnail_url=result.thumbnail_url,
             metadata=result.metadata,
         )
-    return TaskResult.success(output_location_to_db) if generation_success else TaskResult.failed("generation failed")
+    return TaskResult.success(output_location_to_db) if generation_success else TaskResult.failed(output_location_to_db or "generation failed")
 
 
 def _worker_backend_name() -> str:

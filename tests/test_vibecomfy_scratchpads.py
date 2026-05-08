@@ -56,6 +56,34 @@ def test_wan_2_2_i2v_scratchpad_patches_kijai_template_inputs(tmp_path: Path, mo
     assert (tmp_path / "input" / "wan_2_2_i2v_wan_2_2_i2v-task.png").exists()
 
 
+def test_vibecomfy_command_omits_ensure_flags_when_cli_does_not_support_them(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+    monkeypatch.setattr(adapter, "_workflow_reference_for_resolved_task", lambda *_args: ("scratch.py", False))
+    monkeypatch.setattr(adapter, "_vibecomfy_run_help_text", lambda *_args: "usage: vibecomfy run")
+
+    command = adapter._build_vibecomfy_command(_resolved("qwen_image", {}), tmp_path)
+
+    assert "--ensure-packs" not in command
+    assert "--ensure-models" not in command
+
+
+def test_vibecomfy_command_keeps_ensure_flags_when_cli_supports_them(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+    monkeypatch.setattr(adapter, "_workflow_reference_for_resolved_task", lambda *_args: ("scratch.py", False))
+    monkeypatch.setattr(adapter, "_vibecomfy_run_help_text", lambda *_args: "--ensure-packs --ensure-models")
+
+    command = adapter._build_vibecomfy_command(_resolved("qwen_image", {}), tmp_path)
+
+    assert "--ensure-packs" in command
+    assert "--ensure-models" in command
+
+
 def test_wan_video_scratchpads_wire_dynamic_loras_as_vibecomfy_assets(tmp_path: Path, monkeypatch) -> None:
     adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
     source = tmp_path / "source.png"
@@ -223,6 +251,27 @@ def test_video_enhance_postprocess_runs_rife_when_requested(tmp_path: Path, monk
 
     assert result == expected
     assert calls == [(source, expected, 12, 1)]
+
+
+def test_video_enhance_interpolation_num_frames_maps_to_rife_exp() -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+
+    assert adapter._rife_exp_from_interpolation_params({"num_frames": 1}) == 1
+    assert adapter._rife_exp_from_interpolation_params({"num_frames": 3}) == 2
+    assert adapter._rife_exp_from_interpolation_params({"rife_exp": 2, "num_frames": 1}) == 2
+
+
+def test_video_enhance_contract_expects_interpolated_fps() -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+
+    contract = adapter._video_contract_for_resolved_task(
+        _resolved(
+            "video_enhance",
+            {"enable_interpolation": True, "fps": 16, "interpolation": {"num_frames": 1}},
+        )
+    )
+
+    assert contract.expected_fps == 32
 
 
 def test_rife_checkpoint_path_downloads_missing_checkpoint(tmp_path: Path, monkeypatch) -> None:
