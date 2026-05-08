@@ -765,6 +765,8 @@ def _write_wan_2_2_i2v_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 f"    workflow.nodes['89'].inputs['width'] = {width}",
                 f"    workflow.nodes['89'].inputs['height'] = {height}",
                 f"    workflow.nodes['89'].inputs['num_frames'] = {frames}",
+                f"    high_noise_embeds = workflow.add_node('WanVideoEmptyEmbeds', widget_0={width}, widget_1={height}, widget_2={frames}, width={width}, height={height}, num_frames={frames})",
+                "    workflow.replace_edge('27.image_embeds', f'{high_noise_embeds.id}.0')",
                 f"    workflow.nodes['16'].inputs['widget_0'] = {json.dumps(prompt)}",
                 f"    workflow.nodes['16'].inputs['widget_1'] = {json.dumps(negative)}",
                 f"    workflow.nodes['16'].inputs['positive_prompt'] = {json.dumps(prompt)}",
