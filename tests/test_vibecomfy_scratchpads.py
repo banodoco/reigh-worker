@@ -75,6 +75,7 @@ def test_animate_character_scratchpad_patches_reference_and_motion_inputs(
                 "motion_video_url": str(video),
                 "prompt": "dance naturally",
                 "resolution": "512x512",
+                "num_frames": 49,
                 "fps": 8,
                 "seed": 456,
                 "steps": 3,
@@ -89,6 +90,8 @@ def test_animate_character_scratchpad_patches_reference_and_motion_inputs(
     assert "workflow.nodes['145'].inputs['file']" in text
     assert "workflow.nodes['19'].inputs['format'] = 'mp4'" in text
     assert "workflow.nodes['159'].inputs['value'] = 512" in text
+    assert "workflow.nodes['232:62'].inputs['length'] = 49" in text
+    assert "workflow.nodes['232:230'].inputs['length'] = 49" in text
     assert (tmp_path / "input" / "animate_character_reference_animate_character-task.png").exists()
     assert (tmp_path / "input" / "animate_character_motion_animate_character-task.mp4").exists()
 
