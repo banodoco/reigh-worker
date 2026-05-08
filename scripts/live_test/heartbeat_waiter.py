@@ -43,8 +43,9 @@ def wait_until_ready(
     interval_sec: int = 10,
     dwell_polls: int = 2,
     progress_every_sec: int | None = None,
+    require_ready_for_tasks: bool = True,
 ) -> dict[str, Any]:
-    """Wait until the workers row has a recent heartbeat and worker-ready preflight."""
+    """Wait until the workers row has a stable heartbeat and, by default, ready preflight."""
     if dwell_polls < 1:
         raise ValueError("dwell_polls must be >= 1")
 
@@ -71,13 +72,16 @@ def wait_until_ready(
             raise WorkerReadyTimeoutError(f"Worker {worker_id} entered terminal status {status}{suffix}")
 
         # Heartbeat alone starts before WGP import and task-queue startup finish. The worker
-        # publishes ready_for_tasks only after backend preflight and queue startup pass.
+        # publishes ready_for_tasks only after backend preflight and queue startup pass. Some
+        # update-mode backends only prove queue readiness after a task exists, so callers can
+        # deliberately wait for heartbeat dwell without requiring this marker.
         is_fresh = False
         if last_heartbeat is not None:
             freshness_cutoff = datetime.now(timezone.utc) - timedelta(seconds=60)
             is_fresh = last_heartbeat > freshness_cutoff
 
-        if is_fresh and ready_for_tasks:
+        readiness_ok = ready_for_tasks or not require_ready_for_tasks
+        if is_fresh and readiness_ok:
             consecutive_fresh_polls += 1
             if consecutive_fresh_polls >= dwell_polls:
                 if progress_every_sec:
@@ -100,13 +104,15 @@ def wait_until_ready(
                 fresh_polls=consecutive_fresh_polls,
                 heartbeat_fresh=is_fresh,
                 ready_for_tasks=ready_for_tasks,
+                require_ready_for_tasks=require_ready_for_tasks,
             )
             next_progress_at = now + progress_every_sec
 
         time.sleep(interval_sec)
 
     raise WorkerReadyTimeoutError(
-        f"Worker {worker_id} did not maintain fresh heartbeat and ready_for_tasks for {dwell_polls} consecutive polls"
+        f"Worker {worker_id} did not maintain fresh heartbeat"
+        f"{' and ready_for_tasks' if require_ready_for_tasks else ''} for {dwell_polls} consecutive polls"
     )
 
 

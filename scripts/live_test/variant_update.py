@@ -645,7 +645,13 @@ def run(args) -> int:
                 idle_release_minutes=0,
             ),
         )
-        wait_until_ready(db, worker_id=worker_id, timeout_sec=900)
+        backend = getattr(args, "backend", "wgp")
+        wait_until_ready(
+            db,
+            worker_id=worker_id,
+            timeout_sec=900,
+            require_ready_for_tasks=backend != "vibecomfy",
+        )
 
         results = run_matrix(db, project_id, cases, worker_id=worker_id, serial=True)
         write_report(results, f"{UPDATE_VARIANT}-{mode}", pod_id, out_dir)

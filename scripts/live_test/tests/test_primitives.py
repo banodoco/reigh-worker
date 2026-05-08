@@ -597,6 +597,28 @@ def test_heartbeat_waiter_requires_dwell_and_ready_for_tasks(monkeypatch: pytest
     assert worker["id"] == "worker-1"
 
 
+def test_heartbeat_waiter_can_skip_ready_marker_for_queue_driven_backends(monkeypatch: pytest.MonkeyPatch):
+    workers = SequenceResponder(
+        [
+            [{"id": "worker-1", "last_heartbeat": _iso_now(), "metadata": {"ready_for_tasks": False}}],
+            [{"id": "worker-1", "last_heartbeat": _iso_now(), "metadata": {"ready_for_tasks": False}}],
+        ]
+    )
+    db = FakeDB(sources={"workers": workers})
+    monkeypatch.setattr("scripts.live_test.heartbeat_waiter.time.sleep", lambda _interval: None)
+
+    worker = wait_until_ready(
+        db,
+        "worker-1",
+        timeout_sec=1,
+        interval_sec=0,
+        dwell_polls=2,
+        require_ready_for_tasks=False,
+    )
+
+    assert worker["id"] == "worker-1"
+
+
 def test_heartbeat_waiter_fails_fast_on_terminal_worker_status():
     db = FakeDB(
         tables={
@@ -1732,7 +1754,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     )
     monkeypatch.setattr(
         "scripts.live_test.variant_update.wait_until_ready",
-        lambda _db, worker_id, timeout_sec=900: wait_calls.append((worker_id, timeout_sec)),
+        lambda _db, worker_id, timeout_sec=900, **kwargs: wait_calls.append((worker_id, timeout_sec, kwargs)),
     )
     monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases, **_kwargs: [])
     monkeypatch.setattr(
@@ -1770,7 +1792,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     )
     assert run_variant_update(args) == 0
     assert safety_calls == [("pod-456", "user-1", True)]
-    assert wait_calls == [("worker-123", 900)]
+    assert wait_calls == [("worker-123", 900, {"require_ready_for_tasks": True})]
     assert any("--worker worker-123" in command for command in launched)
     assert all("--worker pod-456" not in command for command in launched)
     assert status_updates == [("worker-123", "inactive", "pod-456")]
@@ -1848,7 +1870,7 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
     monkeypatch.setattr("scripts.live_test.variant_update.launch_worker_detached", lambda _ssh, _command: None)
     monkeypatch.setattr(
         "scripts.live_test.variant_update.wait_until_ready",
-        lambda _db, worker_id, timeout_sec=900: wait_calls.append((worker_id, timeout_sec)),
+        lambda _db, worker_id, timeout_sec=900, **kwargs: wait_calls.append((worker_id, timeout_sec, kwargs)),
     )
     monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases, **_kwargs: [])
     monkeypatch.setattr("scripts.live_test.variant_update.write_report", lambda *_args, **_kwargs: tmp_path)
@@ -1875,7 +1897,7 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
     assert run_variant_update(args) == 0
     assert safety_calls == [("pod-existing", "user-1", False)]
     assert status_updates == [("worker-prev", "inactive", "pod-existing", "wgp")]
-    assert wait_calls == [("worker-prev", 900)]
+    assert wait_calls == [("worker-prev", 900, {"require_ready_for_tasks": True})]
 
 
 def test_variant_update_prefers_pod_worker_row_over_stale_process_cmdline():
@@ -1963,6 +1985,7 @@ def test_variant_update_reuses_fresh_live_test_workdir_for_fresh_pods():
 def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     refresh_calls = []
     launched = []
+    wait_calls = []
     status_updates = []
 
     cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
@@ -2020,7 +2043,10 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
     )
     monkeypatch.setattr("scripts.live_test.variant_update.kill_supervisor_and_worker", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update.launch_worker_detached", lambda _ssh, command: launched.append(command))
-    monkeypatch.setattr("scripts.live_test.variant_update.wait_until_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update.wait_until_ready",
+        lambda _db, worker_id, timeout_sec=900, **kwargs: wait_calls.append((worker_id, timeout_sec, kwargs)),
+    )
     monkeypatch.setattr("scripts.live_test.variant_update.run_matrix", lambda _db, _project_id, _cases, **_kwargs: [])
     monkeypatch.setattr("scripts.live_test.variant_update.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_update._restore_remote_state", lambda _ssh, **_kwargs: None)
@@ -2058,6 +2084,7 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
         }
     ]
     assert launched
+    assert wait_calls == [("worker-prev", 900, {"require_ready_for_tasks": False})]
     assert status_updates == [("worker-prev", "inactive", "pod-existing", "vibecomfy")]
     assert "WORKER_DB_CLIENT_AUTH_MODE=service" in launched[0]
     assert "VIBECOMFY_CWD=/workspace/vibecomfy" in launched[0]
