@@ -306,6 +306,10 @@ def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace:
         return str(_write_qwen_image_edit_scratchpad(resolved, run_workspace)), False
     if resolved.route_key == "wan_2_2_t2i":
         return str(_write_wan_2_2_t2i_scratchpad(resolved, run_workspace)), False
+    if resolved.route_key == "wan_2_2_i2v":
+        return str(_write_wan_2_2_i2v_scratchpad(resolved, run_workspace)), False
+    if resolved.route_key == "animate_character":
+        return str(_write_animate_character_scratchpad(resolved, run_workspace)), False
     if _is_wan_vace_route(resolved.route_key):
         return str(_write_wan_2_2_vace_scratchpad(resolved, run_workspace)), False
     return str(resolved.template_id), True
@@ -643,6 +647,191 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
                 f"    workflow.nodes['197'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['197'].inputs['widget_0'] = {steps}",
                 f"    workflow.nodes['197'].inputs['widget_3'] = {seed}",
+                "    return workflow.finalize_metadata()",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return scratchpad
+
+
+def _write_wan_2_2_i2v_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
+    input_name = _materialize_image_input(
+        resolved,
+        run_workspace,
+        "image",
+        "image_url",
+        "input_image",
+        "start_image",
+        "start_image_url",
+        "first_frame",
+        "first_frame_url",
+        nested_keys=("individual_segment_params", "segment_params", "orchestrator_details"),
+        list_keys=("input_image_paths_resolved",),
+        list_index=0,
+        fallback_filename=f"wan_2_2_i2v_{resolved.task_id}.png",
+    )
+    width, height = _parse_resolution(
+        resolved.params.get("resolution")
+        or resolved.params.get("parsed_resolution_wh")
+        or _first_nested_string(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "parsed_resolution_wh")
+        or "832x480"
+    )
+    frames = int(
+        resolved.params.get("num_frames")
+        or resolved.params.get("video_length")
+        or _first_nested_value(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "num_frames", "video_length")
+        or 81
+    )
+    fps = int(float(resolved.params.get("fps") or resolved.params.get("fps_helpers") or 16))
+    prompt = str(
+        resolved.params.get("prompt")
+        or resolved.params.get("base_prompt")
+        or _first_nested_string(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "prompt", "base_prompt")
+        or ""
+    )
+    negative = str(
+        resolved.params.get("negative_prompt")
+        or _first_nested_string(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "negative_prompt")
+        or "fading, breaking, shot cuts, jumpcuts, blurry, noise, distorted"
+    )
+    seed = int(
+        resolved.params.get("seed")
+        or resolved.params.get("seed_to_use")
+        or _first_nested_value(resolved.params, ("individual_segment_params", "segment_params", "orchestrator_details"), "seed", "seed_to_use", "seed_base")
+        or -1
+    )
+    steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 6)))
+    end_step = max(1, min(steps - 1, int(resolved.params.get("high_noise_end_step", 3))))
+    scratchpad = run_workspace / "wan_2_2_i2v_scratchpad.py"
+    scratchpad.write_text(
+        "\n".join(
+            [
+                "from vibecomfy.cli_loader import load_workflow_any",
+                "",
+                "",
+                _WANVIDEO_DEFAULTS_HELPER,
+                "",
+                "def build():",
+                "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_i2v_kijai')",
+                f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg=1.0, shift=8.0, seed={seed})",
+                f"    workflow.nodes['67'].inputs['widget_0'] = {json.dumps(input_name)}",
+                f"    workflow.nodes['67'].inputs['image'] = {json.dumps(input_name)}",
+                f"    workflow.nodes['68'].inputs['widget_0'] = {width}",
+                f"    workflow.nodes['68'].inputs['widget_1'] = {height}",
+                f"    workflow.nodes['68'].inputs['width'] = {width}",
+                f"    workflow.nodes['68'].inputs['height'] = {height}",
+                f"    workflow.nodes['89'].inputs['widget_0'] = {width}",
+                f"    workflow.nodes['89'].inputs['widget_1'] = {height}",
+                f"    workflow.nodes['89'].inputs['widget_2'] = {frames}",
+                f"    workflow.nodes['89'].inputs['width'] = {width}",
+                f"    workflow.nodes['89'].inputs['height'] = {height}",
+                f"    workflow.nodes['89'].inputs['num_frames'] = {frames}",
+                f"    workflow.nodes['16'].inputs['widget_0'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['16'].inputs['widget_1'] = {json.dumps(negative)}",
+                f"    workflow.nodes['16'].inputs['positive_prompt'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['16'].inputs['negative_prompt'] = {json.dumps(negative)}",
+                f"    workflow.nodes['27'].inputs['steps'] = {steps}",
+                f"    workflow.nodes['27'].inputs['widget_0'] = {steps}",
+                f"    workflow.nodes['27'].inputs['widget_3'] = {seed}",
+                f"    workflow.nodes['27'].inputs['seed'] = {seed}",
+                f"    workflow.nodes['27'].inputs['end_step'] = {end_step}",
+                f"    workflow.nodes['27'].inputs['widget_12'] = {end_step}",
+                f"    workflow.nodes['90'].inputs['steps'] = {steps}",
+                f"    workflow.nodes['90'].inputs['widget_0'] = {steps}",
+                f"    workflow.nodes['90'].inputs['widget_3'] = {seed}",
+                f"    workflow.nodes['90'].inputs['seed'] = {seed}",
+                f"    workflow.nodes['90'].inputs['start_step'] = {end_step}",
+                f"    workflow.nodes['90'].inputs['widget_11'] = {end_step}",
+                f"    workflow.nodes['91'].inputs['widget_0'] = {end_step}",
+                f"    workflow.nodes['94'].inputs['widget_0'] = {steps}",
+                f"    workflow.nodes['60'].inputs['frame_rate'] = {fps}",
+                "    workflow.nodes['60'].inputs['filename_prefix'] = 'WanVideo2_2_I2V'",
+                "    workflow.nodes['60'].inputs['format'] = 'video/h264-mp4'",
+                "    workflow.nodes['60'].inputs['save_output'] = True",
+                "    workflow.nodes['60'].inputs['trim_to_audio'] = False",
+                "    return workflow.finalize_metadata()",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return scratchpad
+
+
+def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
+    reference_name = _materialize_image_input(
+        resolved,
+        run_workspace,
+        "character_image_url",
+        "reference_image",
+        "reference_image_url",
+        "image",
+        "image_url",
+        fallback_filename=f"animate_character_reference_{resolved.task_id}.png",
+    )
+    motion_name = _materialize_optional_video_input(
+        resolved,
+        run_workspace,
+        "motion_video_url",
+        "motion_video",
+        "pose_video_url",
+        "pose_video",
+        "video",
+        "video_url",
+        fallback_filename=f"animate_character_motion_{resolved.task_id}.mp4",
+    )
+    if not motion_name:
+        raise ValueError("VibeComfy route 'animate_character' requires motion_video_url or motion_video")
+    width, height = _parse_resolution(resolved.params.get("resolution") or "832x480")
+    prompt = str(resolved.params.get("prompt") or "Animate the character following the motion reference.")
+    negative = str(
+        resolved.params.get("negative_prompt")
+        or "fading, breaking, shot cuts, jumpcuts, blurry, noise, distorted"
+    )
+    seed = int(resolved.params.get("seed", resolved.params.get("seed_to_use", -1)))
+    steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 4)))
+    fps = int(float(resolved.params.get("fps") or 16))
+    scratchpad = run_workspace / "animate_character_scratchpad.py"
+    scratchpad.write_text(
+        "\n".join(
+            [
+                "from vibecomfy.cli_loader import load_workflow_any",
+                "",
+                "",
+                _WANVIDEO_DEFAULTS_HELPER,
+                "",
+                "def build():",
+                "    workflow = load_workflow_any('video/wanvideo_wrapper_22_wan_animate_preprocess_kijai')",
+                f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg=1.0, shift=5.0, seed={seed})",
+                f"    workflow.nodes['57'].inputs['widget_0'] = {json.dumps(reference_name)}",
+                f"    workflow.nodes['57'].inputs['image'] = {json.dumps(reference_name)}",
+                f"    workflow.nodes['63'].inputs['video'] = {json.dumps(motion_name)}",
+                f"    workflow.nodes['63'].inputs['force_rate'] = {fps}",
+                f"    workflow.nodes['63'].inputs['frame_load_cap'] = {int(resolved.params.get('frame_load_cap') or 0)}",
+                f"    workflow.nodes['63'].inputs['custom_width'] = {width}",
+                f"    workflow.nodes['63'].inputs['custom_height'] = {height}",
+                f"    workflow.nodes['150'].inputs['widget_0'] = {width}",
+                f"    workflow.nodes['151'].inputs['widget_0'] = {height}",
+                f"    workflow.nodes['64'].inputs['widget_0'] = {width}",
+                f"    workflow.nodes['64'].inputs['widget_1'] = {height}",
+                f"    workflow.nodes['64'].inputs['width'] = {width}",
+                f"    workflow.nodes['64'].inputs['height'] = {height}",
+                f"    workflow.nodes['62'].inputs['widget_0'] = {width}",
+                f"    workflow.nodes['62'].inputs['widget_1'] = {height}",
+                f"    workflow.nodes['65'].inputs['widget_2'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['65'].inputs['widget_3'] = {json.dumps(negative)}",
+                f"    workflow.nodes['65'].inputs['positive_prompt'] = {json.dumps(prompt)}",
+                f"    workflow.nodes['65'].inputs['negative_prompt'] = {json.dumps(negative)}",
+                f"    workflow.nodes['27'].inputs['steps'] = {steps}",
+                f"    workflow.nodes['27'].inputs['widget_0'] = {steps}",
+                f"    workflow.nodes['27'].inputs['widget_3'] = {seed}",
+                f"    workflow.nodes['27'].inputs['seed'] = {seed}",
+                "    workflow.nodes['30'].inputs['filename_prefix'] = 'Wanimate'",
+                f"    workflow.nodes['30'].inputs['frame_rate'] = {fps}",
+                "    workflow.nodes['30'].inputs['format'] = 'video/h264-mp4'",
+                "    workflow.nodes['30'].inputs['save_output'] = True",
                 "    return workflow.finalize_metadata()",
                 "",
             ]

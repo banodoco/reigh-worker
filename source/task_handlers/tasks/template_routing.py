@@ -190,9 +190,9 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
         ),
         "wan_2_2_i2v": RouteSelectorEntry(
             route_key="wan_2_2_i2v",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="APP_ACTIVE_BLOCKED",
-            blocking_reason="Travel turbo mode still needs an explicit VibeComfy I2V route/template and worker dispatch proof.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="video/wanvideo_wrapper_22_14b_i2v_kijai",
+            default_resolution="832x480",
         ),
         "image-upscale": RouteSelectorEntry(
             route_key="image-upscale",
@@ -214,9 +214,9 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
         ),
         "animate_character": RouteSelectorEntry(
             route_key="animate_character",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="APP_ACTIVE_NON_WORKER",
-            blocking_reason="App character animation is a non-Rayworker route and has not been ported to VibeComfy.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+            default_resolution="832x480",
         ),
         "flux_klein_edit": RouteSelectorEntry(
             route_key="flux_klein_edit",

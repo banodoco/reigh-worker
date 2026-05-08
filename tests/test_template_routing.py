@@ -114,6 +114,8 @@ def test_direct_route_aliases_match_canonical_selector_keys(
         ("annotated_image_edit", "edit/qwen_image_edit"),
         ("z_image_turbo_i2i", "image/z_image_img2img"),
         ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
+        ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
+        ("animate_character", "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai"),
     ],
 )
 def test_qwen_ready_template_routes_are_vibecomfy_supported(
@@ -138,11 +140,9 @@ def test_qwen_ready_template_routes_are_vibecomfy_supported(
 @pytest.mark.parametrize(
     "task_type",
     [
-        "wan_2_2_i2v",
         "image-upscale",
         "image_upscale",
         "video_enhance",
-        "animate_character",
         "flux_klein_edit",
     ],
 )
