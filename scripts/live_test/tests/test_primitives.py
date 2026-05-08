@@ -1039,6 +1039,30 @@ def test_live_matrix_stamps_direct_route_contracts(case_name: str, route_key: st
     assert payload["params"]["selected_backend"] == "wgp"
 
 
+def test_live_matrix_vace_video_source_routes_use_real_travel_segment_contract():
+    cases = build_matrix(case_names=["travel_segment_wan22_vace_flow_video_source"])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    details = payload["params"]["orchestrator_details"]
+
+    for key in (
+        "model_name",
+        "parsed_resolution_wh",
+        "segment_frames_expanded",
+        "num_new_segments_to_generate",
+        "base_prompts_expanded",
+        "negative_prompts_expanded",
+        "frame_overlap_expanded",
+        "input_image_paths_resolved",
+    ):
+        assert key in details
+
+    assert payload["task_type"] == "travel_segment"
+    assert payload["params"]["segment_index"] == 0
+    assert payload["params"]["video_source"]
+    assert payload["params"]["travel_guidance"]["mode"] == "flow"
+    assert details["continuation_config"] == {"type": "video_source"}
+
+
 @pytest.mark.parametrize("case_name", ["join_clips_orchestrator", "edit_video_orchestrator"])
 def test_live_matrix_orchestrator_cases_use_unique_run_ids(case_name: str):
     cases = build_matrix(case_names=[case_name])

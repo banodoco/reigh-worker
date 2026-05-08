@@ -431,6 +431,23 @@ def _wan_vace_travel_video_source_overrides(
         "mode": mode,
         "videos": [{"url": LIVE_TEST_VIDEO_URL}],
     }
+    orchestrator_details = {
+        "model_name": model_name,
+        "model": model_name,
+        "model_family": "wan22_vace",
+        "model_type": "vace",
+        "parsed_resolution_wh": "832x480",
+        "segment_frames_expanded": [81],
+        "num_new_segments_to_generate": 1,
+        "base_prompts_expanded": ["A person standing in a dynamic pose"],
+        "negative_prompts_expanded": ["fading, breaking, shot cuts, jumpcuts, blurry, noise, distorted"],
+        "frame_overlap_expanded": [0],
+        "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+        "travel_guidance": travel_guidance,
+        "continuation_config": {"type": "video_source"},
+        "fps_helpers": 16,
+        "seed_base": 42,
+    }
     return {
         "model_name": model_name,
         "model": model_name,
@@ -447,15 +464,7 @@ def _wan_vace_travel_video_source_overrides(
         "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
         "video_source": LIVE_TEST_VIDEO_URL,
         "travel_guidance": travel_guidance,
-        "orchestrator_details": {
-            "model_name": model_name,
-            "model": model_name,
-            "model_family": "wan22_vace",
-            "model_type": "vace",
-            "parsed_resolution_wh": "832x480",
-            "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
-            "travel_guidance": travel_guidance,
-        },
+        "orchestrator_details": orchestrator_details,
         "individual_segment_params": {
             "model_name": model_name,
             "model": model_name,
