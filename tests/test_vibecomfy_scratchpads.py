@@ -49,6 +49,9 @@ def test_wan_2_2_i2v_scratchpad_patches_kijai_template_inputs(tmp_path: Path, mo
     assert "workflow.nodes['68'].inputs['width'] = 640" in text
     assert "WanVideoEmptyEmbeds" in text
     assert "workflow.replace_edge('27.image_embeds'" in text
+    assert "blocks_to_swap'] = max" in text
+    assert "offload_img_emb'] = True" in text
+    assert "offload_txt_emb'] = True" in text
     assert (tmp_path / "input" / "wan_2_2_i2v_wan_2_2_i2v-task.png").exists()
 
 

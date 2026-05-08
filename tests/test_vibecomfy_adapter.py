@@ -142,6 +142,33 @@ def test_memory_profile_args_are_included(monkeypatch, tmp_path):
     assert commands[0][commands[0].index("--memory-profile") + 1] == "3"
 
 
+def test_wan_routes_default_to_minimum_memory_profile(monkeypatch, tmp_path):
+    commands = []
+
+    def _run(command, cwd, env, text, capture_output, check):
+        commands.append(command)
+        output = Path(cwd) / "out.mp4"
+        output.write_text("fake", encoding="utf-8")
+        return _completed(stdout="output: out.mp4\n")
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda *_args, **_kwargs: None)
+    input_image = tmp_path / "input.png"
+    input_image.write_bytes(b"image")
+
+    ok, _result = handle_vibecomfy_resolved_task(
+        _resolved_route(
+            "wan_2_2_i2v",
+            {"image_url": str(input_image), "resolution": "640x360", "num_frames": 17},
+        ),
+        tmp_path,
+    )
+
+    assert ok is True
+    assert "--memory-profile" in commands[0]
+    assert commands[0][commands[0].index("--memory-profile") + 1] == "5"
+
+
 def test_subprocess_failure_returns_bounded_telemetry(monkeypatch, tmp_path):
     long_stderr = "x" * 5000
     logger = _LogCapture()

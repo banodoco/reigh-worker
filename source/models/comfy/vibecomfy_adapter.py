@@ -78,9 +78,9 @@ def _patch_wanvideo_defaults(workflow, *, steps, cfg, shift, seed):
             node.inputs['merge_loras'] = node.inputs.get('merge_loras', node.inputs.get('widget_11', False))
         elif node.class_type == 'WanVideoBlockSwap':
             node.inputs['blocks_to_swap'] = node.inputs.get('blocks_to_swap', node.inputs.get('widget_0', 0))
-            node.inputs['offload_txt_emb'] = node.inputs.get('offload_txt_emb', node.inputs.get('widget_1', False))
-            node.inputs['offload_img_emb'] = node.inputs.get('offload_img_emb', node.inputs.get('widget_2', False))
-            node.inputs['offload_img_emb_nonblock'] = node.inputs.get('offload_img_emb_nonblock', node.inputs.get('widget_3', False))
+            node.inputs['offload_img_emb'] = node.inputs.get('offload_img_emb', node.inputs.get('widget_1', False))
+            node.inputs['offload_txt_emb'] = node.inputs.get('offload_txt_emb', node.inputs.get('widget_2', False))
+            node.inputs['use_non_blocking'] = node.inputs.get('use_non_blocking', node.inputs.get('widget_3', False))
             node.inputs['vace_blocks_to_swap'] = node.inputs.get('vace_blocks_to_swap', node.inputs.get('widget_4', 0))
             node.inputs['prefetch_blocks'] = node.inputs.get('prefetch_blocks', node.inputs.get('widget_5', 0))
             node.inputs['blocks_to_keep'] = node.inputs.get('blocks_to_keep', node.inputs.get('widget_6', False))
@@ -753,6 +753,14 @@ def _write_wan_2_2_i2v_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_i2v_kijai')",
                 f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg=1.0, shift=8.0, seed={seed})",
+                "    workflow.nodes['39'].inputs['blocks_to_swap'] = max(int(workflow.nodes['39'].inputs.get('blocks_to_swap', 0) or 0), 35)",
+                "    workflow.nodes['39'].inputs['widget_0'] = workflow.nodes['39'].inputs['blocks_to_swap']",
+                "    workflow.nodes['39'].inputs['offload_img_emb'] = True",
+                "    workflow.nodes['39'].inputs['offload_txt_emb'] = True",
+                "    workflow.nodes['39'].inputs['use_non_blocking'] = False",
+                "    workflow.nodes['39'].inputs['widget_1'] = True",
+                "    workflow.nodes['39'].inputs['widget_2'] = True",
+                "    workflow.nodes['39'].inputs['widget_3'] = False",
                 f"    workflow.nodes['67'].inputs['widget_0'] = {json.dumps(input_name)}",
                 f"    workflow.nodes['67'].inputs['image'] = {json.dumps(input_name)}",
                 f"    workflow.nodes['68'].inputs['widget_0'] = {width}",
@@ -1209,6 +1217,13 @@ def _process_default_memory_profile() -> int | None:
 def _override_memory_profile(resolved: ResolvedTask) -> int | None:
     raw_profile = resolved.params.get("override_profile")
     if raw_profile is None:
+        if resolved.route_key in {
+            "wan_2_2_t2i",
+            "wan_2_2_i2v",
+            "wan_2_2_vace",
+            "animate_character",
+        }:
+            return 5
         return PROCESS_DEFAULT_PROFILE
     return int(raw_profile)
 
