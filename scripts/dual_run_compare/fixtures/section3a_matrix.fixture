@@ -29,8 +29,9 @@
       "disposition": "NEW",
       "expected_backend": "wgp",
       "route_key_expectation": "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
-      "support_state_expectation": "vibecomfy_unsupported",
-      "blocking_reason": "Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted."
+      "support_state_expectation": "vibecomfy_supported",
+      "blocking_reason": null,
+      "template_id_expectation": "video/wanvideo_wrapper_22_14b_i2v_kijai"
     },
     {
       "row_id": 2,

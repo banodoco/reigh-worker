@@ -25,7 +25,7 @@
 | `video_enhance` | supported | supported | `video/basic_video_enhance` |
 | `animate_character` | supported | supported | `video/wan22_animate_native_first_stage` |
 | `flux_klein_edit` | supported | supported | `edit/flux2_klein_4b_image_edit_distilled` |
-| `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_unsupported |  |
+| `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/wanvideo_wrapper_22_14b_i2v_kijai` |
 | `travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/wanvideo_wrapper_22_14b_vace_cocktail` |
 | `travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default` | supported | vibecomfy_supported | `video/wanvideo_wrapper_22_14b_vace_cocktail` |
 | `travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default` | supported | vibecomfy_supported | `video/wanvideo_wrapper_22_14b_vace_cocktail` |

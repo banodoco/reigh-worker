@@ -485,10 +485,31 @@ def test_section3a_ltx_first_last_rows_are_supported_after_adapter_wiring(
     assert resolved.should_use_vibecomfy is True
 
 
+def test_section3a_wan_i2v_first_last_is_supported_after_anchor_wiring(routing) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="section3a-wan-i2v",
+        task_type="travel_segment",
+        params={
+            "_source_task_type": "travel_segment",
+            "model_name": "wan_2_2_i2v_lightning_baseline_2_2_2",
+            "start_image_url": "start.png",
+            "end_image_url": "end.png",
+            "continuity_case": "first_last",
+            "guidance_kind": "none",
+        },
+        backend="vibecomfy",
+    )
+
+    assert resolved.route_key == "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default"
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.template_id == "video/wanvideo_wrapper_22_14b_i2v_kijai"
+    assert resolved.fail_closed_reason is None
+    assert resolved.should_use_vibecomfy is True
+
+
 @pytest.mark.parametrize(
     "route_key",
     [
-        "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
     ],

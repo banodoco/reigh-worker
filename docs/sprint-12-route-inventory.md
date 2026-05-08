@@ -37,7 +37,7 @@
 | `qwen_image_style` | alias |
 | `image_inpaint` | alias |
 | `annotated_image_edit` | alias |
-| `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` | NEW | Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted. |
+| `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` | NEW |  |
 | `travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default` | NEW |  |
 | `travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default` | NEW |  |
 | `travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default` | NEW |  |

@@ -231,9 +231,9 @@ SECTION3A_ROUTE_SUPPORT_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType
     {
         "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default": RouteSelectorEntry(
             route_key="travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="video/wanvideo_wrapper_22_14b_i2v_kijai",
             disposition="NEW",
-            blocking_reason="Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted.",
         ),
         "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default": RouteSelectorEntry(
             route_key="travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",

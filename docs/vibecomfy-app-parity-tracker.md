@@ -30,16 +30,16 @@ Edit `scripts/capability_contracts/contracts.json`, `app_capabilities.json`, or 
 
 | Status | Count |
 | --- | --- |
-| `static_valid` | 31 |
-| `unsupported_fail_closed` | 10 |
+| `static_valid` | 32 |
+| `unsupported_fail_closed` | 9 |
 | `wgp_only_contract_validated` | 5 |
 
 ### By Implementation
 
 | Implementation | Count |
 | --- | --- |
-| `unsupported` | 10 |
-| `vibecomfy` | 31 |
+| `unsupported` | 9 |
+| `vibecomfy` | 32 |
 | `wgp` | 5 |
 
 ## Status Vocabulary
@@ -95,6 +95,7 @@ Configured app root: `/tmp/reigh-app`
 | `cap.qwen_image_style` | `static_valid` | `vibecomfy` | `qwen_image_style` | `edit/qwen_image_edit` | `qwen_image_style` |  |
 | `cap.travel-segment-model-ltx2-distilled-guidance-none-continuity-first-last-profile-default` | `static_valid` | `vibecomfy` | `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` | `video/ltx2_3_runexx_first_last_frame` |  |  |
 | `cap.travel-segment-model-ltx2-guidance-none-continuity-first-last-profile-default` | `static_valid` | `vibecomfy` | `travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default` | `video/ltx2_3_runexx_first_last_frame` |  |  |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `static_valid` | `vibecomfy` | `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` | `video/wanvideo_wrapper_22_14b_i2v_kijai` |  |  |
 | `cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-first-last-profile-default` | `static_valid` | `vibecomfy` | `travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default` | `video/wanvideo_wrapper_22_14b_vace_cocktail` |  |  |
 | `cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-video-source-profile-default` | `static_valid` | `vibecomfy` | `travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default` | `video/wanvideo_wrapper_22_14b_vace_cocktail` | `travel_segment_wan22_vace_canny_video_source` |  |
 | `cap.travel-segment-model-wan22-vace-guidance-vace-continuity-video-source-profile-default` | `static_valid` | `vibecomfy` | `travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default` | `video/wanvideo_wrapper_22_14b_vace_cocktail` |  |  |
@@ -114,7 +115,6 @@ Configured app root: `/tmp/reigh-app`
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-depth-continuity-first-last-profile-default` | `unsupported_fail_closed` | `unsupported` | `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` |  |  | The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides. |
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default` | `unsupported_fail_closed` | `unsupported` | `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` |  |  | The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides. |
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default` | `unsupported_fail_closed` | `unsupported` | `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` |  |  | The pinned LTX first/last template is not yet proven control-capable for a full-length control guide. |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `unsupported_fail_closed` | `unsupported` | `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` |  |  | Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted. |
 | `cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default` | `unsupported_fail_closed` | `unsupported` | `travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default` |  |  | Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion. |
 | `cap.video_enhance` | `static_valid` | `vibecomfy` | `video_enhance` | `video/basic_video_enhance` | `video_enhance` |  |
 | `cap.wan_2_2_i2v` | `static_valid` | `vibecomfy` | `wan_2_2_i2v` | `video/wanvideo_wrapper_22_14b_i2v_kijai` | `wan_2_2_i2v` |  |
@@ -177,7 +177,6 @@ Configured app root: `/tmp/reigh-app`
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-depth-continuity-first-last-profile-default` | `travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default` | Explicit fail-closed route seeded from worker route support map<br>The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides. |
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default` | `travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default` | Explicit fail-closed route seeded from worker route support map<br>The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides. |
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default` | `travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default` | Explicit fail-closed route seeded from worker route support map<br>The pinned LTX first/last template is not yet proven control-capable for a full-length control guide. |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default` | Explicit fail-closed route seeded from worker route support map<br>Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted. |
 | `cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default` | `travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default` | Explicit fail-closed route seeded from worker route support map<br>Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion. |
 
 ## Alias Coverage
@@ -208,7 +207,6 @@ Configured app root: `/tmp/reigh-app`
 | blocker | contract | cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-depth-continuity-first-last-profile-default | The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides. |
 | blocker | contract | cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default | The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides. |
 | blocker | contract | cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default | The pinned LTX first/last template is not yet proven control-capable for a full-length control guide. |
-| blocker | contract | cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default | Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted. |
 | blocker | contract | cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default | Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion. |
 
 ## Variant Accounting
@@ -364,6 +362,13 @@ Configured app root: `/tmp/reigh-app`
 | `cap.travel-segment-model-ltx2-guidance-none-continuity-first-last-profile-default` | `frames_fps` | `default`, `app_requested` | Video routes patch frame/fps inputs where the template exposes them. | no |
 | `cap.travel-segment-model-ltx2-guidance-none-continuity-first-last-profile-default` | `profile` | `default`, `memory_profile` | Route profile is persisted in route_selection_snapshot. | no |
 | `cap.travel-segment-model-ltx2-guidance-none-continuity-first-last-profile-default` | `postprocess` | `none`, `interpolation`, `upscale` | Generation and enhancement routes account for postprocess behavior separately. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `lora` | `none`, `single`, `multiple`, `url`, `phase_scheduled` | Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `control` | `none`, `controlnet`, `vace`, `ltx_control`, `uni3c` | This route covers the no-control first/last Wan I2V path; Uni3C/VACE/control variants remain separate route contracts. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `source_media` | `text`, `image`, `video`, `mask`, `first_last` | Dedicated scratchpad materializes first and last anchors into WanVideoImageToVideoEncode. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `resolution` | `default`, `app_requested` | Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `frames_fps` | `default`, `app_requested` | Video routes patch frame/fps inputs where the template exposes them. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `profile` | `default`, `memory_profile` | Route profile is persisted in route_selection_snapshot. | no |
+| `cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `postprocess` | `none`, `interpolation`, `upscale` | Generation and enhancement routes account for postprocess behavior separately. | no |
 | `cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-first-last-profile-default` | `lora` | `none`, `single`, `multiple`, `url`, `phase_scheduled` | Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through. | no |
 | `cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-first-last-profile-default` | `control` | `none`, `controlnet`, `vace`, `ltx_control`, `uni3c` | Route key and adapter decide which control modes are supported. | no |
 | `cap.travel-segment-model-wan22-vace-guidance-vace-canny-continuity-first-last-profile-default` | `source_media` | `text`, `image`, `video`, `mask`, `first_last` | Task params and route key select source-media shape. | no |
@@ -503,13 +508,6 @@ Configured app root: `/tmp/reigh-app`
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default` | `frames_fps` | `default`, `app_requested` | Video routes patch frame/fps inputs where the template exposes them. | no |
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default` | `profile` | `default`, `memory_profile` | Route profile is persisted in route_selection_snapshot. | no |
 | `cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default` | `postprocess` | `none`, `interpolation`, `upscale` | Generation and enhancement routes account for postprocess behavior separately. | no |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `lora` | `none`, `single`, `multiple`, `url`, `phase_scheduled` | Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through. | no |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `control` | `none`, `controlnet`, `vace`, `ltx_control`, `uni3c` | Route key and adapter decide which control modes are supported. | yes |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `source_media` | `text`, `image`, `video`, `mask`, `first_last` | Task params and route key select source-media shape. | no |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `resolution` | `default`, `app_requested` | Representative static/live cases cover defaults; app-requested values are patched by scratchpad writers. | no |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `frames_fps` | `default`, `app_requested` | Video routes patch frame/fps inputs where the template exposes them. | no |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `profile` | `default`, `memory_profile` | Route profile is persisted in route_selection_snapshot. | no |
-| `cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default` | `postprocess` | `none`, `interpolation`, `upscale` | Generation and enhancement routes account for postprocess behavior separately. | no |
 | `cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default` | `lora` | `none`, `single`, `multiple`, `url`, `phase_scheduled` | Tracked as a parity-critical variable; supported only where route adapters pass LoRA inputs through. | no |
 | `cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default` | `control` | `none`, `controlnet`, `vace`, `ltx_control`, `uni3c` | Route key and adapter decide which control modes are supported. | yes |
 | `cap.unsupported.travel-segment-model-wan22-vace-guidance-uni3c-continuity-first-last-profile-default` | `source_media` | `text`, `image`, `video`, `mask`, `first_last` | Task params and route key select source-media shape. | no |

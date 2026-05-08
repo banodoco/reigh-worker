@@ -2698,10 +2698,10 @@
       "template_id": "edit/flux2_klein_4b_image_edit_distilled"
     },
     {
-      "capability_id": "cap.unsupported.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default",
+      "capability_id": "cap.travel-segment-model-wan22-i2v-guidance-none-continuity-first-last-profile-default",
       "name": "travel segment / model-wan22 i2v / guidance-none / continuity-first last / profile-default",
-      "status": "unsupported_fail_closed",
-      "implementation": "unsupported",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
       "canonical_route_key": "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
       "route_keys": [],
       "task_types": [
@@ -2729,8 +2729,8 @@
             "ltx_control",
             "uni3c"
           ],
-          "coverage": "Route key and adapter decide which control modes are supported.",
-          "fail_closed": true
+          "coverage": "This route covers the no-control first/last Wan I2V path; Uni3C/VACE/control variants remain separate route contracts.",
+          "fail_closed": false
         },
         {
           "name": "source_media",
@@ -2741,7 +2741,7 @@
             "mask",
             "first_last"
           ],
-          "coverage": "Task params and route key select source-media shape.",
+          "coverage": "Dedicated scratchpad materializes first and last anchors into WanVideoImageToVideoEncode.",
           "fail_closed": false
         },
         {
@@ -2804,14 +2804,14 @@
       ],
       "live_evidence": [],
       "static_evidence": [
+        "vibecomfy_template_index:video/wanvideo_wrapper_22_14b_i2v_kijai",
         "worker_route:travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default"
       ],
       "notes": [
-        "Explicit fail-closed route seeded from worker route support map"
+        "Template exists in VibeComfy; runtime promotion requires committed live report evidence."
       ],
-      "blockers": [
-        "Requires the NEW Wan 2.2 VACE cocktail template before Wan-family travel rows can be promoted."
-      ]
+      "blockers": [],
+      "template_id": "video/wanvideo_wrapper_22_14b_i2v_kijai"
     },
     {
       "capability_id": "cap.travel-segment-model-wan22-vace-guidance-vace-flow-continuity-first-last-profile-default",

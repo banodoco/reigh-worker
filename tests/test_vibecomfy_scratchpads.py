@@ -113,6 +113,43 @@ def test_wan_video_scratchpads_wire_dynamic_loras_as_vibecomfy_assets(tmp_path: 
     assert '"strength": 0.7' in text
 
 
+def test_wan_2_2_i2v_first_last_scratchpad_preserves_image_embeds(tmp_path: Path, monkeypatch) -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+    start = tmp_path / "start.png"
+    end = tmp_path / "end.png"
+    start.write_bytes(b"start")
+    end.write_bytes(b"end")
+    monkeypatch.setattr(adapter, "download_image_if_url", lambda value, *_args, **_kwargs: value)
+
+    scratchpad = adapter._write_wan_2_2_i2v_first_last_scratchpad(
+        _resolved(
+            "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
+            {
+                "input_image_paths_resolved": [str(start), str(end)],
+                "prompt": "bridge the two frames",
+                "negative_prompt": "bad",
+                "resolution": "640x360",
+                "num_frames": 17,
+                "fps": 12,
+                "seed": 123,
+                "steps": 4,
+            },
+        ),
+        tmp_path,
+    )
+
+    text = scratchpad.read_text(encoding="utf-8")
+    assert "video/wanvideo_wrapper_22_14b_i2v_kijai" in text
+    assert "WanVideoEmptyEmbeds" not in text
+    assert "workflow.replace_edge('27.image_embeds'" not in text
+    assert "workflow.replace_edge('90.image_embeds'" not in text
+    assert "workflow.connect(f'{end_resized.id}.0', '89.end_image')" in text
+    assert "workflow.nodes['89'].inputs['fun_or_fl2v_model'] = False" in text
+    assert "WanVideo2_2_I2V_FirstLast" in text
+    assert (tmp_path / "input" / "wan_2_2_i2v_start_travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default-task.png").exists()
+    assert (tmp_path / "input" / "wan_2_2_i2v_end_travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default-task.png").exists()
+
+
 def test_animate_character_scratchpad_chains_dynamic_loras(tmp_path: Path, monkeypatch) -> None:
     adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
     image = tmp_path / "character.png"
