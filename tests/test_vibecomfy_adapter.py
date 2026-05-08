@@ -259,6 +259,36 @@ def test_output_discovery_prefers_existing_absolute_output_line(monkeypatch, tmp
     assert result and result.endswith("output/final.mp4")
 
 
+def test_output_discovery_resolves_bare_name_to_standard_output_dir(monkeypatch, tmp_path):
+    def _run(command, cwd, env, text, capture_output, check):
+        run_dir = Path(env["VIBECOMFY_WORKER_RUN_DIR"])
+        output = run_dir / "output" / "Wanimate_00001_.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"fake")
+        return _completed(stdout="output: Wanimate_00001_.mp4\n")
+
+    def _validate_video_artifact(path, contract):
+        assert Path(path) == tmp_path / "vibecomfy_runs" / "adapter-task" / "output" / "Wanimate_00001_.mp4"
+        return SimpleNamespace(
+            content_type="video/mp4",
+            frame_count=None,
+            fps=None,
+            duration_seconds=None,
+            has_audio=False,
+            audio_duration_seconds=None,
+            width=None,
+            height=None,
+        )
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", _validate_video_artifact)
+
+    ok, result = handle_vibecomfy_resolved_task(_resolved(), tmp_path)
+
+    assert ok is True
+    assert result and result.endswith("output/Wanimate_00001_.mp4")
+
+
 def test_output_discovery_from_metadata(monkeypatch, tmp_path):
     def _run(command, cwd, env, text, capture_output, check):
         metadata = Path(cwd) / "out" / "runs" / "run-1" / "metadata.json"
@@ -275,6 +305,41 @@ def test_output_discovery_from_metadata(monkeypatch, tmp_path):
 
     assert ok is True
     assert result and result.endswith("images/final.png")
+
+
+def test_output_discovery_resolves_metadata_relative_to_vibecomfy_cwd(monkeypatch, tmp_path):
+    vibecomfy_root = tmp_path / "vibecomfy"
+    vibecomfy_root.mkdir()
+    monkeypatch.setenv("VIBECOMFY_CWD", str(vibecomfy_root))
+
+    def _run(command, cwd, env, text, capture_output, check):
+        metadata = Path(cwd) / "out" / "runs" / "run-1" / "metadata.json"
+        metadata.parent.mkdir(parents=True, exist_ok=True)
+        output = Path(cwd) / "out" / "runs" / "run-1" / "Wanimate_00001_.mp4"
+        output.write_bytes(b"fake")
+        metadata.write_text(json.dumps({"outputs": [str(output.relative_to(cwd))]}), encoding="utf-8")
+        return _completed(stdout="metadata: out/runs/run-1/metadata.json\n")
+
+    def _validate_video_artifact(path, contract):
+        assert Path(path) == vibecomfy_root / "out" / "runs" / "run-1" / "Wanimate_00001_.mp4"
+        return SimpleNamespace(
+            content_type="video/mp4",
+            frame_count=None,
+            fps=None,
+            duration_seconds=None,
+            has_audio=False,
+            audio_duration_seconds=None,
+            width=None,
+            height=None,
+        )
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", _validate_video_artifact)
+
+    ok, result = handle_vibecomfy_resolved_task(_resolved(), tmp_path)
+
+    assert ok is True
+    assert result and result.endswith("out/runs/run-1/Wanimate_00001_.mp4")
 
 
 def test_output_discovery_from_isolated_run_directory(monkeypatch, tmp_path):

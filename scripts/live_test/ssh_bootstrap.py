@@ -59,14 +59,20 @@ def _execute(ssh, command: str, *, timeout: int = 600, check: bool = True) -> tu
 def open_session(pod_id: str, api_key: str, *, ssh_wait_timeout: int = 300, poll_interval: int = 5):
     deadline = time.monotonic() + ssh_wait_timeout
     ssh_details = None
+    last_status = None
     while time.monotonic() < deadline:
         ssh_details = live_test_pkg.get_pod_ssh_details(pod_id, api_key)
         if ssh_details and ssh_details.get("ip") and ssh_details.get("port"):
             break
+        try:
+            last_status = live_test_pkg.get_pod_status(pod_id, api_key)
+        except Exception:
+            last_status = None
         time.sleep(poll_interval)
     if not ssh_details or not ssh_details.get("ip") or not ssh_details.get("port"):
+        status_hint = _format_pod_status_hint(last_status)
         raise RuntimeError(
-            f"Could not resolve SSH details for pod {pod_id} within {ssh_wait_timeout}s"
+            f"Could not resolve SSH details for pod {pod_id} within {ssh_wait_timeout}s{status_hint}"
         )
 
     import os as _os
@@ -86,8 +92,35 @@ def open_session(pod_id: str, api_key: str, *, ssh_wait_timeout: int = 300, poll
             return ssh
         except Exception as exc:
             last_err = exc
+            try:
+                last_status = live_test_pkg.get_pod_status(pod_id, api_key)
+            except Exception:
+                last_status = None
             time.sleep(poll_interval)
-    raise RuntimeError(f"Could not SSH into pod {pod_id} within {ssh_wait_timeout}s: {last_err}")
+    status_hint = _format_pod_status_hint(last_status)
+    raise RuntimeError(f"Could not SSH into pod {pod_id} within {ssh_wait_timeout}s{status_hint}: {last_err}")
+
+
+def _format_pod_status_hint(status) -> str:
+    if not isinstance(status, dict):
+        return "; latest pod status unavailable"
+    desired = status.get("desired_status") or status.get("desiredStatus") or "unknown"
+    actual = status.get("actual_status") or status.get("actualStatus") or status.get("status") or "unknown"
+    ip = status.get("ip") or "none"
+    ports = status.get("ports")
+    if isinstance(ports, list) and ports:
+        rendered_ports = []
+        for port in ports:
+            if not isinstance(port, dict):
+                continue
+            private = port.get("privatePort") or port.get("private_port") or port.get("containerPort")
+            public = port.get("publicPort") or port.get("public_port") or port.get("hostPort")
+            if private and public:
+                rendered_ports.append(f"{private}->{public}")
+        ports_text = ",".join(rendered_ports) if rendered_ports else "unparseable"
+    else:
+        ports_text = "none"
+    return f"; latest pod status desired={desired} actual={actual} ip={ip} ports={ports_text}"
 
 
 def clone_repo_into(ssh, workdir: str, repo_url: str, branch: str) -> None:

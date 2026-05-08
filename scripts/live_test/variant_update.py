@@ -665,12 +665,7 @@ def run(args) -> int:
         preserve_branch = False
         return 0
     finally:
-        if snapshot is not None:
-            restore_local_state(str(config.WORKER_ROOT), snapshot)
-        if branch:
-            kept_branch = cleanup_temp_branch(branch, preserve=preserve_branch, submodule_path=str(config.WORKER_ROOT))
-            if preserve_branch:
-                print(f"Preserved temp branch for inspection: {kept_branch}")
+        restore_error: Exception | None = None
         if ssh is not None:
             try:
                 logs = fetch_worker_logs(ssh, workdir)
@@ -682,7 +677,24 @@ def run(args) -> int:
                 disconnect = getattr(ssh, "disconnect", None)
                 if callable(disconnect):
                     disconnect()
+        if snapshot is not None:
+            try:
+                restore_local_state(str(config.WORKER_ROOT), snapshot)
+            except Exception as exc:
+                restore_error = exc
+                log.warning("failed to restore local worker checkout: %s", exc)
+        if branch:
+            try:
+                kept_branch = cleanup_temp_branch(branch, preserve=preserve_branch, submodule_path=str(config.WORKER_ROOT))
+                if preserve_branch:
+                    print(f"Preserved temp branch for inspection: {kept_branch}")
+            except Exception as exc:
+                if restore_error is None:
+                    restore_error = exc
+                log.warning("failed to clean up update variant temp branch: %s", exc)
         guarded_terminate(pod_id, api_key if not args.dry_run else None, no_terminate=args.no_terminate)
+        if restore_error is not None:
+            raise restore_error
 
 
 __all__ = [

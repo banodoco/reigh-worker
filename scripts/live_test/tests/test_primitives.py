@@ -38,6 +38,7 @@ from scripts.live_test.ssh_bootstrap import (
     capture_current_worker_cmdline,
     clone_and_install_vibecomfy,
     kill_supervisor_and_worker,
+    open_session,
 )
 from scripts.live_test.task_spoofer import insert_spoof_task
 from scripts.live_test.terminate_guard import guarded_terminate
@@ -369,6 +370,78 @@ def test_completion_poller_returns_on_complete(monkeypatch: pytest.MonkeyPatch):
     assert result.generation_ids == ["gen-1"]
     assert result.output_location == "https://out.example/result.png"
     assert result.error_summary is None
+
+
+def test_completion_poller_prints_long_running_progress(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    task_rows = SequenceResponder(
+        [
+            [
+                {
+                    "id": "task-1",
+                    "project_id": "project-1",
+                    "task_type": "wan_animate",
+                    "status": "In Progress",
+                    "created_at": _iso_now(-10),
+                    "worker_id": "worker-1",
+                }
+            ],
+            [
+                {
+                    "id": "task-1",
+                    "project_id": "project-1",
+                    "task_type": "wan_animate",
+                    "status": "Complete",
+                    "created_at": _iso_now(-10),
+                    "worker_id": "worker-1",
+                    "output_location": "https://out.example/result.mp4",
+                }
+            ],
+        ]
+    )
+    db = FakeDB(
+        sources={"tasks": task_rows},
+        tables={
+            "workers": [
+                {
+                    "id": "worker-1",
+                    "status": "active",
+                    "last_heartbeat": "2026-05-08T16:00:00Z",
+                    "metadata": {},
+                }
+            ],
+            "generations": [
+                {
+                    "id": "gen-1",
+                    "project_id": "project-1",
+                    "created_at": _iso_now(-5),
+                    "tasks": ["task-1"],
+                    "params": {},
+                    "location": "https://out.example/result.mp4",
+                }
+            ],
+        },
+    )
+    monotonic_values = iter([0.0, 0.0, 61.0, 62.0, 63.0])
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.sleep", lambda _interval: None)
+
+    result = poll_until_complete(
+        db,
+        "task-1",
+        "project-1",
+        timeout_sec=120,
+        interval_sec=0,
+        progress_interval_sec=60,
+        case_name="animate_character",
+        task_type="wan_animate",
+    )
+
+    assert result.final_status == "Complete"
+    output = capsys.readouterr().out
+    assert "animate_character still running after 61s/120s" in output
+    assert "task=task-1 status=In Progress" in output
+    assert "worker=worker-1 status=active" in output
+    assert "last_heartbeat=2026-05-08T16:00:00Z" in output
 
 
 def test_completion_poller_links_orchestrator_child_generations(monkeypatch: pytest.MonkeyPatch):
@@ -741,6 +814,68 @@ def test_build_run_worker_command_uses_run_worker_py_and_idle_zero():
     assert "python run_worker.py" in command
     assert "--idle-release-minutes 0" in command
     assert "--save-logging logs/worker.log" in command
+
+
+def test_open_session_timeout_includes_latest_pod_status(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("scripts.live_test.ssh_bootstrap.time.sleep", lambda _interval: None)
+    monkeypatch.setattr("scripts.live_test.ssh_bootstrap.time.monotonic", iter([0, 0.5, 1.5]).__next__)
+    monkeypatch.setattr("scripts.live_test.get_pod_ssh_details", lambda _pod_id, _api_key: None)
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_status",
+        lambda _pod_id, _api_key: {
+            "desired_status": "EXITED",
+            "actual_status": "EXITED",
+            "ip": None,
+            "ports": [],
+        },
+    )
+
+    with pytest.raises(RuntimeError) as exc:
+        open_session("pod-1", "api-key", ssh_wait_timeout=1, poll_interval=1)
+
+    message = str(exc.value)
+    assert "desired=EXITED" in message
+    assert "actual=EXITED" in message
+    assert "ports=none" in message
+
+
+def test_open_session_connect_timeout_includes_latest_pod_status(monkeypatch: pytest.MonkeyPatch):
+    class FailingSSH:
+        def __init__(self, **_kwargs):
+            pass
+
+        def connect(self):
+            raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("scripts.live_test.ssh_bootstrap.time.sleep", lambda _interval: None)
+    monkeypatch.setattr(
+        "scripts.live_test.ssh_bootstrap.time.monotonic",
+        iter([0, 0.1, 0.2, 0.3, 1.4]).__next__,
+    )
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_ssh_details",
+        lambda _pod_id, _api_key: {"ip": "5.6.7.8", "port": 2201, "password": "runpod"},
+    )
+    monkeypatch.setattr("scripts.live_test.SSHClient", FailingSSH)
+    monkeypatch.setattr(
+        "scripts.live_test.get_pod_status",
+        lambda _pod_id, _api_key: {
+            "desired_status": "RUNNING",
+            "actual_status": "RUNNING",
+            "ip": "5.6.7.8",
+            "ports": [{"privatePort": 22, "publicPort": 2201}],
+        },
+    )
+
+    with pytest.raises(RuntimeError) as exc:
+        open_session("pod-1", "api-key", ssh_wait_timeout=1, poll_interval=1)
+
+    message = str(exc.value)
+    assert "desired=RUNNING" in message
+    assert "actual=RUNNING" in message
+    assert "ip=5.6.7.8" in message
+    assert "ports=22->2201" in message
+    assert "connection refused" in message
 
 
 def test_build_direct_worker_command_roundtrips_template_cmdline():
@@ -1685,6 +1820,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     cleanup_calls = []
     restore_calls = []
     status_updates = []
+    finally_events = []
 
     cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
     class FakeDB:
@@ -1772,9 +1908,12 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     )
     monkeypatch.setattr(
         "scripts.live_test.variant_update.restore_local_state",
-        lambda _path, _snapshot: restore_calls.append({"local_restore": True}),
+        lambda _path, _snapshot: finally_events.append("local_restore") or restore_calls.append({"local_restore": True}),
     )
-    monkeypatch.setattr("scripts.live_test.variant_update.fetch_worker_logs", lambda _ssh, _workdir: "logs")
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update.fetch_worker_logs",
+        lambda _ssh, _workdir: finally_events.append("fetch_logs") or "logs",
+    )
     monkeypatch.setattr("scripts.live_test.variant_update.guarded_terminate", lambda *_args, **_kwargs: False)
 
     args = SimpleNamespace(
@@ -1797,6 +1936,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     assert all("--worker pod-456" not in command for command in launched)
     assert status_updates == [("worker-123", "inactive", "pod-456")]
     assert cleanup_calls == [("live-test/branch", False, str(ROOT))]
+    assert finally_events == ["fetch_logs", "local_restore"]
 
 
 def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

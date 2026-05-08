@@ -90,7 +90,7 @@ def _fetch_worker_row(db, worker_id: str | None) -> dict[str, Any] | None:
         return None
     rows = _coerce_rows(
         db.supabase.table("workers")
-        .select("id, status, metadata")
+        .select("id, status, last_heartbeat, metadata")
         .eq("id", worker_id)
         .execute()
     )
@@ -224,6 +224,30 @@ def _failure_summary(task_row: dict[str, Any] | None, final_status: str, generat
     return None
 
 
+def _emit_progress(
+    *,
+    task_id: str,
+    case_name: str | None,
+    task_row: dict[str, Any] | None,
+    worker_row: dict[str, Any] | None,
+    elapsed_sec: float,
+    timeout_sec: int,
+) -> None:
+    task_status = str((task_row or {}).get("status") or "missing")
+    worker_status = str((worker_row or {}).get("status") or "unknown")
+    task_worker_id = str((task_row or {}).get("worker_id") or (worker_row or {}).get("id") or "unknown")
+    heartbeat = (worker_row or {}).get("last_heartbeat") or "unknown"
+    label = case_name or task_id
+    print(
+        "[live-test] "
+        f"{label} still running after {elapsed_sec:.0f}s/{timeout_sec}s; "
+        f"task={task_id} status={task_status}; "
+        f"worker={task_worker_id} status={worker_status}; "
+        f"last_heartbeat={heartbeat}",
+        flush=True,
+    )
+
+
 def poll_until_complete(
     db,
     task_id: str,
@@ -231,6 +255,7 @@ def poll_until_complete(
     *,
     timeout_sec: int,
     interval_sec: int = 5,
+    progress_interval_sec: int = 60,
     case_name: str | None = None,
     task_type: str | None = None,
     worker_id: str | None = None,
@@ -238,11 +263,25 @@ def poll_until_complete(
     """Poll a task row until terminal and summarize any linked generations."""
     started = time.monotonic()
     deadline = started + timeout_sec
+    next_progress_at = started + progress_interval_sec if progress_interval_sec > 0 else None
 
     while time.monotonic() <= deadline:
         task_row = _fetch_task_row(db, task_id, project_id)
         effective_worker_id = worker_id or ((task_row or {}).get("worker_id") if task_row else None)
-        worker_error = _worker_error_summary(_fetch_worker_row(db, str(effective_worker_id) if effective_worker_id else None))
+        worker_row = _fetch_worker_row(db, str(effective_worker_id) if effective_worker_id else None)
+        now = time.monotonic()
+        if next_progress_at is not None and now >= next_progress_at:
+            _emit_progress(
+                task_id=task_id,
+                case_name=case_name,
+                task_row=task_row,
+                worker_row=worker_row,
+                elapsed_sec=now - started,
+                timeout_sec=timeout_sec,
+            )
+            next_progress_at = now + progress_interval_sec
+
+        worker_error = _worker_error_summary(worker_row)
         if worker_error:
             return TaskResult(
                 task_id=task_id,
@@ -251,7 +290,7 @@ def poll_until_complete(
                 final_status=str((task_row or {}).get("status") or "Worker Error"),
                 output_location=str((task_row or {}).get("output_location")) if (task_row or {}).get("output_location") else None,
                 generation_ids=[],
-                elapsed_sec=round(time.monotonic() - started, 3),
+                elapsed_sec=round(now - started, 3),
                 error_summary=worker_error,
             )
         if task_row is not None and task_row.get("status") in TERMINAL_STATUSES:
@@ -271,7 +310,7 @@ def poll_until_complete(
                 final_status=final_status,
                 output_location=str(output_location) if output_location else None,
                 generation_ids=generation_ids,
-                elapsed_sec=round(time.monotonic() - started, 3),
+                elapsed_sec=round(now - started, 3),
                 error_summary=_failure_summary(task_row, final_status, generation_ids),
             )
 

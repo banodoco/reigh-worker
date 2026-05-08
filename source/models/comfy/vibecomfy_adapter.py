@@ -136,10 +136,11 @@ def handle_vibecomfy_resolved_task(
         task_id=resolved.task_id,
     )
 
+    command_cwd = _vibecomfy_cwd(run_workspace)
     try:
         completed = subprocess.run(
             command,
-            cwd=_vibecomfy_cwd(run_workspace),
+            cwd=command_cwd,
             env=env,
             text=True,
             capture_output=True,
@@ -179,7 +180,11 @@ def handle_vibecomfy_resolved_task(
         headless_logger.error(message, task_id=resolved.task_id)
         return False, message
 
-    output_path = _discover_output_path(stdout=stdout, run_workspace=run_workspace)
+    output_path = _discover_output_path(
+        stdout=stdout,
+        run_workspace=run_workspace,
+        command_cwd=command_cwd,
+    )
     if output_path is None:
         message = _failure_message(
             resolved=resolved,
@@ -1305,28 +1310,27 @@ def _video_metadata_for_log(metadata: Any) -> dict[str, Any] | None:
     }
 
 
-def _discover_output_path(*, stdout: str, run_workspace: Path) -> str | None:
+def _discover_output_path(*, stdout: str, run_workspace: Path, command_cwd: Path | None = None) -> str | None:
     output_lines: list[str] = []
     for line in stdout.splitlines():
         if line.startswith("output: "):
             output_lines.append(line.removeprefix("output: ").strip())
     for raw_output in output_lines:
-        resolved = _resolve_output_path(raw_output, run_workspace)
-        if Path(resolved).is_file():
-            return resolved
+        for resolved in _resolve_output_candidates(raw_output, run_workspace, command_cwd):
+            if resolved.is_file():
+                return str(resolved)
     for raw_output in reversed(output_lines):
-        resolved = _resolve_output_path(raw_output, run_workspace)
         if Path(raw_output).is_absolute():
-            return resolved
+            return str(Path(raw_output))
 
-    metadata_path = _metadata_path_from_stdout(stdout, run_workspace)
+    metadata_path = _metadata_path_from_stdout(stdout, run_workspace, command_cwd)
     if metadata_path and metadata_path.exists():
-        output = _output_from_metadata(metadata_path, run_workspace)
+        output = _output_from_metadata(metadata_path, run_workspace, command_cwd)
         if output:
             return output
 
     if output_lines:
-        return _resolve_output_path(output_lines[-1], run_workspace)
+        return str(_resolve_output_candidates(output_lines[-1], run_workspace, command_cwd)[0])
 
     for output_path in _candidate_output_files(run_workspace):
         return str(output_path)
@@ -1334,22 +1338,28 @@ def _discover_output_path(*, stdout: str, run_workspace: Path) -> str | None:
     return None
 
 
-def _metadata_path_from_stdout(stdout: str, run_workspace: Path) -> Path | None:
+def _metadata_path_from_stdout(stdout: str, run_workspace: Path, command_cwd: Path | None = None) -> Path | None:
     for line in stdout.splitlines():
         if line.startswith("metadata: "):
             raw_path = line.removeprefix("metadata: ").strip()
-            return Path(_resolve_output_path(raw_path, run_workspace))
+            for candidate in _resolve_output_candidates(raw_path, run_workspace, command_cwd):
+                if candidate.exists():
+                    return candidate
+            return _resolve_output_candidates(raw_path, run_workspace, command_cwd)[0]
     return None
 
 
-def _output_from_metadata(metadata_path: Path, run_workspace: Path) -> str | None:
+def _output_from_metadata(metadata_path: Path, run_workspace: Path, command_cwd: Path | None = None) -> str | None:
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 
     for output in _flatten_outputs(metadata.get("outputs")):
-        return _resolve_output_path(str(output), run_workspace)
+        for resolved in _resolve_output_candidates(str(output), run_workspace, command_cwd):
+            if resolved.is_file():
+                return str(resolved)
+        return str(_resolve_output_candidates(str(output), run_workspace, command_cwd)[0])
     return None
 
 
@@ -1372,10 +1382,38 @@ def _flatten_outputs(value: Any) -> list[str]:
 
 
 def _resolve_output_path(value: str, run_workspace: Path) -> str:
+    return str(_resolve_output_candidates(value, run_workspace)[0])
+
+
+def _resolve_output_candidates(value: str, run_workspace: Path, command_cwd: Path | None = None) -> list[Path]:
     path = Path(value)
     if path.is_absolute():
-        return str(path)
-    return str(run_workspace / path)
+        return [path]
+
+    candidates = [
+        run_workspace / "output" / path,
+        run_workspace / path,
+    ]
+    if command_cwd is not None:
+        candidates.extend(
+            [
+                command_cwd / path,
+                command_cwd / "output" / path,
+            ]
+        )
+    return _dedupe_paths(candidates)
+
+
+def _dedupe_paths(paths: Sequence[Path]) -> list[Path]:
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
 
 
 def _candidate_output_files(run_workspace: Path) -> list[Path]:

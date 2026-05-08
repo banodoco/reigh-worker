@@ -29,6 +29,7 @@ _LAZY_EXPORTS = {
     "RunPodConfig": ("runpod_lifecycle", "RunPodConfig"),
     "SSHClient": ("runpod_lifecycle.ssh", "SSHClient"),
     "get_pod_ssh_details": ("runpod_lifecycle.api", "get_pod_ssh_details"),
+    "get_pod_status": ("runpod_lifecycle.api", "get_pod_status"),
     "terminate_pod": ("runpod_lifecycle.api", "terminate_pod"),
     "launch": ("runpod_lifecycle", "launch"),
     "get_network_volumes": ("runpod_lifecycle", "get_network_volumes"),
@@ -55,6 +56,7 @@ __all__ = [
     "ensure_orchestrator_imports",
     "get_network_volumes",
     "get_pod_ssh_details",
+    "get_pod_status",
     "launch",
     "terminate_pod",
 ]
