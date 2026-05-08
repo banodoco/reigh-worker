@@ -87,7 +87,7 @@ def test_animate_character_scratchpad_patches_reference_and_motion_inputs(
     assert "video/wan22_animate_native_first_stage" in text
     assert "dance naturally" in text
     assert "workflow.nodes['145'].inputs['file']" in text
-    assert "workflow.nodes['19'].inputs['format'] = 'video/h264-mp4'" in text
+    assert "workflow.nodes['19'].inputs['format'] = 'mp4'" in text
     assert "workflow.nodes['159'].inputs['value'] = 512" in text
     assert (tmp_path / "input" / "animate_character_reference_animate_character-task.png").exists()
     assert (tmp_path / "input" / "animate_character_motion_animate_character-task.mp4").exists()

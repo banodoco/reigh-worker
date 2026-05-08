@@ -864,7 +864,7 @@ def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: P
                 f"    workflow.nodes['232:63'].inputs['seed'] = {seed}",
                 f"    workflow.nodes['232:15'].inputs['fps'] = {fps}",
                 "    workflow.nodes['19'].inputs['filename_prefix'] = 'Wanimate'",
-                "    workflow.nodes['19'].inputs['format'] = 'video/h264-mp4'",
+                "    workflow.nodes['19'].inputs['format'] = 'mp4'",
                 "    return workflow.finalize_metadata()",
                 "",
             ]
