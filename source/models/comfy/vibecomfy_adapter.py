@@ -888,15 +888,11 @@ def _write_video_enhance_scratchpad(resolved: ResolvedTask, run_workspace: Path)
     )
     if not video_name:
         raise ValueError("VibeComfy route 'video_enhance' requires video_url or video")
-    interpolation = resolved.params.get("interpolation")
     upscale = resolved.params.get("upscale")
-    interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
     upscale_params = upscale if isinstance(upscale, Mapping) else {}
-    enable_interpolation = _bool_param(resolved.params, "enable_interpolation")
     enable_upscale = _bool_param(resolved.params, "enable_upscale")
-    multiplier = int(interpolation_params.get("num_frames") or 1) + 1
     scale = float(upscale_params.get("upscale_factor") or resolved.params.get("upscale_factor") or 2)
-    fps = int(float(interpolation_params.get("fps") or resolved.params.get("fps") or 16))
+    fps = int(float(resolved.params.get("fps") or 16))
     scratchpad = run_workspace / "video_enhance_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -908,18 +904,14 @@ def _write_video_enhance_scratchpad(resolved: ResolvedTask, run_workspace: Path)
                 "    workflow = load_workflow_any('video/basic_video_enhance')",
                 f"    workflow.nodes['1'].inputs['video'] = {json.dumps(video_name)}",
                 f"    workflow.nodes['1'].inputs['force_rate'] = {fps}",
-                f"    workflow.nodes['3'].inputs['widget_1'] = {max(multiplier, 1)}",
                 f"    workflow.nodes['4'].inputs['scale_by'] = {scale}",
                 f"    workflow.nodes['5'].inputs['frame_rate'] = {fps}",
                 "    workflow.nodes['5'].inputs['filename_prefix'] = 'video-enhance'",
                 "    workflow.nodes['5'].inputs['format'] = 'video/h264-mp4'",
                 "    workflow.nodes['5'].inputs['save_output'] = True",
-                f"    enable_interpolation = {enable_interpolation!r}",
                 f"    enable_upscale = {enable_upscale!r}",
-                "    if not enable_interpolation:",
-                "        workflow.replace_edge('4.image', '1.0')",
                 "    if not enable_upscale:",
-                "        workflow.replace_edge('5.images', '3.0' if enable_interpolation else '1.0')",
+                "        workflow.replace_edge('5.images', '1.0')",
                 "    return workflow.finalize_metadata()",
                 "",
             ]

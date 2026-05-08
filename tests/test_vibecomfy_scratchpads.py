@@ -125,7 +125,7 @@ def test_video_enhance_scratchpad_can_bypass_disabled_stages(tmp_path: Path, mon
 
     text = scratchpad.read_text(encoding="utf-8")
     assert "video/basic_video_enhance" in text
-    assert "workflow.replace_edge('4.image', '1.0')" in text
+    assert "workflow.replace_edge('5.images', '1.0')" in text
     assert "workflow.nodes['4'].inputs['scale_by'] = 4.0" in text
     assert (tmp_path / "input" / "video_enhance_video_enhance-task.mp4").exists()
 
