@@ -977,11 +977,15 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         "annotated_image_edit": ("annotated_image_edit", "edit/qwen_image_edit"),
         "z_image_turbo_i2i": ("z_image_turbo_i2i", "image/z_image_img2img"),
         "wan_2_2_t2i": ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
+        "join_clips_segment_wan22_vace": (
+            "join_clips_segment",
+            "video/wanvideo_wrapper_22_14b_vace_cocktail",
+        ),
     }
     for name, (task_type, template_id) in expected.items():
         case = cases[name]
         assert case.task_type == task_type
-        assert case.route_key == task_type
+        assert case.route_key
         assert case.support_state == "vibecomfy_supported"
         assert case.selected_template_id == template_id
 
@@ -1023,6 +1027,10 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
             "travel_segment_wan22_vace_depth_video_source",
             "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default",
         ),
+        (
+            "join_clips_segment_wan22_vace",
+            "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+        ),
         ("image_inpaint", "image_inpaint"),
         ("annotated_image_edit", "annotated_image_edit"),
         ("travel_stitch", "travel_stitch"),
@@ -1061,6 +1069,23 @@ def test_live_matrix_vace_video_source_routes_use_real_travel_segment_contract()
     assert payload["params"]["video_source"]
     assert payload["params"]["travel_guidance"]["mode"] == "flow"
     assert details["continuation_config"] == {"type": "video_source"}
+
+
+def test_live_matrix_join_segment_vace_case_has_adapter_inputs():
+    cases = build_matrix(case_names=["join_clips_segment_wan22_vace"])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    params = payload["params"]
+    details = params["orchestrator_details"]
+
+    assert payload["task_type"] == "join_clips_segment"
+    assert params["model_family"] == "wan22_vace"
+    assert params["continuity_case"] == "join_bridge"
+    assert params["video_source"]
+    assert params["travel_guidance"]["kind"] == "vace"
+    assert "mode" not in params["travel_guidance"]
+    assert params["input_image_paths_resolved"]
+    assert details["clip_list"]
+    assert details["run_id"] == "live-test-join_clips_segment_wan22_vace-abc123"
 
 
 @pytest.mark.parametrize("case_name", ["join_clips_orchestrator", "edit_video_orchestrator"])

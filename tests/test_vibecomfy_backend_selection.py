@@ -358,6 +358,75 @@ def test_qwen_image_direct_route_uses_vibecomfy_without_wgp_fallback(monkeypatch
     assert result == "qwen_image.png"
 
 
+def test_join_clips_segment_vace_route_uses_vibecomfy_executor(monkeypatch, tmp_path):
+    task_registry = _import_task_registry(monkeypatch)
+    monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
+    captured = []
+
+    def _legacy_join(*_args, **_kwargs):
+        raise AssertionError("legacy join handler should not run for VibeComfy VACE route")
+
+    def _execute(*, resolved, context, build_wgp_generation_task):
+        captured.append((resolved, context))
+        return True, str(tmp_path / "join.mp4")
+
+    monkeypatch.setattr(task_registry, "handle_join_clips_task", _legacy_join)
+    monkeypatch.setattr(task_registry, "execute_resolved_direct_task", _execute)
+    context = _context(_Queue(fail_on_submit=True), tmp_path)
+    context["project_id"] = "project-1"
+    context["task_params_dict"] = {
+        "prompt": "bridge the clips",
+        "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
+        "model_family": "wan22_vace",
+        "travel_guidance": {"kind": "vace"},
+        "continuity_case": "join_bridge",
+        "input_image_paths_resolved": [
+            "https://example.test/start.png",
+            "https://example.test/end.png",
+        ],
+        "video_source": "https://example.test/source.mp4",
+    }
+
+    ok, result = task_registry.TaskRegistry.dispatch("join_clips_segment", context)
+
+    assert ok is True
+    assert result == str(tmp_path / "join.mp4")
+    assert captured
+    resolved, passed_context = captured[0]
+    assert resolved.route_key == (
+        "join_clips_segment__model-wan22_vace__guidance-vace__"
+        "continuity-join_bridge__profile-default"
+    )
+    assert resolved.should_use_vibecomfy is True
+    assert passed_context is context
+
+
+def test_join_clips_segment_default_route_preserves_legacy_handler(monkeypatch, tmp_path):
+    task_registry = _import_task_registry(monkeypatch)
+    monkeypatch.delenv("REIGH_BACKEND", raising=False)
+    calls = []
+
+    def _legacy_join(*, task_params_from_db, main_output_dir_base, task_id, task_queue):
+        calls.append((task_params_from_db, main_output_dir_base, task_id, task_queue))
+        return True, "/tmp/join-legacy.mp4"
+
+    def _execute(*_args, **_kwargs):
+        raise AssertionError("direct executor should not run for default WGP join route")
+
+    monkeypatch.setattr(task_registry, "handle_join_clips_task", _legacy_join)
+    monkeypatch.setattr(task_registry, "execute_resolved_direct_task", _execute)
+    queue = _Queue()
+    context = _context(queue, tmp_path)
+    context["project_id"] = "project-1"
+    context["task_params_dict"] = {"prompt": "legacy bridge"}
+
+    ok, result = task_registry.TaskRegistry.dispatch("join_clips_segment", context)
+
+    assert ok is True
+    assert result == "/tmp/join-legacy.mp4"
+    assert calls == [(context["task_params_dict"], tmp_path, "task-1", queue)]
+
+
 @pytest.mark.parametrize(
     ("is_standalone", "expected_route"),
     [

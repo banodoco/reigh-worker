@@ -1608,11 +1608,7 @@ class TaskRegistry:
                 main_output_dir_base=context["main_output_dir_base"],
                 orchestrator_task_id_str=task_id,
                 orchestrator_project_id=context["project_id"]),
-            "join_clips_segment": lambda: handle_join_clips_task(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                task_id=task_id,
-                task_queue=context["task_queue"]),
+            "join_clips_segment": lambda: TaskRegistry._handle_join_clips_segment_task(context),
             "join_final_stitch": lambda: handle_join_final_stitch(
                 task_params_from_db=params,
                 main_output_dir_base=context["main_output_dir_base"],
@@ -1667,6 +1663,33 @@ class TaskRegistry:
              return TaskRegistry._handle_direct_queue_task(task_type, context)
         
         raise ValueError(f"Unknown task type {task_type} and no queue available")
+
+    @staticmethod
+    def _handle_join_clips_segment_task(context: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        task_id = context["task_id"]
+        params = context["task_params_dict"]
+
+        resolved_route = resolve_task_route(
+            task_id=task_id,
+            task_type="join_clips_segment",
+            params=params,
+        )
+
+        if resolved_route.backend == WorkerBackend.VIBECOMFY:
+            return execute_resolved_direct_task(
+                resolved=resolved_route,
+                context=context,
+                build_wgp_generation_task=lambda: (_ for _ in ()).throw(
+                    AssertionError("VibeComfy join_clips_segment must not build a WGP task")
+                ),
+            )
+
+        return handle_join_clips_task(
+            task_params_from_db=params,
+            main_output_dir_base=context["main_output_dir_base"],
+            task_id=task_id,
+            task_queue=context["task_queue"],
+        )
 
     @staticmethod
     def _handle_direct_queue_task(task_type: str, context: Dict[str, Any]) -> Tuple[bool, Optional[str]]:

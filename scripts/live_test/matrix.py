@@ -20,6 +20,7 @@ WAN_2_2_T2I_FIXTURE_KEY = "wan_2_2_t2i"
 IMAGE_INPAINT_FIXTURE_KEY = "image_inpaint"
 ANNOTATED_IMAGE_EDIT_FIXTURE_KEY = "annotated_image_edit"
 JOIN_CLIPS_ORCHESTRATOR_FIXTURE_KEY = "join_clips_orchestrator"
+JOIN_CLIPS_SEGMENT_VACE_FIXTURE_KEY = "join_clips_segment_wan22_vace"
 EDIT_VIDEO_ORCHESTRATOR_FIXTURE_KEY = "edit_video_orchestrator"
 TRAVEL_STITCH_FIXTURE_KEY = "travel_stitch"
 
@@ -179,6 +180,56 @@ def _build_join_clips_orchestrator_fixture() -> dict[str, Any]:
     }
 
 
+def _build_join_clips_segment_vace_fixture() -> dict[str, Any]:
+    model_name = "wan_2_2_vace_lightning_baseline_2_2_2"
+    return {
+        "task_type": "join_clips_segment",
+        "status": "Queued",
+        "params": {
+            "prompt": "A coherent short bridge between two matching clips.",
+            "negative_prompt": "fading, breaking, shot cuts, jumpcuts, blurry, noise, distorted",
+            "model": model_name,
+            "model_name": model_name,
+            "model_family": "wan22_vace",
+            "resolution": "832x480",
+            "parsed_resolution_wh": "832x480",
+            "fps": 16,
+            "num_frames": 81,
+            "video_length": 81,
+            "seed": 20260508,
+            "continuity_case": "join_bridge",
+            "video_source": LIVE_TEST_VIDEO_URL,
+            "start_image_url": config.ANCHOR_IMAGE_A_URL,
+            "end_image_url": config.ANCHOR_IMAGE_B_URL,
+            "input_image_paths_resolved": _anchor_pair(),
+            "travel_guidance": {
+                "kind": "vace",
+                "videos": [{"url": LIVE_TEST_VIDEO_URL}],
+            },
+            "orchestrator_details": {
+                "run_id": "live-test-join-segment",
+                "orchestrator_task_id": "live-test-join-segment-parent",
+                "clip_list": [
+                    {"url": LIVE_TEST_VIDEO_URL, "name": "clip_a"},
+                    {"url": LIVE_TEST_VIDEO_URL, "name": "clip_b"},
+                ],
+                "context_frame_count": 4,
+                "gap_frame_count": 8,
+                "model": model_name,
+                "model_name": model_name,
+                "model_family": "wan22_vace",
+                "parsed_resolution_wh": "832x480",
+                "fps": 16,
+                "input_image_paths_resolved": _anchor_pair(),
+                "travel_guidance": {
+                    "kind": "vace",
+                    "videos": [{"url": LIVE_TEST_VIDEO_URL}],
+                },
+            },
+        },
+    }
+
+
 def _build_edit_video_orchestrator_fixture() -> dict[str, Any]:
     return {
         "task_type": "edit_video_orchestrator",
@@ -241,6 +292,8 @@ def resolve_case_fixture(case: MatrixCase) -> dict[str, Any]:
         return _build_masked_qwen_fixture("annotated_image_edit")
     if case.fixture_key == JOIN_CLIPS_ORCHESTRATOR_FIXTURE_KEY:
         return _build_join_clips_orchestrator_fixture()
+    if case.fixture_key == JOIN_CLIPS_SEGMENT_VACE_FIXTURE_KEY:
+        return _build_join_clips_segment_vace_fixture()
     if case.fixture_key == EDIT_VIDEO_ORCHESTRATOR_FIXTURE_KEY:
         return _build_edit_video_orchestrator_fixture()
     if case.fixture_key == TRAVEL_STITCH_FIXTURE_KEY:
@@ -295,6 +348,13 @@ def build_case_params_overrides(
             "run_id": task_marker,
             "orchestrator_task_id": task_marker,
             "orchestrator_task_id_ref": task_marker,
+        }
+
+    if case.task_type == "join_clips_segment":
+        runtime["orchestrator_details"] = {
+            "run_id": task_marker,
+            "orchestrator_task_id": f"{task_marker}-parent",
+            "orchestrator_task_id_ref": f"{task_marker}-parent",
         }
 
     if case.task_type == "individual_travel_segment":
@@ -611,6 +671,16 @@ def build_matrix(
             timeout_sec=timeout_travel_orchestrator_sec,
             route_key="join_clips_orchestrator",
             support_state="wgp_only",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="join_clips_segment_wan22_vace",
+            task_type="join_clips_segment",
+            fixture_key=JOIN_CLIPS_SEGMENT_VACE_FIXTURE_KEY,
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
             route_runtime=route_runtime,
         ),
         MatrixCase(
