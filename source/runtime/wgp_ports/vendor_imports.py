@@ -49,10 +49,10 @@ def get_rife_temporal_interpolation():
     return _import_primary(module_name).temporal_interpolation
 
 
-def run_rife_temporal_interpolation(flownet_ckpt, sample_input, exp_val, *, device):
+def run_rife_temporal_interpolation(flownet_ckpt, sample_input, exp_val, *, device, rife_version="v3"):
     bridge_module = sys.modules.get("source.runtime.wgp_bridge")
     getter = getattr(bridge_module, "get_rife_temporal_interpolation", get_rife_temporal_interpolation) if bridge_module else get_rife_temporal_interpolation
-    return getter()(flownet_ckpt, sample_input, exp_val, device=device)
+    return getter()(flownet_ckpt, sample_input, exp_val, device=device, rife_version=rife_version)
 
 
 def get_wan2gp_save_video_callable():

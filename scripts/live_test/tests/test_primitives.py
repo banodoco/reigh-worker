@@ -1876,7 +1876,15 @@ def test_spawn_takeover_pod_calls_create_record_and_waits_for_ssh(monkeypatch: p
     assert (worker_id, pod_id) == ("worker-123", "pod-456")
     assert events == [
         ("init",),
-        ("runpod_config_merge", {"disk_size_gb": 200, "container_disk_gb": 200}),
+        (
+            "runpod_config_merge",
+            {
+                "disk_size_gb": 200,
+                "container_disk_gb": 200,
+                "min_memory_gb": 32,
+                "ram_tiers": (32, 24, 16),
+            },
+        ),
         ("generate_worker_id",),
         ("create_worker_record", "worker-123", "NVIDIA GeForce RTX 4090"),
         ("spawn_worker", "worker-123"),
@@ -1936,7 +1944,13 @@ def test_remote_checkout_and_sync_bootstraps_uv_before_sync():
     assert "command -v uv >/dev/null 2>&1" in command
     assert "git fetch origin live-test/branch-a:refs/remotes/origin/live-test/branch-a" in command
     assert "git checkout -B live-test/branch-a refs/remotes/origin/live-test/branch-a" in command
+    assert 'export UV_CACHE_DIR="/root/.cache/uv-live-test"' in command
+    assert 'UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"' in command
+    assert "UV_LINK_MODE=copy" in command
+    assert 'rm -rf .venv "$UV_CACHE_DIR" "$UV_PROJECT_ENVIRONMENT"' in command
+    assert "git gc --prune=now" in command
     assert "uv sync --locked --extra cuda124" in command
+    assert "uv sync attempt $attempt failed; cleaning partial venv/cache and retrying" in command
 
 
 def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -2059,6 +2073,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
     assert safety_calls == [("pod-456", "user-1", True)]
     assert wait_calls == [("worker-123", 900, {"require_ready_for_tasks": True})]
     assert any("--worker worker-123" in command for command in launched)
+    assert any('UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"' in command for command in launched)
     assert all("--worker pod-456" not in command for command in launched)
     assert status_updates == [("worker-123", "inactive", "pod-456")]
     assert cleanup_calls == [("live-test/branch", False, str(ROOT))]

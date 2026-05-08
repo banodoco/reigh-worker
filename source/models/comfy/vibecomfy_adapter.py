@@ -13,6 +13,8 @@ import subprocess
 from typing import Any, Mapping, Sequence
 
 from source.core.log import headless_logger
+from source.core.params.lora import LoRAConfig, LoRAEntry
+from source.models.lora.module_manifest import LoRAModuleManifestError
 from source.models.model_handlers.qwen_compositor import create_qwen_masked_composite
 from source.runtime.vibecomfy_profile import (
     PROCESS_DEFAULT_PROFILE,
@@ -43,6 +45,9 @@ _OUTPUT_EXTENSIONS = {
     ".webm",
     ".webp",
 }
+
+_VIBECOMFY_WAN_USER_LORA_DIR = "loras/WanVideo/Reigh"
+_VIBECOMFY_WAN_USER_LORA_PREFIX = "WanVideo\\Reigh"
 
 
 _WANVIDEO_DEFAULTS_HELPER = """
@@ -105,6 +110,80 @@ def _patch_wanvideo_defaults(workflow, *, steps, cfg, shift, seed):
             node.inputs['format'] = node.inputs.get('format', node.inputs.get('widget_3', 'video/h264-mp4'))
             node.inputs['pingpong'] = node.inputs.get('pingpong', node.inputs.get('widget_8', False))
             node.inputs['save_output'] = node.inputs.get('save_output', True)
+""".strip()
+
+
+_WANVIDEO_DYNAMIC_LORA_HELPER = """
+def _append_model_assets(workflow, assets):
+    if not assets:
+        return
+    model_assets = workflow.metadata.setdefault('model_assets', [])
+    seen = {
+        (asset.get('name'), asset.get('directory') or asset.get('subdir'))
+        for asset in model_assets
+        if isinstance(asset, dict)
+    }
+    for asset in assets:
+        key = (asset.get('name'), asset.get('directory') or asset.get('subdir'))
+        if key not in seen:
+            model_assets.append(dict(asset))
+            seen.add(key)
+
+
+def _patch_wanvideo_dynamic_loras(workflow, loras, *, node_ids=('98', '93'), first_user_slot=1):
+    if not loras:
+        return
+    for node_id in node_ids:
+        if node_id not in workflow.nodes:
+            continue
+        inputs = workflow.nodes[node_id].inputs
+        for offset, lora in enumerate(loras):
+            slot = first_user_slot + offset
+            if slot > 4:
+                raise ValueError('WanVideoLoraSelectMulti supports at most four dynamic user LoRAs while preserving slot 0')
+            lora_key = f'lora_{slot}'
+            strength_key = f'strength_{slot}'
+            widget_lora_key = f'widget_{slot * 2}'
+            widget_strength_key = f'widget_{slot * 2 + 1}'
+            inputs[lora_key] = lora['name']
+            inputs[strength_key] = lora['strength']
+            inputs[widget_lora_key] = lora['name']
+            inputs[widget_strength_key] = lora['strength']
+
+
+def _chain_wanvideo_select_loras(workflow, loras, *, chains=(('97', '79'), ('56', '80'))):
+    if not loras:
+        return
+    for base_lora_node_id, set_loras_node_id in chains:
+        if base_lora_node_id not in workflow.nodes or set_loras_node_id not in workflow.nodes:
+            continue
+        previous_node_id = base_lora_node_id
+        for lora in loras:
+            node = workflow.add_node(
+                'WanVideoLoraSelect',
+                widget_0=lora['name'],
+                widget_1=lora['strength'],
+                widget_2=False,
+                widget_3=False,
+            )
+            workflow.connect(f'{previous_node_id}.0', f'{node.id}.prev_lora')
+            previous_node_id = node.id
+        workflow.replace_edge(f'{set_loras_node_id}.lora', f'{previous_node_id}.0')
+
+
+def _chain_lora_loader_model_only(workflow, loras, *, source_node_id='99', target_ref='60.model'):
+    if not loras or source_node_id not in workflow.nodes:
+        return
+    previous_node_id = source_node_id
+    for lora in loras:
+        node = workflow.add_node(
+            'LoraLoaderModelOnly',
+            lora_name=lora['name'],
+            model=[previous_node_id, 0],
+            strength_model=lora['strength'],
+        )
+        previous_node_id = node.id
+    workflow.replace_edge(target_ref, f'{previous_node_id}.0')
 """.strip()
 
 
@@ -200,6 +279,14 @@ def handle_vibecomfy_resolved_task(
         )
         headless_logger.error(message, task_id=resolved.task_id)
         return False, message
+
+    postprocessed_output = _maybe_postprocess_vibecomfy_output(
+        resolved=resolved,
+        output_path=Path(output_path),
+        run_workspace=run_workspace,
+    )
+    if postprocessed_output is not None:
+        output_path = str(postprocessed_output)
 
     media_metadata = None
     if Path(output_path).suffix.lower() in VIDEO_EXTENSIONS:
@@ -324,6 +411,96 @@ def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace:
     if _is_wan_vace_route(resolved.route_key):
         return str(_write_wan_2_2_vace_scratchpad(resolved, run_workspace)), False
     return str(resolved.template_id), True
+
+
+def _maybe_postprocess_vibecomfy_output(
+    *,
+    resolved: ResolvedTask,
+    output_path: Path,
+    run_workspace: Path,
+) -> Path | None:
+    if resolved.route_key != "video_enhance" or not _bool_param(resolved.params, "enable_interpolation"):
+        return None
+    interpolation = resolved.params.get("interpolation")
+    interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
+    exp = int(interpolation_params.get("exp") or interpolation_params.get("rife_exp") or 1)
+    exp = max(1, min(exp, 2))
+    fps = int(float(resolved.params.get("fps") or 16))
+    target = run_workspace / "output" / f"video-enhance-rife-x{2 ** exp}.mp4"
+    return _rife_interpolate_video(output_path, target, fps=fps, exp=exp)
+
+
+def _rife_interpolate_video(input_path: Path, output_path: Path, *, fps: int, exp: int) -> Path:
+    import cv2
+    import numpy as np
+    import torch
+
+    from source.media.video.ffmpeg_ops import create_video_from_frames_list
+    from source.media.video.frame_extraction import extract_frames_from_video
+    from source.runtime.wgp_bridge import run_rife_temporal_interpolation
+
+    frames_bgr = extract_frames_from_video(input_path)
+    if len(frames_bgr) < 2:
+        raise ValueError(f"RIFE interpolation requires at least two frames, got {len(frames_bgr)} from {input_path}")
+
+    height, width = frames_bgr[0].shape[:2]
+    frames_rgb = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in frames_bgr]
+    sample_np = np.stack(frames_rgb, axis=0).astype(np.float32) / 127.5 - 1.0
+    sample = torch.from_numpy(sample_np).permute(3, 0, 1, 2)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    sample = sample.to(device)
+
+    ckpt = _rife_checkpoint_path(prefer_v4=True)
+    rife_version = "v4" if ckpt.name == "rife4.26.pkl" else "v3"
+    output = run_rife_temporal_interpolation(str(ckpt), sample, exp, device=device, rife_version=rife_version)
+    if output is None:
+        raise RuntimeError("RIFE interpolation returned no frames")
+
+    output = output.to("cpu")
+    frames_out: list[np.ndarray] = []
+    for index in range(output.shape[1]):
+        frame = output[:, index]
+        frame_rgb = ((frame.permute(1, 2, 0).numpy() + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
+        frames_out.append(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return create_video_from_frames_list(frames_out, output_path, fps * (2 ** exp), (width, height))
+
+
+def _rife_checkpoint_path(*, prefer_v4: bool) -> Path:
+    repo_root = Path(__file__).resolve().parents[3]
+    ckpt_dir = repo_root / "Wan2GP" / "ckpts"
+    candidates = []
+    if prefer_v4:
+        candidates.append(ckpt_dir / "rife4.26.pkl")
+    candidates.append(ckpt_dir / "flownet.pkl")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    download_errors = []
+    for candidate in candidates:
+        try:
+            downloaded = _download_rife_checkpoint(candidate.name, ckpt_dir)
+        except Exception as exc:
+            download_errors.append(f"{candidate.name}: {exc}")
+            continue
+        if downloaded.is_file():
+            return downloaded
+    detail = "; ".join(download_errors) if download_errors else "no candidates attempted"
+    raise FileNotFoundError(f"RIFE checkpoint missing; failed to download rife4.26.pkl or flownet.pkl ({detail})")
+
+
+def _download_rife_checkpoint(filename: str, ckpt_dir: Path) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    return Path(
+        hf_hub_download(
+            repo_id="DeepBeepMeep/Wan2.1",
+            filename=filename,
+            local_dir=str(ckpt_dir),
+        )
+    )
 
 
 def _write_z_image_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
@@ -506,6 +683,7 @@ def _write_wan_2_2_t2i_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
     cfg_1 = float(resolved.params.get("guidance_scale", 3))
     cfg_2 = float(resolved.params.get("guidance2_scale", 1))
     shift = float(resolved.params.get("flow_shift", 5))
+    loras, lora_assets = _wanvideo_dynamic_lora_payloads(resolved)
     scratchpad = run_workspace / "wan_2_2_t2i_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -515,8 +693,12 @@ def _write_wan_2_2_t2i_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 "",
                 _WANVIDEO_DEFAULTS_HELPER,
                 "",
+                _WANVIDEO_DYNAMIC_LORA_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_t2i')",
+                f"    _append_model_assets(workflow, {json.dumps(lora_assets)})",
+                f"    _patch_wanvideo_dynamic_loras(workflow, {json.dumps(loras)})",
                 f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg={cfg_1}, shift={shift}, seed={seed})",
                 f"    workflow.nodes['78'].inputs['widget_0'] = {width}",
                 f"    workflow.nodes['78'].inputs['widget_1'] = {height}",
@@ -620,6 +802,7 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
     steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 6)))
     cfg = float(resolved.params.get("guidance_scale", 3))
     shift = float(resolved.params.get("flow_shift", 5))
+    loras, lora_assets = _wanvideo_dynamic_lora_payloads(resolved)
     scratchpad = run_workspace / "wan_2_2_vace_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -629,8 +812,12 @@ def _write_wan_2_2_vace_scratchpad(resolved: ResolvedTask, run_workspace: Path) 
                 "",
                 _WANVIDEO_DEFAULTS_HELPER,
                 "",
+                _WANVIDEO_DYNAMIC_LORA_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_vace_cocktail')",
+                f"    _append_model_assets(workflow, {json.dumps(lora_assets)})",
+                f"    _patch_wanvideo_dynamic_loras(workflow, {json.dumps(loras)})",
                 f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg={cfg}, shift={shift}, seed={seed})",
                 "    block_swap = workflow.nodes['39'].inputs",
                 "    block_swap['blocks_to_swap'] = max(int(block_swap.get('blocks_to_swap', block_swap.get('widget_0', 0)) or 0), 30)",
@@ -746,6 +933,7 @@ def _write_wan_2_2_i2v_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
     )
     steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 6)))
     end_step = max(1, min(steps - 1, int(resolved.params.get("high_noise_end_step", 3))))
+    loras, lora_assets = _wanvideo_dynamic_lora_payloads(resolved)
     scratchpad = run_workspace / "wan_2_2_i2v_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -755,8 +943,12 @@ def _write_wan_2_2_i2v_scratchpad(resolved: ResolvedTask, run_workspace: Path) -
                 "",
                 _WANVIDEO_DEFAULTS_HELPER,
                 "",
+                _WANVIDEO_DYNAMIC_LORA_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/wanvideo_wrapper_22_14b_i2v_kijai')",
+                f"    _append_model_assets(workflow, {json.dumps(lora_assets)})",
+                f"    _chain_wanvideo_select_loras(workflow, {json.dumps(loras)})",
                 f"    _patch_wanvideo_defaults(workflow, steps={steps}, cfg=1.0, shift=8.0, seed={seed})",
                 "    workflow.nodes['39'].inputs['blocks_to_swap'] = max(int(workflow.nodes['39'].inputs.get('blocks_to_swap', 0) or 0), 35)",
                 "    workflow.nodes['39'].inputs['widget_0'] = workflow.nodes['39'].inputs['blocks_to_swap']",
@@ -849,6 +1041,7 @@ def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: P
     steps = int(resolved.params.get("steps", resolved.params.get("num_inference_steps", 4)))
     fps = int(float(resolved.params.get("fps") or 16))
     frames = int(resolved.params.get("num_frames") or resolved.params.get("video_length") or 49)
+    loras, lora_assets = _wanvideo_dynamic_lora_payloads(resolved)
     scratchpad = run_workspace / "animate_character_scratchpad.py"
     scratchpad.write_text(
         "\n".join(
@@ -856,8 +1049,12 @@ def _write_animate_character_scratchpad(resolved: ResolvedTask, run_workspace: P
                 "from vibecomfy.cli_loader import load_workflow_any",
                 "",
                 "",
+                _WANVIDEO_DYNAMIC_LORA_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/wan22_animate_native_first_stage')",
+                f"    _append_model_assets(workflow, {json.dumps(lora_assets)})",
+                f"    _chain_lora_loader_model_only(workflow, {json.dumps(loras)})",
                 f"    workflow.nodes['10'].inputs['image'] = {json.dumps(reference_name)}",
                 f"    workflow.nodes['145'].inputs['file'] = {json.dumps(motion_name)}",
                 f"    workflow.nodes['159'].inputs['value'] = {width}",
@@ -1057,6 +1254,86 @@ def _copy_to_input_dir(source: str | Path, input_dir: Path, filename: str) -> st
     if source_path.resolve() != target.resolve():
         shutil.copy2(source_path, target)
     return target.name
+
+
+def _wanvideo_dynamic_lora_payloads(resolved: ResolvedTask) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Return VibeComfy LoRA selector payloads and downloadable model assets.
+
+    WanVideo templates keep the built-in LightX2V LoRA in slot 0. User LoRAs are
+    staged under a Reigh-owned subfolder so downloaded URL basenames do not
+    collide with template assets or Wan2GP's separate LoRA cache.
+    """
+
+    entries = _lora_entries_for_params(resolved.params, resolved=resolved)
+    if not entries:
+        return [], []
+    if len(entries) > 4:
+        raise ValueError("VibeComfy WanVideo dynamic LoRA support currently accepts at most four user LoRAs")
+
+    loras: list[dict[str, Any]] = []
+    assets: list[dict[str, str]] = []
+    seen_assets: set[tuple[str, str]] = set()
+    for entry in entries:
+        filename = _lora_filename(entry)
+        if not filename:
+            continue
+        loras.append(
+            {
+                "name": f"{_VIBECOMFY_WAN_USER_LORA_PREFIX}\\{filename}",
+                "strength": _simple_lora_strength(entry.multiplier),
+            }
+        )
+        if entry.url:
+            key = (filename, _VIBECOMFY_WAN_USER_LORA_DIR)
+            if key not in seen_assets:
+                assets.append(
+                    {
+                        "name": filename,
+                        "url": entry.url,
+                        "directory": _VIBECOMFY_WAN_USER_LORA_DIR,
+                    }
+                )
+                seen_assets.add(key)
+    return loras, assets
+
+
+def _lora_entries_for_params(params: Mapping[str, Any], *, resolved: ResolvedTask) -> list[LoRAEntry]:
+    context = {
+        "task_id": resolved.task_id,
+        "model": params.get("model") or params.get("model_name"),
+        "model_name": params.get("model_name") or params.get("model"),
+    }
+    try:
+        config = LoRAConfig.from_params(dict(params), **context)
+    except LoRAModuleManifestError:
+        unsanitized_params = dict(params)
+        unsanitized_params.pop("model", None)
+        unsanitized_params.pop("model_name", None)
+        config = LoRAConfig.from_params(unsanitized_params)
+    segment_loras = params.get("loras")
+    if isinstance(segment_loras, Sequence) and not isinstance(segment_loras, (str, bytes, bytearray)):
+        try:
+            segment_config = LoRAConfig.from_segment_loras(list(segment_loras), **context)
+        except LoRAModuleManifestError:
+            segment_config = LoRAConfig.from_segment_loras(list(segment_loras))
+        config = config.merge(segment_config)
+    return [entry for entry in config.entries if _lora_filename(entry)]
+
+
+def _lora_filename(entry: LoRAEntry) -> str | None:
+    raw = entry.filename or entry.local_path or entry.url
+    if not raw:
+        return None
+    return Path(str(raw).split("?", 1)[0]).name
+
+
+def _simple_lora_strength(value: Any) -> float:
+    if isinstance(value, str):
+        first = value.replace(",", ";").split(";", 1)[0].strip()
+        if not first:
+            return 1.0
+        return float(first)
+    return float(value)
 
 
 def _default_qwen_edit_prompt(route_key: str) -> str:

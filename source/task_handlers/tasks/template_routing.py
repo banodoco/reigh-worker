@@ -28,6 +28,9 @@ class WorkerBackend(str, Enum):
 WORKER_ROUTE_CONTRACT_VERSION = 1
 
 
+_VIBECOMFY_DYNAMIC_LORA_KEYS = frozenset({"additional_loras", "loras", "activated_loras", "lora_names"})
+
+
 @dataclass(frozen=True)
 class RouteSelectorEntry:
     route_key: str
@@ -1092,7 +1095,157 @@ def _fail_closed_reason(
             "explicit VibeComfy backend will not fall back to WGP"
         )
 
+    unsupported_feature_reason = _vibecomfy_unsupported_feature_reason(route_key, params)
+    if unsupported_feature_reason is not None:
+        return unsupported_feature_reason
+
     return None
+
+
+def _vibecomfy_unsupported_feature_reason(route_key: str, params: Mapping[str, Any]) -> str | None:
+    if _is_wan_video_route_key(route_key):
+        dynamic_lora_count = _dynamic_lora_count(params)
+        if dynamic_lora_count > 4:
+            return (
+                f"Route {route_key!r} includes {dynamic_lora_count} dynamic user LoRAs, "
+                "but the current VibeComfy WanVideo templates preserve the built-in "
+                "LightX2V slot and expose four user slots; explicit VibeComfy "
+                "backend will not fall back to WGP"
+            )
+    else:
+        for key in sorted(_VIBECOMFY_DYNAMIC_LORA_KEYS):
+            if _has_non_empty_value(params.get(key)):
+                return (
+                    f"Route {route_key!r} includes {key!r}, but this VibeComfy template "
+                    "does not yet apply dynamic user LoRAs; explicit VibeComfy backend "
+                    "will not fall back to WGP"
+                )
+
+    phase_config = params.get("phase_config")
+    if isinstance(phase_config, Mapping):
+        for key in ("lora_names", "loras", "activated_loras"):
+            if _has_non_empty_value(phase_config.get(key)):
+                return (
+                    f"Route {route_key!r} includes phase_config.{key}, but the current "
+                    "VibeComfy template does not apply phase LoRAs; explicit VibeComfy "
+                    "backend will not fall back to WGP"
+                )
+
+    if route_key == "flux_klein_edit":
+        klein_model = _non_empty_str(params.get("klein_model"))
+        if klein_model and klein_model not in {"flux-klein-4b", "flux_klein_4b"}:
+            return (
+                f"Route 'flux_klein_edit' requested {klein_model!r}, but the current "
+                "VibeComfy template is pinned to Flux Klein 4B; explicit VibeComfy "
+                "backend will not fall back to WGP"
+            )
+
+    if _requires_vibecomfy_vace_control_video(route_key) and not _has_vibecomfy_vace_control_video(params):
+        return (
+            f"Route {route_key!r} is mode-specific VACE, but no control/guidance video "
+            "was provided for the VibeComfy template; explicit VibeComfy backend will "
+            "not fall back to WGP"
+        )
+
+    return None
+
+
+def _is_wan_video_route_key(route_key: str) -> bool:
+    return route_key in {"wan_2_2_t2i", "wan_2_2_i2v", "animate_character"} or "model-wan22_vace" in route_key
+
+
+def _dynamic_lora_count(params: Mapping[str, Any]) -> int:
+    names: set[str] = set()
+    for key in ("activated_loras", "lora_names"):
+        value = params.get(key)
+        if isinstance(value, str):
+            names.update(item.strip() for item in re.split(r"[, ]+", value) if item.strip())
+        elif isinstance(value, (list, tuple, set)):
+            names.update(str(item).strip() for item in value if str(item).strip())
+    additional = params.get("additional_loras")
+    if isinstance(additional, Mapping):
+        names.update(str(key).strip() for key in additional if str(key).strip())
+    loras = params.get("loras")
+    if isinstance(loras, (list, tuple)):
+        for item in loras:
+            if isinstance(item, Mapping):
+                value = item.get("path") or item.get("url") or item.get("name")
+                if value:
+                    names.add(str(value).strip())
+            elif item:
+                names.add(str(item).strip())
+    return len(names)
+
+
+def _has_non_empty_value(value: Any) -> bool:
+    if value is None or value is False:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, Mapping):
+        return any(_has_non_empty_value(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_non_empty_value(item) for item in value)
+    return True
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _is_mode_specific_wan_vace_route(route_key: str) -> bool:
+    return any(
+        marker in route_key
+        for marker in (
+            "__guidance-vace_flow__",
+            "__guidance-vace_canny__",
+            "__guidance-vace_depth__",
+            "__guidance-vace_raw__",
+        )
+    )
+
+
+def _requires_vibecomfy_vace_control_video(route_key: str) -> bool:
+    return any(
+        marker in route_key
+        for marker in (
+            "__guidance-vace_flow__",
+            "__guidance-vace_canny__",
+            "__guidance-vace_depth__",
+        )
+    )
+
+
+def _has_vibecomfy_vace_control_video(params: Mapping[str, Any]) -> bool:
+    for key in (
+        "control_video",
+        "control_video_url",
+        "video_source",
+        "structure_guidance_video_url",
+        "_guidance_video_url",
+    ):
+        if _has_non_empty_value(params.get(key)):
+            return True
+
+    travel_guidance = params.get("travel_guidance")
+    if isinstance(travel_guidance, Mapping):
+        if _has_non_empty_value(travel_guidance.get("videos")):
+            return True
+        if _has_non_empty_value(travel_guidance.get("_guidance_video_url")):
+            return True
+
+    structure_guidance = params.get("structure_guidance")
+    if isinstance(structure_guidance, Mapping):
+        if _has_non_empty_value(structure_guidance.get("videos")):
+            return True
+        if _has_non_empty_value(structure_guidance.get("video")):
+            return True
+        if _has_non_empty_value(structure_guidance.get("video_url")):
+            return True
+
+    return False
 
 
 def _normalize_resolution(value: Any) -> str:

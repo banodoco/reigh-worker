@@ -141,6 +141,110 @@ def test_qwen_ready_template_routes_are_vibecomfy_supported(
     assert resolved.fail_closed_reason is None
 
 
+@pytest.mark.parametrize(
+    ("task_type", "params", "expected_reason"),
+    [
+        (
+            "qwen_image",
+            {"prompt": "styled portrait", "additional_loras": {"https://example.test/style.safetensors": 0.7}},
+            "does not yet apply dynamic user LoRAs",
+        ),
+        (
+            "wan_2_2_i2v",
+            {
+                "prompt": "move",
+                "lora_names": [
+                    "one.safetensors",
+                    "two.safetensors",
+                    "three.safetensors",
+                    "four.safetensors",
+                    "five.safetensors",
+                ],
+            },
+            "four user slots",
+        ),
+        (
+            "flux_klein_edit",
+            {"image": "https://example.test/source.png", "klein_model": "flux-klein-9b"},
+            "pinned to Flux Klein 4B",
+        ),
+    ],
+)
+def test_vibecomfy_supported_routes_fail_closed_for_unimplemented_feature_params(
+    routing,
+    task_type: str,
+    params: dict,
+    expected_reason: str,
+) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="task-unsupported-feature",
+        task_type=task_type,
+        params=params,
+        backend="vibecomfy",
+    )
+
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason
+    assert expected_reason in resolved.fail_closed_reason
+
+
+def test_video_enhance_vibecomfy_route_allows_interpolation_postprocess(routing) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="task-video-enhance",
+        task_type="video_enhance",
+        params={"video_url": "https://example.test/source.mp4", "enable_interpolation": True},
+        backend="vibecomfy",
+    )
+
+    assert resolved.should_use_vibecomfy is True
+    assert resolved.fail_closed_reason is None
+
+
+def test_mode_specific_wan_vace_vibecomfy_route_requires_control_video(routing) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="task-vace-no-control",
+        task_type="travel_segment",
+        params={
+            "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
+            "travel_guidance": {"kind": "vace", "mode": "depth"},
+            "continuity_case": "first_last",
+            "profile": "default",
+        },
+        backend="vibecomfy",
+    )
+
+    assert (
+        resolved.route_key
+        == "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default"
+    )
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason
+    assert "no control/guidance video" in resolved.fail_closed_reason
+
+
+def test_mode_specific_wan_vace_vibecomfy_route_allows_control_video(routing) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="task-vace-control",
+        task_type="travel_segment",
+        params={
+            "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
+            "travel_guidance": {
+                "kind": "vace",
+                "mode": "depth",
+                "videos": [{"path": "/tmp/depth-guide.mp4"}],
+            },
+            "continuity_case": "first_last",
+            "profile": "default",
+        },
+        backend="vibecomfy",
+    )
+
+    assert resolved.should_use_vibecomfy is True
+    assert resolved.fail_closed_reason is None
+
+
 def test_routing_telemetry_fields_are_compact_and_stable(routing) -> None:
     resolved = routing.resolve_task_route(
         task_id="telemetry-task",

@@ -50,6 +50,12 @@ WORKER_REPO_URL = "https://github.com/banodoco/reigh-worker.git"
 VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
 VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
 VIBECOMFY_PYTHON = "python3.11"
+REMOTE_UV_ENV = (
+    'export UV_CACHE_DIR="/root/.cache/uv-live-test" '
+    'UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv" '
+    "UV_LINK_MODE=copy"
+)
+LIVE_TEST_RAM_TIERS = (32, 24, 16)
 REMOTE_UV_BOOTSTRAP = (
     'export PATH="$HOME/.local/bin:$PATH" && '
     "if ! command -v uv >/dev/null 2>&1; then "
@@ -59,6 +65,17 @@ REMOTE_UV_BOOTSTRAP = (
     'export PATH="$HOME/.local/bin:$PATH"; '
     "fi && "
     "command -v uv >/dev/null 2>&1"
+)
+REMOTE_UV_SYNC = (
+    "for attempt in 1 2 3; do\n"
+    "  if uv sync --locked --extra cuda124; then\n"
+    "    break\n"
+    "  fi\n"
+    "  echo \"uv sync attempt $attempt failed; cleaning partial venv/cache and retrying\"\n"
+    "  rm -rf .venv \"$UV_CACHE_DIR\" \"$UV_PROJECT_ENVIRONMENT\"\n"
+    "  sleep 5\n"
+    "  if [ $attempt -eq 3 ]; then exit 1; fi\n"
+    "done"
 )
 REMOTE_SYSTEM_DEPS = (
     "python3.10-venv",
@@ -352,10 +369,13 @@ def _remote_checkout_and_sync(ssh, branch: str, workdir: str = UPDATE_WORKDIR) -
         f"apt-get install -y {package_list}\n"
         f"cd {shlex.quote(workdir)}\n"
         f"{REMOTE_UV_BOOTSTRAP}\n"
+        f"{REMOTE_UV_ENV}\n"
+        "rm -rf .venv \"$UV_CACHE_DIR\" \"$UV_PROJECT_ENVIRONMENT\"\n"
+        "git gc --prune=now >/dev/null 2>&1 || true\n"
         f"git fetch origin {shlex.quote(branch)}:refs/remotes/origin/{shlex.quote(branch)}\n"
         f"git checkout -B {shlex.quote(branch)} refs/remotes/origin/{shlex.quote(branch)}\n"
         f"git pull --ff-only origin {shlex.quote(branch)}\n"
-        "uv sync --locked --extra cuda124\n"
+        f"{REMOTE_UV_SYNC}\n"
         "uv cache clean || true\n"
         "python -m pip cache purge >/dev/null 2>&1 || true\n"
     )
@@ -384,7 +404,7 @@ def _restore_remote_state(
         f"{REMOTE_UV_BOOTSTRAP} && "
         f"git checkout {shlex.quote(prev_remote_branch)} && "
         f"git reset --hard {shlex.quote(prev_remote_sha)} && "
-        "uv sync --locked --extra cuda124"
+        f"{REMOTE_UV_ENV} && " + REMOTE_UV_SYNC
     )
     _ssh_execute(ssh, f"bash -lc {_quote(restore_command)}", timeout=3600)
 
@@ -409,6 +429,8 @@ def _spawn_takeover_pod(db, api_key: str) -> tuple[str, str]:
         spawner.runpod_config = merge(
             disk_size_gb=config.LIVE_TEST_DISK_SIZE_GB,
             container_disk_gb=config.LIVE_TEST_CONTAINER_DISK_GB,
+            min_memory_gb=32,
+            ram_tiers=LIVE_TEST_RAM_TIERS,
         )
     worker_id = spawner.generate_worker_id()
     created = asyncio.run(db.create_worker_record(worker_id, spawner.gpu_type))
@@ -635,6 +657,8 @@ def run(args) -> int:
         launch_worker_detached(
             ssh,
             export_env(worker_env)
+            + " && "
+            + REMOTE_UV_ENV
             + " && "
             + build_run_worker_command(
                 workdir,
