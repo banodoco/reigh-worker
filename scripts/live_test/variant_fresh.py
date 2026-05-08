@@ -50,7 +50,12 @@ VIBECOMFY_DEFAULT_CASE_ORDER = {
     "annotated_image_edit": 5,
     "qwen_image_style": 6,
     "wan_2_2_t2i": 7,
-    "individual_travel_segment_wan22_vace": 8,
+    "wan_2_2_i2v": 8,
+    "animate_character": 9,
+    "image_upscale": 10,
+    "video_enhance": 11,
+    "flux_klein_edit": 12,
+    "individual_travel_segment_wan22_vace": 13,
 }
 
 log = get_logger(__name__)

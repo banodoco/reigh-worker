@@ -34,6 +34,9 @@ WGP_TASK_TYPES: FrozenSet[str] = frozenset({
     "i2v", "i2v_22",
     # Other video models
     "hunyuan", "ltxv", "ltx2",
+    # VibeComfy direct app-active generation/editing tasks
+    "wan_2_2_i2v", "animate_character", "video_enhance",
+    "image-upscale", "image_upscale", "flux_klein_edit",
     # Qwen image tasks
     "qwen_image_edit", "qwen_image_style", "image_inpaint", "annotated_image_edit",
     "qwen_image", "qwen_image_2512",
@@ -62,6 +65,9 @@ DIRECT_QUEUE_TASK_TYPES: FrozenSet[str] = frozenset({
     "i2v", "i2v_22",
     # Other video models
     "hunyuan", "ltxv", "ltx2",
+    # VibeComfy direct app-active generation/editing tasks
+    "wan_2_2_i2v", "animate_character", "video_enhance",
+    "image-upscale", "image_upscale", "flux_klein_edit",
     # Generic generation
     "generate_video",
     # Qwen image tasks
@@ -99,6 +105,13 @@ TASK_TYPE_TO_MODEL: Dict[str, str] = {
     "hunyuan": "hunyuan",
     "ltxv": "ltxv_13B",
     "ltx2": "ltx2_19B",
+    # VibeComfy direct app-active generation/editing tasks
+    "wan_2_2_i2v": "wanvideo_wrapper_22_14b_i2v_kijai",
+    "animate_character": "wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+    "video_enhance": "basic_video_enhance",
+    "image-upscale": "basic_image_upscale",
+    "image_upscale": "basic_image_upscale",
+    "flux_klein_edit": "flux2_klein_4b_image_edit_distilled",
     # Segment/inpaint handlers (use lightning baseline)
     "join_clips_segment": "wan_2_2_vace_lightning_baseline_2_2_2",
     "inpaint_frames": "wan_2_2_vace_lightning_baseline_2_2_2",
@@ -131,6 +144,9 @@ TASK_TYPE_CATALOG: Dict[str, TaskTypeMeta] = {
             "qwen_image",
             "qwen_image_2512",
             "z_image_turbo_i2i",
+            "image-upscale",
+            "image_upscale",
+            "video_enhance",
         },
         forced_video_length=1 if task_type == "wan_2_2_t2i" else None,
     )

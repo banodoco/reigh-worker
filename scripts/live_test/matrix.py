@@ -133,6 +133,96 @@ def _build_wan_2_2_t2i_fixture() -> dict[str, Any]:
     }
 
 
+def _build_wan_2_2_i2v_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "wan_2_2_i2v",
+        "status": "Queued",
+        "params": {
+            "prompt": "A slow cinematic push-in on the subject with natural motion.",
+            "negative_prompt": "flicker, blur, warped anatomy, heavy compression artifacts",
+            "image_url": config.ANCHOR_IMAGE_A_URL,
+            "start_image_url": config.ANCHOR_IMAGE_A_URL,
+            "resolution": "832x480",
+            "parsed_resolution_wh": "832x480",
+            "seed": 20260508,
+            "num_frames": 81,
+            "video_length": 81,
+            "fps": 16,
+            "num_inference_steps": 4,
+            "steps": 4,
+            "high_noise_end_step": 2,
+        },
+    }
+
+
+def _build_animate_character_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "animate_character",
+        "status": "Queued",
+        "params": {
+            "prompt": "Animate the character following the motion video while preserving identity.",
+            "negative_prompt": "flicker, blur, distorted face, extra limbs",
+            "character_image_url": config.ANCHOR_IMAGE_A_URL,
+            "reference_image_url": config.ANCHOR_IMAGE_A_URL,
+            "motion_video_url": LIVE_TEST_VIDEO_URL,
+            "resolution": "832x480",
+            "parsed_resolution_wh": "832x480",
+            "seed": 20260508,
+            "num_frames": 49,
+            "video_length": 49,
+            "fps": 16,
+            "num_inference_steps": 4,
+            "steps": 4,
+        },
+    }
+
+
+def _build_image_upscale_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "image-upscale",
+        "status": "Queued",
+        "params": {
+            "image_url": config.ANCHOR_IMAGE_A_URL,
+            "image": config.ANCHOR_IMAGE_A_URL,
+            "scale_factor": 2,
+            "upscale_factor": 2,
+        },
+    }
+
+
+def _build_video_enhance_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "video_enhance",
+        "status": "Queued",
+        "params": {
+            "video_url": LIVE_TEST_VIDEO_URL,
+            "video": LIVE_TEST_VIDEO_URL,
+            "fps": 16,
+            "enable_interpolation": True,
+            "enable_upscale": True,
+            "interpolation": {"num_frames": 1},
+            "upscale": {"upscale_factor": 1.25},
+        },
+    }
+
+
+def _build_flux_klein_edit_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "flux_klein_edit",
+        "status": "Queued",
+        "params": {
+            "prompt": "Turn the scene into a crisp editorial product photograph while preserving layout.",
+            "image_url": config.ANCHOR_IMAGE_A_URL,
+            "image": config.ANCHOR_IMAGE_A_URL,
+            "resolution": "1024x1024",
+            "seed": 20260508,
+            "num_inference_steps": 4,
+            "steps": 4,
+            "klein_model": "flux-klein-4b",
+        },
+    }
+
+
 def _build_masked_qwen_fixture(task_type: str) -> dict[str, Any]:
     return {
         "task_type": task_type,
@@ -286,6 +376,16 @@ def resolve_case_fixture(case: MatrixCase) -> dict[str, Any]:
         return _build_z_image_turbo_fixture()
     if case.fixture_key == WAN_2_2_T2I_FIXTURE_KEY:
         return _build_wan_2_2_t2i_fixture()
+    if case.fixture_key == "wan_2_2_i2v":
+        return _build_wan_2_2_i2v_fixture()
+    if case.fixture_key == "animate_character":
+        return _build_animate_character_fixture()
+    if case.fixture_key == "image-upscale":
+        return _build_image_upscale_fixture()
+    if case.fixture_key == "video_enhance":
+        return _build_video_enhance_fixture()
+    if case.fixture_key == "flux_klein_edit":
+        return _build_flux_klein_edit_fixture()
     if case.fixture_key == IMAGE_INPAINT_FIXTURE_KEY:
         return _build_masked_qwen_fixture("image_inpaint")
     if case.fixture_key == ANNOTATED_IMAGE_EDIT_FIXTURE_KEY:
@@ -735,6 +835,56 @@ def build_matrix(
             route_key="wan_2_2_t2i",
             support_state="vibecomfy_supported",
             selected_template_id="video/wanvideo_wrapper_22_14b_t2i",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="wan_2_2_i2v",
+            task_type="wan_2_2_i2v",
+            fixture_key="wan_2_2_i2v",
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="wan_2_2_i2v",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/wanvideo_wrapper_22_14b_i2v_kijai",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="animate_character",
+            task_type="animate_character",
+            fixture_key="animate_character",
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="animate_character",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="image_upscale",
+            task_type="image-upscale",
+            fixture_key="image-upscale",
+            timeout_sec=timeout_image_sec,
+            route_key="image-upscale",
+            support_state="vibecomfy_supported",
+            selected_template_id="image/basic_image_upscale",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="video_enhance",
+            task_type="video_enhance",
+            fixture_key="video_enhance",
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="video_enhance",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/basic_video_enhance",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="flux_klein_edit",
+            task_type="flux_klein_edit",
+            fixture_key="flux_klein_edit",
+            timeout_sec=timeout_image_sec,
+            route_key="flux_klein_edit",
+            support_state="vibecomfy_supported",
+            selected_template_id="edit/flux2_klein_4b_image_edit_distilled",
             route_runtime=route_runtime,
         ),
         MatrixCase(

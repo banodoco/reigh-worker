@@ -1007,6 +1007,14 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         "annotated_image_edit": ("annotated_image_edit", "edit/qwen_image_edit"),
         "z_image_turbo_i2i": ("z_image_turbo_i2i", "image/z_image_img2img"),
         "wan_2_2_t2i": ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
+        "wan_2_2_i2v": ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
+        "animate_character": (
+            "animate_character",
+            "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+        ),
+        "image_upscale": ("image-upscale", "image/basic_image_upscale"),
+        "video_enhance": ("video_enhance", "video/basic_video_enhance"),
+        "flux_klein_edit": ("flux_klein_edit", "edit/flux2_klein_4b_image_edit_distilled"),
         "join_clips_segment_wan22_vace": (
             "join_clips_segment",
             "video/wanvideo_wrapper_22_14b_vace_cocktail",
@@ -1029,6 +1037,11 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         ("qwen_image_style", "qwen_image_style"),
         ("z_image_turbo_i2i", "z_image_turbo_i2i"),
         ("wan_2_2_t2i", "wan_2_2_t2i"),
+        ("wan_2_2_i2v", "wan_2_2_i2v"),
+        ("animate_character", "animate_character"),
+        ("image_upscale", "image-upscale"),
+        ("video_enhance", "video_enhance"),
+        ("flux_klein_edit", "flux_klein_edit"),
         (
             "individual_travel_segment_wan22_vace_flow",
             "individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
