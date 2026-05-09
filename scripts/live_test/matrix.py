@@ -497,6 +497,8 @@ def _ltx_first_last_overrides(
         "model_name": config.LTX_MODEL_ID,
         "model": config.LTX_MODEL_ID,
         "model_family": "ltx2_distilled",
+        "run_id": "live-test-ltx-first-last",
+        "orchestrator_task_id": "live-test-ltx-first-last-parent",
         "parsed_resolution_wh": "768x512",
         "segment_frames_expanded": [81],
         "num_new_segments_to_generate": 1,
@@ -510,6 +512,9 @@ def _ltx_first_last_overrides(
         "continuity_case": "first_last",
     }
     overrides = {
+        "segment_index": 0,
+        "orchestrator_run_id": "live-test-ltx-first-last",
+        "orchestrator_task_id_ref": "live-test-ltx-first-last-parent",
         "prompt": "A smooth cinematic move between two anchor frames.",
         "negative_prompt": "blurry, oversaturated, pixelated, low resolution, grainy, distorted",
         "model_name": config.LTX_MODEL_ID,

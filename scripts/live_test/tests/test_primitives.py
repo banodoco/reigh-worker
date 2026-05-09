@@ -1264,6 +1264,47 @@ def test_ensure_live_test_route_selectors_synthesizes_matrix_fallback_rows():
     assert capability["metadata"]["selected_template_id"] == "image/qwen_image_2512"
 
 
+def test_ensure_live_test_route_selectors_updates_stale_fallback_capability_rows():
+    db = FakeDB(
+        tables={
+            "route_backend_selectors": [],
+            "route_backend_capabilities": [
+                {
+                    "id": "cap-1",
+                    "backend": "vibecomfy",
+                    "route_key": "branch_only_route",
+                    "supports_route": False,
+                    "supports_missing_selector": False,
+                    "enabled": True,
+                    "capability_version": 9,
+                    "metadata": {"support_state": "vibecomfy_unsupported"},
+                }
+            ],
+        }
+    )
+
+    changed = ensure_live_test_route_selectors(
+        db,
+        "livet-20260507215500",
+        ["branch_only_route"],
+        backend="vibecomfy",
+        fallback_selectors={
+            "branch_only_route": {
+                "selected_backend": "vibecomfy",
+                "selector_version": None,
+                "support_state": "vibecomfy_supported",
+                "selected_template_id": "image/qwen_image_2512",
+            }
+        },
+    )
+
+    assert changed == 2
+    updated = db.supabase.updated["route_backend_capabilities"][0]
+    assert updated["supports_route"] is True
+    assert updated["metadata"]["support_state"] == "vibecomfy_supported"
+    assert updated["metadata"]["selected_template_id"] == "image/qwen_image_2512"
+
+
 def test_travel_live_matrix_disables_prompt_enhancement_download():
     cases = build_matrix(case_names=["travel_orchestrator_wan2_1seg"])
     payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
@@ -1457,6 +1498,20 @@ def test_live_matrix_vace_video_source_routes_use_real_travel_segment_contract()
     assert payload["params"]["video_source"]
     assert payload["params"]["travel_guidance"]["mode"] == "flow"
     assert details["continuation_config"] == {"type": "video_source"}
+
+
+def test_live_matrix_ltx_direct_segments_include_orchestrator_child_identity():
+    cases = build_matrix(case_names=["travel_segment_ltx2_control_video_first_last"])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    params = payload["params"]
+    details = params["orchestrator_details"]
+
+    assert payload["task_type"] == "travel_segment"
+    assert params["segment_index"] == 0
+    assert params["orchestrator_run_id"]
+    assert params["orchestrator_task_id_ref"]
+    assert details["run_id"]
+    assert details["orchestrator_task_id"]
 
 
 def test_live_matrix_join_segment_vace_case_has_adapter_inputs():

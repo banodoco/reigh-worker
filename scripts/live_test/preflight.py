@@ -194,20 +194,45 @@ def ensure_live_test_route_selectors(
     if fallback_capability_keys:
         existing_capabilities = (
             db.supabase.table("route_backend_capabilities")
-            .select("route_key")
+            .select("id, route_key, metadata, capability_version")
             .eq("backend", backend)
             .in_("route_key", fallback_capability_keys)
             .execute()
         )
-        existing_capability_keys = {
-            str(row.get("route_key"))
+        existing_capabilities_by_key = {
+            str(row.get("route_key")): row
             for row in _coerce_rows(existing_capabilities)
             if row.get("route_key")
         }
         for route_key in fallback_capability_keys:
-            if route_key in existing_capability_keys:
-                continue
             fallback = fallback_selectors.get(route_key, {})
+            metadata = {
+                "live_test": True,
+                "source": "matrix",
+                "support_state": fallback.get("support_state"),
+                "selected_template_id": fallback.get("selected_template_id"),
+            }
+            existing_capability = existing_capabilities_by_key.get(route_key)
+            if existing_capability is not None:
+                existing_metadata = (
+                    existing_capability.get("metadata")
+                    if isinstance(existing_capability.get("metadata"), dict)
+                    else {}
+                )
+                db.supabase.table("route_backend_capabilities").update(
+                    {
+                        "supports_route": True,
+                        "supports_missing_selector": False,
+                        "enabled": True,
+                        "capability_version": max(
+                            int(existing_capability.get("capability_version") or 0),
+                            1,
+                        ),
+                        "metadata": {**existing_metadata, **metadata},
+                    }
+                ).eq("id", existing_capability["id"]).execute()
+                created += 1
+                continue
             db.supabase.table("route_backend_capabilities").insert(
                 {
                     "backend": backend,
@@ -216,12 +241,7 @@ def ensure_live_test_route_selectors(
                     "supports_missing_selector": False,
                     "enabled": True,
                     "capability_version": 1,
-                    "metadata": {
-                        "live_test": True,
-                        "source": "matrix",
-                        "support_state": fallback.get("support_state"),
-                        "selected_template_id": fallback.get("selected_template_id"),
-                    },
+                    "metadata": metadata,
                 }
             ).execute()
             created += 1
