@@ -345,9 +345,9 @@ SECTION3A_ROUTE_SUPPORT_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType
         ),
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default": RouteSelectorEntry(
             route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="BLOCKED",
-            blocking_reason="Raw LTX video guidance uses Wan2GP VG semantics without IC-LoRA; needs a dedicated VibeComfy raw-guide first/last template before promotion.",
+            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
+            template_id="video/ltx2_3_runexx_first_last_raw_video_guide",
+            disposition="NEW",
         ),
         "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default": RouteSelectorEntry(
             route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",

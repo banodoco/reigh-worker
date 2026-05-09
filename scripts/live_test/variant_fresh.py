@@ -234,7 +234,7 @@ def _register_fresh_worker_record(db, pod_id: str, pod: dict[str, Any], args) ->
 
 
 def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> None:
-    supabase_url = config.require_env("SUPABASE_URL")
+    supabase_url = config.get_env("SUPABASE_URL", "https://example.supabase.co")
     launch_command = build_run_worker_command(
         FRESH_WORKDIR,
         reigh_token=token,
@@ -275,6 +275,18 @@ def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> No
 
 
 def run(args) -> int:
+    if args.dry_run and not config.get_env("REIGH_LIVE_TEST_TOKEN"):
+        cases = _build_matrix_cases(args)
+        project_id = "<live-test-project-id>"
+        _validate_cases(cases, project_id)
+        _print_dry_run_plan(
+            token="<REIGH_LIVE_TEST_TOKEN>",
+            project_id=project_id,
+            cases=cases,
+            args=args,
+        )
+        return 0
+
     context = _prepare_context(args)
     token = context["token"]
     db = context["db"]

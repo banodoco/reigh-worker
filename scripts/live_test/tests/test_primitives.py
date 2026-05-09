@@ -1296,6 +1296,25 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         "z_image_turbo_i2i": ("z_image_turbo_i2i", "image/z_image_img2img"),
         "wan_2_2_t2i": ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
         "wan_2_2_i2v": ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
+        "travel_segment_wan22_i2v_first_last": ("travel_segment", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
+        "travel_segment_ltx2_first_last": ("travel_segment", "video/ltx2_3_runexx_first_last_frame"),
+        "travel_segment_ltx2_distilled_first_last": ("travel_segment", "video/ltx2_3_runexx_first_last_frame"),
+        "travel_segment_ltx2_control_pose_first_last": (
+            "travel_segment",
+            "video/ltx2_3_first_last_frame_travel_iclora_control",
+        ),
+        "travel_segment_ltx2_control_depth_first_last": (
+            "travel_segment",
+            "video/ltx2_3_first_last_frame_travel_iclora_control",
+        ),
+        "travel_segment_ltx2_control_canny_first_last": (
+            "travel_segment",
+            "video/ltx2_3_first_last_frame_travel_iclora_control",
+        ),
+        "travel_segment_ltx2_control_cameraman_first_last": (
+            "travel_segment",
+            "video/ltx2_3_first_last_frame_travel_iclora_control",
+        ),
         "animate_character": (
             "animate_character",
             "video/wan22_animate_native_first_stage",
@@ -1326,6 +1345,30 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         ("z_image_turbo_i2i", "z_image_turbo_i2i"),
         ("wan_2_2_t2i", "wan_2_2_t2i"),
         ("wan_2_2_i2v", "wan_2_2_i2v"),
+        (
+            "travel_segment_wan22_i2v_first_last",
+            "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_distilled_first_last",
+            "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_control_pose_first_last",
+            "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_control_depth_first_last",
+            "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_control_canny_first_last",
+            "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_control_cameraman_first_last",
+            "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+        ),
         ("animate_character", "animate_character"),
         ("image_upscale", "image-upscale"),
         ("video_enhance", "video_enhance"),
@@ -1702,6 +1745,77 @@ def test_variant_fresh_dry_run_uses_livetest_workspace_and_env_exports(capsys, m
     assert "REIGH_WORKER_CONTRACT_VERSION" in output
     assert "VibeComfy clone target: /workspace/vibecomfy" in output
     assert "VIBECOMFY_PATH" in output
+
+
+def test_variant_fresh_dry_run_without_token_still_validates_static_plan(
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+    monkeypatch.setattr(
+        "scripts.live_test.variant_fresh.config.get_env",
+        lambda name, default=None: None if name == "REIGH_LIVE_TEST_TOKEN" else default,
+    )
+    monkeypatch.setattr("scripts.live_test.variant_fresh._build_matrix_cases", lambda _args: cases)
+    validated = []
+    monkeypatch.setattr(
+        "scripts.live_test.variant_fresh._validate_cases",
+        lambda cases_arg, project_id: validated.append((cases_arg, project_id)),
+    )
+    args = SimpleNamespace(
+        dry_run=True,
+        no_terminate=False,
+        wgp_profile=3,
+        backend="vibecomfy",
+        selector_namespace="canary-a",
+        selector_version=None,
+        worker_contract_version=1,
+        worker_profile="default",
+        ref="main",
+    )
+
+    assert run_variant_fresh(args) == 0
+
+    output = capsys.readouterr().out
+    assert validated == [(cases, "<live-test-project-id>")]
+    assert "<REIGH_LIVE_TEST_TOKEN>" in output
+    assert "https://example.supabase.co" in output
+
+
+def test_variant_update_dry_run_without_token_still_validates_static_plan(
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update.config.get_env",
+        lambda name, default=None: None if name == "REIGH_LIVE_TEST_TOKEN" else default,
+    )
+    monkeypatch.setattr("scripts.live_test.variant_update._build_matrix_cases", lambda _args: cases)
+    validated = []
+    monkeypatch.setattr(
+        "scripts.live_test.variant_update._validate_cases",
+        lambda cases_arg, project_id: validated.append((cases_arg, project_id)),
+    )
+    args = SimpleNamespace(
+        dry_run=True,
+        spawn_takeover=False,
+        pod_id="pod-1",
+        no_terminate=True,
+        wgp_profile=3,
+        backend="vibecomfy",
+        selector_namespace="canary-a",
+        selector_version=None,
+        worker_contract_version=1,
+        worker_profile="default",
+    )
+
+    assert run_variant_update(args) == 0
+
+    output = capsys.readouterr().out
+    assert validated == [(cases, "<live-test-project-id>")]
+    assert "<REIGH_LIVE_TEST_TOKEN>" in output
+    assert "https://example.supabase.co" in output
 
 
 def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

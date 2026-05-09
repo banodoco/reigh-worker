@@ -25,6 +25,18 @@
       ]
     },
     {
+      "case_id": "travel_segment_wan22_i2v_first_last",
+      "route_key": "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_wan22_i2v_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
       "case_id": "individual_travel_segment_wan22_vace",
       "route_key": "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
       "task_type": "individual_travel_segment",
@@ -115,6 +127,90 @@
       "expected_backend": "vibecomfy",
       "report_case_names": [
         "travel_segment_wan22_vace_depth_video_source"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_first_last",
+      "route_key": "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_distilled_first_last",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_distilled_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_control_video_first_last",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_control_video_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_control_pose_first_last",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_control_pose_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_control_depth_first_last",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_control_depth_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_control_canny_first_last",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_control_canny_first_last"
+      ],
+      "notes": [
+        "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."
+      ]
+    },
+    {
+      "case_id": "travel_segment_ltx2_control_cameraman_first_last",
+      "route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+      "task_type": "travel_segment",
+      "expected_backend": "vibecomfy",
+      "report_case_names": [
+        "travel_segment_ltx2_control_cameraman_first_last"
       ],
       "notes": [
         "Live matrix case generated from scripts.live_test.matrix; reports are stored separately."

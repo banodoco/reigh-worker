@@ -590,7 +590,7 @@ def _wait_for_spawned_pod_ssh(spawner, worker_id: str, pod_id: str, *, timeout_s
 
 
 def _print_dry_run_plan(*, cases: list, token: str, args) -> None:
-    supabase_url = config.require_env("SUPABASE_URL")
+    supabase_url = config.get_env("SUPABASE_URL", "https://example.supabase.co")
     mode = "spawn-takeover" if args.spawn_takeover else "existing"
     pod_hint = args.pod_id or "<spawned-runpod-id>"
     worker_hint = "<new-worker-id>" if args.spawn_takeover else "<existing-worker-id>"
@@ -628,6 +628,12 @@ def _print_dry_run_plan(*, cases: list, token: str, args) -> None:
 
 
 def run(args) -> int:
+    if args.dry_run and not config.get_env("REIGH_LIVE_TEST_TOKEN"):
+        cases = _build_matrix_cases(args)
+        _validate_cases(cases, "<live-test-project-id>")
+        _print_dry_run_plan(cases=cases, token="<REIGH_LIVE_TEST_TOKEN>", args=args)
+        return 0
+
     context = _prepare_context(args)
     token = context["token"]
     db = context["db"]

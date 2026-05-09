@@ -140,7 +140,7 @@ def test_standalone_regeneration_fields_drive_video_source_continuity_route():
     )
 
 
-def test_ltx_control_video_row_remains_fail_closed_until_raw_vg_template_exists():
+def test_ltx_control_video_row_uses_raw_vg_template():
     resolved = resolve_task_route(
         task_id="ltx-control-video",
         task_type="travel_segment",
@@ -157,6 +157,6 @@ def test_ltx_control_video_row_remains_fail_closed_until_raw_vg_template_exists(
     )
 
     assert resolved.backend is WorkerBackend.VIBECOMFY
-    assert resolved.template_id is None
-    assert resolved.fail_closed_reason
-    assert "will not fall back to WGP" in resolved.fail_closed_reason
+    assert resolved.template_id == "video/ltx2_3_runexx_first_last_raw_video_guide"
+    assert resolved.should_use_vibecomfy is True
+    assert resolved.fail_closed_reason is None

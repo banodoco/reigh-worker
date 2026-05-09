@@ -73,7 +73,7 @@ def validate_fixture_rows(rows: Iterable[Section3ARow]) -> None:
                 f"row {row.row_id} has invalid support_state_expectation "
                 f"{row.support_state_expectation!r}"
             )
-        if row.disposition in {"BLOCKED", "NEW", "WGP-only"} and not row.blocking_reason:
+        if row.disposition in {"BLOCKED", "WGP-only"} and not row.blocking_reason:
             raise Section3AMatrixError(f"row {row.row_id} requires a blocking_reason")
         if row.disposition == "BLOCKED" and row.support_state_expectation not in {
             "vibecomfy_unsupported",

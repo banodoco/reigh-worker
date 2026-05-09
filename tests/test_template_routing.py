@@ -507,35 +507,30 @@ def test_section3a_wan_i2v_first_last_is_supported_after_anchor_wiring(routing) 
     assert resolved.should_use_vibecomfy is True
 
 
-@pytest.mark.parametrize(
-    "route_key",
-    [
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
-    ],
-)
-def test_section3a_unsupported_rows_fail_closed_under_explicit_vibecomfy(
-    routing, route_key: str
-) -> None:
-    entry = routing.SECTION3A_ROUTE_SUPPORT_MAP[route_key]
+def test_section3a_ltx_raw_video_control_first_last_is_supported(routing) -> None:
     resolved = routing.resolve_task_route(
-        task_id="section3a-unsupported",
+        task_id="ltx-control-video",
         task_type="travel_segment",
         params={
-            "_source_task_type": "travel_segment",
-            "model_family": route_key.split("__model-", 1)[1].split("__", 1)[0],
-            "guidance_kind": entry.route_key.split("__guidance-", 1)[1].split("__", 1)[0],
+            "model_name": "ltx2_22B_distilled_1_1",
             "continuity_case": "first_last",
-            "profile": "default",
+            "travel_guidance": {
+                "kind": "ltx_control",
+                "mode": "video",
+                "videos": [{"path": "/tmp/video.mp4"}],
+            },
         },
         backend="vibecomfy",
     )
 
-    assert resolved.route_key == route_key
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
-    assert resolved.template_id is None
-    assert resolved.should_use_vibecomfy is False
-    assert resolved.fail_closed_reason
-    assert "will not fall back to WGP" in resolved.fail_closed_reason
+    assert resolved.route_key == (
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video"
+        "__continuity-first_last__profile-default"
+    )
+    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+    assert resolved.template_id == "video/ltx2_3_runexx_first_last_raw_video_guide"
+    assert resolved.fail_closed_reason is None
+    assert resolved.should_use_vibecomfy is True
 
 
 @pytest.mark.parametrize("mode", ["pose", "depth", "canny", "cameraman"])

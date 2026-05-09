@@ -80,7 +80,7 @@ def _run_db_checks(pod_id: str | None) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
-    token = config.require_env("REIGH_LIVE_TEST_TOKEN")
+    token = config.get_env("REIGH_LIVE_TEST_TOKEN", "<REIGH_LIVE_TEST_TOKEN>")
     supabase_url = config.get_env("SUPABASE_URL", "https://example.supabase.co")
 
     cases = build_matrix(

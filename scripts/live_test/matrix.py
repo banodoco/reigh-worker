@@ -155,6 +155,120 @@ def _build_wan_2_2_i2v_fixture() -> dict[str, Any]:
     }
 
 
+def _build_wan_2_2_i2v_first_last_fixture() -> dict[str, Any]:
+    fixture = _build_wan_2_2_i2v_fixture()
+    fixture["task_type"] = "travel_segment"
+    params = fixture["params"]
+    params.update(
+        {
+            "model": "wan_2_2_i2v",
+            "model_name": "wan_2_2_i2v",
+            "model_family": "wan22_i2v",
+            "start_image_url": config.ANCHOR_IMAGE_A_URL,
+            "end_image_url": config.ANCHOR_IMAGE_B_URL,
+            "input_image_paths_resolved": _anchor_pair(),
+            "continuity_case": "first_last",
+            "orchestrator_details": {
+                "model": "wan_2_2_i2v",
+                "model_name": "wan_2_2_i2v",
+                "model_family": "wan22_i2v",
+                "parsed_resolution_wh": "832x480",
+                "input_image_paths_resolved": _anchor_pair(),
+                "continuity_case": "first_last",
+            },
+        }
+    )
+    return fixture
+
+
+def _build_qwen_image_fixture(task_type: str = "qwen_image") -> dict[str, Any]:
+    return {
+        "task_type": task_type,
+        "status": "Queued",
+        "params": {
+            "prompt": "A compact red cube on a clean white tabletop, product-photo lighting.",
+            "resolution": "1024x1024",
+            "seed": 20260508,
+            "num_inference_steps": 4,
+            "steps": 4,
+        },
+    }
+
+
+def _build_qwen_image_edit_fixture(task_type: str = "qwen_image_edit") -> dict[str, Any]:
+    return {
+        "task_type": task_type,
+        "status": "Queued",
+        "params": {
+            "prompt": "Make the image crisp and editorial while preserving the subject.",
+            "image_url": config.ANCHOR_IMAGE_A_URL,
+            "image": config.ANCHOR_IMAGE_A_URL,
+            "resolution": "1024x1024",
+            "seed": 20260508,
+            "num_inference_steps": 4,
+            "steps": 4,
+        },
+    }
+
+
+def _build_qwen_image_style_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "qwen_image_style",
+        "status": "Queued",
+        "params": {
+            "prompt": "Apply the style reference while preserving the subject.",
+            "style_reference_image": config.ANCHOR_IMAGE_A_URL,
+            "subject_reference_image": config.ANCHOR_IMAGE_B_URL,
+            "resolution": "1024x1024",
+            "seed": 20260508,
+            "num_inference_steps": 4,
+            "steps": 4,
+        },
+    }
+
+
+def _build_z_image_turbo_i2i_fixture() -> dict[str, Any]:
+    fixture = _build_z_image_turbo_fixture()
+    fixture["task_type"] = "z_image_turbo_i2i"
+    fixture["params"].update({"image_url": config.ANCHOR_IMAGE_A_URL, "image": config.ANCHOR_IMAGE_A_URL})
+    return fixture
+
+
+def _build_wan_i2v_individual_fixture() -> dict[str, Any]:
+    return {
+        "task_type": "individual_travel_segment",
+        "status": "Queued",
+        "params": {
+            "prompt": "A coherent short camera move between two anchor frames.",
+            "negative_prompt": "fading, breaking, shot cuts, jumpcuts, blurry, noise, distorted",
+            "model": "wan_2_2_i2v",
+            "model_name": "wan_2_2_i2v",
+            "model_family": "wan22_i2v",
+            "resolution": "832x480",
+            "parsed_resolution_wh": "832x480",
+            "fps": 16,
+            "num_frames": 81,
+            "video_length": 81,
+            "seed": 20260508,
+            "start_image_url": config.ANCHOR_IMAGE_A_URL,
+            "end_image_url": config.ANCHOR_IMAGE_B_URL,
+            "input_image_paths_resolved": _anchor_pair(),
+            "orchestrator_details": {
+                "model": "wan_2_2_i2v",
+                "model_name": "wan_2_2_i2v",
+                "model_family": "wan22_i2v",
+                "parsed_resolution_wh": "832x480",
+                "input_image_paths_resolved": _anchor_pair(),
+            },
+            "individual_segment_params": {
+                "start_image_url": config.ANCHOR_IMAGE_A_URL,
+                "end_image_url": config.ANCHOR_IMAGE_B_URL,
+                "input_image_paths_resolved": _anchor_pair(),
+            },
+        },
+    }
+
+
 def _build_animate_character_fixture() -> dict[str, Any]:
     return {
         "task_type": "animate_character",
@@ -367,6 +481,59 @@ def _build_travel_stitch_fixture() -> dict[str, Any]:
     }
 
 
+def _ltx_first_last_overrides(
+    *,
+    mode: str | None,
+    anchor_image_a: str,
+    anchor_image_b: str,
+) -> dict[str, Any]:
+    travel_guidance = {"kind": "none"} if mode is None else {
+        "kind": "ltx_control",
+        "mode": mode,
+        "videos": [{"url": LIVE_TEST_VIDEO_URL}],
+        "strength": 0.5 if mode in {"pose", "depth", "canny"} else 1.0,
+    }
+    details = {
+        "model_name": config.LTX_MODEL_ID,
+        "model": config.LTX_MODEL_ID,
+        "model_family": "ltx2_distilled",
+        "parsed_resolution_wh": "768x512",
+        "segment_frames_expanded": [81],
+        "num_new_segments_to_generate": 1,
+        "base_prompts_expanded": ["A smooth cinematic move between two anchor frames"],
+        "negative_prompts_expanded": ["blurry, oversaturated, pixelated, low resolution, grainy, distorted"],
+        "frame_overlap_expanded": [0],
+        "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+        "travel_guidance": travel_guidance,
+        "fps_helpers": 24,
+        "seed_base": 20260508,
+        "continuity_case": "first_last",
+    }
+    overrides = {
+        "prompt": "A smooth cinematic move between two anchor frames.",
+        "negative_prompt": "blurry, oversaturated, pixelated, low resolution, grainy, distorted",
+        "model_name": config.LTX_MODEL_ID,
+        "model": config.LTX_MODEL_ID,
+        "model_family": "ltx2_distilled",
+        "resolution": "768x512",
+        "parsed_resolution_wh": "768x512",
+        "fps": 24,
+        "num_frames": 81,
+        "video_length": 81,
+        "seed": 20260508,
+        "start_image_url": anchor_image_a,
+        "end_image_url": anchor_image_b,
+        "input_image_paths_resolved": [anchor_image_a, anchor_image_b],
+        "continuity_case": "first_last",
+        "travel_guidance": travel_guidance,
+        "orchestrator_details": details,
+    }
+    if mode is not None:
+        overrides["control_video_url"] = LIVE_TEST_VIDEO_URL
+        details["control_video_url"] = LIVE_TEST_VIDEO_URL
+    return overrides
+
+
 def resolve_case_fixture(case: MatrixCase) -> dict[str, Any]:
     if case.fixture_key == TRAVEL_WAN_FIXTURE_KEY:
         return _build_wan_travel_fixture()
@@ -378,6 +545,18 @@ def resolve_case_fixture(case: MatrixCase) -> dict[str, Any]:
         return _build_wan_2_2_t2i_fixture()
     if case.fixture_key == "wan_2_2_i2v":
         return _build_wan_2_2_i2v_fixture()
+    if case.fixture_key == "wan_2_2_i2v_first_last":
+        return _build_wan_2_2_i2v_first_last_fixture()
+    if case.fixture_key == "qwen_image_basic":
+        return _build_qwen_image_fixture("qwen_image")
+    if case.fixture_key == "qwen_image_edit_basic":
+        return _build_qwen_image_edit_fixture("qwen_image_edit")
+    if case.fixture_key == "qwen_image_style_db_task":
+        return _build_qwen_image_style_fixture()
+    if case.fixture_key == "z_image_turbo_i2i_basic":
+        return _build_z_image_turbo_i2i_fixture()
+    if case.fixture_key == "wan22_i2v_individual_segment":
+        return _build_wan_i2v_individual_fixture()
     if case.fixture_key == "animate_character":
         return _build_animate_character_fixture()
     if case.fixture_key == "image-upscale":
@@ -699,6 +878,16 @@ def build_matrix(
             timeout_sec=timeout_travel_segment_sec,
         ),
         MatrixCase(
+            name="travel_segment_wan22_i2v_first_last",
+            task_type="travel_segment",
+            fixture_key="wan_2_2_i2v_first_last",
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/wanvideo_wrapper_22_14b_i2v_kijai",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
             name="individual_travel_segment_wan22_vace",
             task_type="individual_travel_segment",
             fixture_key="wan22_i2v_individual_segment",
@@ -754,6 +943,80 @@ def build_matrix(
                 route_runtime=route_runtime,
             )
             for mode in ("raw", "flow", "canny", "depth")
+        ],
+        MatrixCase(
+            name="travel_segment_ltx2_first_last",
+            task_type="travel_segment",
+            fixture_key=TRAVEL_LTX_FIXTURE_KEY,
+            param_overrides={
+                **_ltx_first_last_overrides(
+                    mode=None,
+                    anchor_image_a=anchor_image_a,
+                    anchor_image_b=anchor_image_b,
+                ),
+                "model": "ltx2_22B",
+                "model_name": "ltx2_22B",
+                "model_family": "ltx2",
+            },
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/ltx2_3_runexx_first_last_frame",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="travel_segment_ltx2_distilled_first_last",
+            task_type="travel_segment",
+            fixture_key=TRAVEL_LTX_FIXTURE_KEY,
+            param_overrides=_ltx_first_last_overrides(
+                mode=None,
+                anchor_image_a=anchor_image_a,
+                anchor_image_b=anchor_image_b,
+            ),
+            timeout_sec=timeout_travel_segment_sec,
+            route_key="travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
+            support_state="vibecomfy_supported",
+            selected_template_id="video/ltx2_3_runexx_first_last_frame",
+            route_runtime=route_runtime,
+        ),
+        MatrixCase(
+            name="travel_segment_ltx2_control_video_first_last",
+            task_type="travel_segment",
+            fixture_key=TRAVEL_LTX_FIXTURE_KEY,
+            param_overrides=_ltx_first_last_overrides(
+                mode="video",
+                anchor_image_a=anchor_image_a,
+                anchor_image_b=anchor_image_b,
+            ),
+            timeout_sec=timeout_travel_segment_sec,
+            route_key=(
+                "travel_segment__model-ltx2_distilled__"
+                "guidance-ltx_control_video__continuity-first_last__profile-default"
+            ),
+            support_state="vibecomfy_supported",
+            selected_template_id="video/ltx2_3_runexx_first_last_raw_video_guide",
+            route_runtime=route_runtime,
+        ),
+        *[
+            MatrixCase(
+                name=f"travel_segment_ltx2_control_{mode}_first_last",
+                task_type="travel_segment",
+                fixture_key=TRAVEL_LTX_FIXTURE_KEY,
+                param_overrides=_ltx_first_last_overrides(
+                    mode=mode,
+                    anchor_image_a=anchor_image_a,
+                    anchor_image_b=anchor_image_b,
+                ),
+                timeout_sec=timeout_travel_segment_sec,
+                route_key=(
+                    "travel_segment__model-ltx2_distilled__"
+                    f"guidance-ltx_control_{mode}__continuity-first_last__profile-default"
+                ),
+                support_state="vibecomfy_supported",
+                selected_template_id="video/ltx2_3_first_last_frame_travel_iclora_control",
+                route_runtime=route_runtime,
+            )
+            for mode in ("pose", "depth", "canny", "cameraman")
         ],
         MatrixCase(
             name="travel_stitch",

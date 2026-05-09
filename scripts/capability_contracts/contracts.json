@@ -4919,10 +4919,10 @@
       "template_id": "video/ltx2_3_runexx_first_last_frame"
     },
     {
-      "capability_id": "cap.unsupported.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default",
+      "capability_id": "cap.travel-segment-model-ltx2-distilled-guidance-ltx-control-video-continuity-first-last-profile-default",
       "name": "travel segment / model-ltx2 distilled / guidance-ltx control video / continuity-first last / profile-default",
-      "status": "unsupported_fail_closed",
-      "implementation": "unsupported",
+      "status": "static_valid",
+      "implementation": "vibecomfy",
       "canonical_route_key": "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
       "route_keys": [],
       "task_types": [
@@ -4950,8 +4950,8 @@
             "ltx_control",
             "uni3c"
           ],
-          "coverage": "Route key and adapter decide which control modes are supported.",
-          "fail_closed": true
+          "coverage": "This route covers raw LTX full-video guidance via the non-IC LTXVAddGuide template; pose/depth/canny/cameraman remain on the reusable IC-LoRA control template.",
+          "fail_closed": false
         },
         {
           "name": "source_media",
@@ -4962,7 +4962,7 @@
             "mask",
             "first_last"
           ],
-          "coverage": "Task params and route key select source-media shape.",
+          "coverage": "Dedicated scratchpad materializes first/last image anchors and a full-length raw guide video.",
           "fail_closed": false
         },
         {
@@ -5025,14 +5025,14 @@
       ],
       "live_evidence": [],
       "static_evidence": [
+        "vibecomfy_template_index:video/ltx2_3_runexx_first_last_raw_video_guide",
         "worker_route:travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default"
       ],
       "notes": [
-        "Explicit fail-closed route seeded from worker route support map"
+        "Uses non-IC LTXVAddGuide raw video guidance template; runtime promotion requires committed live report evidence."
       ],
-      "blockers": [
-        "Raw LTX video guidance uses Wan2GP VG semantics without IC-LoRA; needs a dedicated VibeComfy raw-guide first/last template before promotion."
-      ]
+      "blockers": [],
+      "template_id": "video/ltx2_3_runexx_first_last_raw_video_guide"
     },
     {
       "capability_id": "cap.travel-segment-model-ltx2-distilled-guidance-ltx-control-pose-continuity-first-last-profile-default",
