@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path
 from importlib import import_module
 from types import MappingProxyType
 from typing import Any
+
+from source.runtime.process_globals import temporary_process_globals
 
 _BRIDGE_MODULE_NAME = ".".join(("source", "runtime", "wgp_bridge"))
 
@@ -87,7 +90,13 @@ def _import_runtime_module(*, force_reload: bool, prefer_bridge_import: bool):
         sys.modules.pop(module_name, None)
     module = sys.modules.get(module_name)
     if module is None:
-        module = _resolve_runtime_import_module(prefer_bridge=prefer_bridge_import)(module_name)
+        wan_root = _bootstrap_runtime_paths()
+        with temporary_process_globals(
+            cwd=wan_root if Path(wan_root).is_dir() else None,
+            argv=["worker.py"],
+            prepend_sys_path=wan_root,
+        ):
+            module = _resolve_runtime_import_module(prefer_bridge=prefer_bridge_import)(module_name)
     _STATE["module_id"] = id(module)
     _STATE["import_count"] = int(_STATE["import_count"]) + 1
     _STATE["last_imported_at"] = time.time()

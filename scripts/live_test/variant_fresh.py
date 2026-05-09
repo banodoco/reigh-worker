@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+import io
 from datetime import datetime, timezone
 from pathlib import Path
+import re
+import sys
 import time
 from typing import Any
 
@@ -59,6 +62,12 @@ VIBECOMFY_DEFAULT_CASE_ORDER = {
 }
 
 log = get_logger(__name__)
+
+
+_SENSITIVE_OUTPUT_PATTERNS = (
+    re.compile(r"(?i)(['\"]?)(REIGH_ACCESS_TOKEN|SUPABASE_SERVICE_ROLE_KEY|RUNPOD_API_KEY|REIGH_LIVE_TEST_TOKEN)(['\"]?\s*[:=]\s*['\"]?)([^,'\"\s}]+)"),
+    re.compile(r"(?i)(--reigh-access-token\s+)([^\s]+)"),
+)
 
 
 def _timestamp_label() -> str:
@@ -120,6 +129,37 @@ def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args
 
 def _runs_root() -> Path:
     return config.WORKER_ROOT / "scripts" / "live_test" / "runs"
+
+
+def _redact_sensitive_text(text: str) -> str:
+    redacted = text
+    for pattern in _SENSITIVE_OUTPUT_PATTERNS:
+        if pattern.pattern.startswith("(?i)(--reigh-access-token"):
+            redacted = pattern.sub(r"\1<redacted>", redacted)
+        else:
+            redacted = pattern.sub(r"\1\2\3<redacted>", redacted)
+    return redacted
+
+
+@contextmanager
+def _capture_and_redact_noisy_lifecycle_output():
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    try:
+        sys.stdout = stdout
+        sys.stderr = stderr
+        yield
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        captured_stdout = _redact_sensitive_text(stdout.getvalue()).strip()
+        captured_stderr = _redact_sensitive_text(stderr.getvalue()).strip()
+        if captured_stdout:
+            log.info("captured runpod lifecycle stdout: %s", captured_stdout)
+        if captured_stderr:
+            log.warning("captured runpod lifecycle stderr: %s", captured_stderr)
 
 
 @contextmanager
@@ -237,7 +277,7 @@ def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> No
     supabase_url = config.get_env("SUPABASE_URL", "https://example.supabase.co")
     launch_command = build_run_worker_command(
         FRESH_WORKDIR,
-        reigh_token=token,
+        reigh_token=None,
         supabase_url=supabase_url,
         worker_id="<runpod-pod-id>",
         wgp_profile=args.wgp_profile,
@@ -332,20 +372,21 @@ def run(args) -> int:
             log.warning("no network volume matched %s; pod will only have ephemeral container disk", list(config.RUNPOD_STORAGE_VOLUMES))
 
         with _phase("create_runpod_pod", gpu_type=config.RUNPOD_GPU_TYPE, image=config.RUNPOD_WORKER_IMAGE):
-            pod = create_pod_and_wait(
-                api_key=api_key,
-                gpu_type_id=config.RUNPOD_GPU_TYPE,
-                image_name=config.RUNPOD_WORKER_IMAGE,
-                name=f"reigh-live-test-fresh-{_timestamp_label().lower()}",
-                network_volume_id=network_volume_id,
-                volume_mount_path=config.RUNPOD_VOLUME_MOUNT_PATH,
-                disk_in_gb=config.LIVE_TEST_DISK_SIZE_GB,
-                container_disk_in_gb=config.LIVE_TEST_CONTAINER_DISK_GB,
-                min_vcpu_count=config.RUNPOD_MIN_VCPU_COUNT,
-                min_memory_in_gb=config.RUNPOD_MIN_MEMORY_GB,
-                template_id=config.RUNPOD_TEMPLATE_ID,
-                env_vars=worker_env,
-            )
+            with _capture_and_redact_noisy_lifecycle_output():
+                pod = create_pod_and_wait(
+                    api_key=api_key,
+                    gpu_type_id=config.RUNPOD_GPU_TYPE,
+                    image_name=config.RUNPOD_WORKER_IMAGE,
+                    name=f"reigh-live-test-fresh-{_timestamp_label().lower()}",
+                    network_volume_id=network_volume_id,
+                    volume_mount_path=config.RUNPOD_VOLUME_MOUNT_PATH,
+                    disk_in_gb=config.LIVE_TEST_DISK_SIZE_GB,
+                    container_disk_in_gb=config.LIVE_TEST_CONTAINER_DISK_GB,
+                    min_vcpu_count=config.RUNPOD_MIN_VCPU_COUNT,
+                    min_memory_in_gb=config.RUNPOD_MIN_MEMORY_GB,
+                    template_id=config.RUNPOD_TEMPLATE_ID,
+                    env_vars=worker_env,
+                )
         if not pod or not pod.get("id"):
             raise RuntimeError("create_pod_and_wait did not return a pod id")
 
@@ -375,7 +416,7 @@ def run(args) -> int:
 
         command = build_run_worker_command(
             FRESH_WORKDIR,
-            reigh_token=token,
+            reigh_token=None,
             supabase_url=supabase_url,
             worker_id=pod_id,
             wgp_profile=args.wgp_profile,

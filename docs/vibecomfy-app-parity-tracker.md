@@ -19,7 +19,7 @@ Edit `scripts/capability_contracts/contracts.json`, `app_capabilities.json`, or 
 - Live matrix manifest cases: 36
 - Worker route rows: 47
 - Worker route aliases: 11
-- Latest live report files: 0
+- Latest live report files: 2
 - Latest passing live report cases: 0
 - Validation errors: 0
 - Validation warnings: 0

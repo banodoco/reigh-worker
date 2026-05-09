@@ -44,6 +44,7 @@ from scripts.live_test.ssh_bootstrap import (
 from scripts.live_test.task_spoofer import insert_spoof_task
 from scripts.live_test.terminate_guard import guarded_terminate
 from scripts.live_test.token_resolver import TokenResolutionError, resolve_token_to_user_id
+from scripts.live_test import variant_fresh
 from scripts.live_test.variant_fresh import run as run_variant_fresh
 from scripts.live_test.variant_fresh import _build_matrix_cases as build_fresh_matrix_cases
 from scripts.live_test.variant_fresh import _build_worker_env as build_fresh_worker_env
@@ -829,6 +830,34 @@ def test_build_run_worker_command_can_redact_access_token():
     )
     assert "secret-token" not in command
     assert "<REIGH_LIVE_TEST_TOKEN>" in command
+
+
+def test_build_run_worker_command_can_use_env_token_without_cli_secret():
+    command = build_run_worker_command(
+        "/workspace/Reigh-Worker-LiveTest",
+        reigh_token=None,
+        supabase_url="https://supabase.example",
+        worker_id="worker-1",
+        wgp_profile=3,
+        idle_release_minutes=0,
+    )
+    assert "--reigh-access-token" not in command
+    assert "python run_worker.py" in command
+    assert "--worker worker-1" in command
+
+
+def test_fresh_variant_redacts_noisy_runpod_lifecycle_output():
+    text = (
+        "raw_response {'env': {'REIGH_ACCESS_TOKEN': 'token-1', "
+        "'SUPABASE_SERVICE_ROLE_KEY': 'service-key'}} --reigh-access-token token-2"
+    )
+
+    redacted = variant_fresh._redact_sensitive_text(text)
+
+    assert "token-1" not in redacted
+    assert "token-2" not in redacted
+    assert "service-key" not in redacted
+    assert "<redacted>" in redacted
 
 
 def test_open_session_timeout_includes_latest_pod_status(monkeypatch: pytest.MonkeyPatch):
@@ -1847,7 +1876,7 @@ def test_variant_fresh_dry_run_without_token_still_validates_static_plan(
 
     output = capsys.readouterr().out
     assert validated == [(cases, "<live-test-project-id>")]
-    assert "<REIGH_LIVE_TEST_TOKEN>" in output
+    assert "--reigh-access-token" not in output
     assert "https://example.supabase.co" in output
 
 

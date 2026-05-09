@@ -466,8 +466,14 @@ def main():
     headless_logger.essential(f"args parsed: worker={cli_args.worker}, debug={cli_args.debug}")
     local_http_server = None
 
-    # Resolve access token: prefer --reigh-access-token, fall back to --supabase-access-token
-    access_token = cli_args.reigh_access_token or cli_args.supabase_access_token
+    # Resolve access token: prefer explicit CLI values, then the environment.
+    # Live workers launch with REIGH_ACCESS_TOKEN in env so crash/argparse logs
+    # cannot echo the credential as part of the process command line.
+    access_token = (
+        cli_args.reigh_access_token
+        or cli_args.supabase_access_token
+        or os.environ.get("REIGH_ACCESS_TOKEN")
+    )
     if not access_token:
         print("Error: Worker authentication credential is required", file=sys.stderr)
         sys.exit(1)

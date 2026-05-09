@@ -22,14 +22,13 @@ def _normalize_cli_args(cli_args: list[str]) -> list[str]:
 def build_run_worker_command(
     workdir: str,
     *,
-    reigh_token: str,
+    reigh_token: str | None,
     supabase_url: str,
     worker_id: str,
     wgp_profile: int,
     idle_release_minutes: int,
     redact_secrets: bool = False,
 ) -> str:
-    rendered_token = "<REIGH_LIVE_TEST_TOKEN>" if redact_secrets else reigh_token
     workdir_q = _quote(workdir)
     prefix = [
         f"cd {workdir_q}",
@@ -48,8 +47,6 @@ def build_run_worker_command(
         "run_worker.py",
         "--supabase-url",
         _quote(supabase_url),
-        "--reigh-access-token",
-        _quote(rendered_token),
         "--worker",
         _quote(worker_id),
         "--wgp-profile",
@@ -64,6 +61,13 @@ def build_run_worker_command(
         "2>&1",
         "&",
     ]
+    if reigh_token is not None:
+        rendered_token = "<REIGH_LIVE_TEST_TOKEN>" if redact_secrets else reigh_token
+        worker_arg_index = worker_parts.index("--worker")
+        worker_parts[worker_arg_index:worker_arg_index] = [
+            "--reigh-access-token",
+            _quote(rendered_token),
+        ]
     return " && ".join(prefix) + " && " + " ".join(worker_parts) + " disown"
 
 
