@@ -42,7 +42,7 @@ from scripts.live_test.ssh_bootstrap import (
     open_session,
 )
 from scripts.live_test.task_spoofer import insert_spoof_task
-from scripts.live_test.terminate_guard import guarded_terminate
+from scripts.live_test.terminate_guard import guarded_terminate, prune_stale_live_test_pods
 from scripts.live_test.token_resolver import TokenResolutionError, resolve_token_to_user_id
 from scripts.live_test import variant_fresh
 from scripts.live_test.variant_fresh import run as run_variant_fresh
@@ -802,6 +802,57 @@ def test_terminate_guard_treats_missing_pod_as_already_terminated(monkeypatch: p
 
     monkeypatch.setattr("scripts.live_test.terminate_guard.live_test_pkg.terminate_pod", _missing_pod)
     assert guarded_terminate("pod-1", "api-key", no_terminate=False) is False
+
+
+def test_prune_stale_live_test_pods_uses_timestamped_names_when_uptime_missing(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("REIGH_LIVE_TEST_SKIP_STALE_POD_CLEANUP", raising=False)
+    terminated: list[tuple[str, str]] = []
+    pods = [
+        SimpleNamespace(
+            id="stale-pod",
+            name="reigh-live-test-fresh-20260507t190615z",
+            uptime_seconds=None,
+            created_at=None,
+        ),
+        SimpleNamespace(
+            id="current-pod",
+            name="reigh-live-test-fresh-20260509t120000z",
+            uptime_seconds=None,
+            created_at=None,
+        ),
+    ]
+
+    async def fake_list_pods(api_key: str, prefix: str):
+        assert api_key == "api-key"
+        assert prefix == "reigh-live-test-fresh-"
+        return pods
+
+    async def fake_terminate(api_key: str, pod_id: str):
+        terminated.append((api_key, pod_id))
+
+    result = prune_stale_live_test_pods(
+        "api-key",
+        max_age_seconds=6 * 60 * 60,
+        list_pods_fn=fake_list_pods,
+        terminate_fn=fake_terminate,
+        now=datetime(2026, 5, 9, 12, 0, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.inspected == 2
+    assert result.stale == ("stale-pod",)
+    assert result.terminated == ("stale-pod",)
+    assert result.failed == ()
+    assert terminated == [("api-key", "stale-pod")]
+
+
+def test_prune_stale_live_test_pods_can_be_disabled(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("REIGH_LIVE_TEST_SKIP_STALE_POD_CLEANUP", "1")
+
+    result = prune_stale_live_test_pods("api-key")
+
+    assert result.inspected == 0
+    assert result.stale == ()
+    assert result.terminated == ()
 
 
 def test_build_run_worker_command_uses_run_worker_py_and_idle_zero():
@@ -1977,6 +2028,10 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
     monkeypatch.setattr("scripts.live_test.variant_fresh.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_fresh.fetch_worker_logs", lambda *_args, **_kwargs: "logs")
     monkeypatch.setattr("scripts.live_test.variant_fresh.guarded_terminate", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        "scripts.live_test.variant_fresh.prune_stale_live_test_pods",
+        lambda _api_key: SimpleNamespace(terminated=(), failed=()),
+    )
 
     args = SimpleNamespace(
         dry_run=False,

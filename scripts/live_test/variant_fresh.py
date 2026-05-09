@@ -34,7 +34,7 @@ from scripts.live_test.ssh_bootstrap import (
     open_session,
     run_install,
 )
-from scripts.live_test.terminate_guard import guarded_terminate
+from scripts.live_test.terminate_guard import guarded_terminate, prune_stale_live_test_pods
 from scripts.live_test.token_resolver import resolve_token_to_user_id
 
 
@@ -342,6 +342,12 @@ def run(args) -> int:
 
     api_key: str | None = None
     api_key = config.require_env("RUNPOD_API_KEY")
+    cleanup = prune_stale_live_test_pods(api_key)
+    if cleanup.terminated:
+        log.warning("terminated stale fresh live-test pods before launch: %s", ", ".join(cleanup.terminated))
+    if cleanup.failed:
+        failed = ", ".join(f"{pod_id}: {error}" for pod_id, error in cleanup.failed)
+        raise RuntimeError(f"Failed to terminate stale fresh live-test pods before launch: {failed}")
     supabase_url = config.require_env("SUPABASE_URL")
     service_role_key = config.require_env("SUPABASE_SERVICE_ROLE_KEY")
     worker_env = _build_worker_env(token, supabase_url, service_role_key, args)
