@@ -867,6 +867,7 @@ def test_build_run_worker_command_uses_run_worker_py_and_idle_zero():
     assert "python run_worker.py" in command
     assert "--idle-release-minutes 0" in command
     assert "--save-logging logs/worker.log" in command
+    assert 'UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"' in command
 
 
 def test_build_run_worker_command_can_redact_access_token():

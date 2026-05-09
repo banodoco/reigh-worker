@@ -34,6 +34,7 @@ def build_run_worker_command(
         f"cd {workdir_q}",
         "mkdir -p logs",
         'export PATH="$HOME/.local/bin:$PATH"',
+        'export UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"',
     ]
     worker_parts = [
         "nohup",

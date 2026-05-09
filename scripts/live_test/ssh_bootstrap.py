@@ -147,6 +147,7 @@ def run_install(ssh, workdir: str) -> None:
             "fi\n"
             f"cd {shlex.quote(workdir)}\n"
             "export PATH=\"$HOME/.local/bin:$PATH\"\n"
+            "export UV_PROJECT_ENVIRONMENT=/opt/reigh-worker-live-test-venv\n"
             # Network volume is MooseFS which doesn't support hardlinks; force copy.
             "export UV_LINK_MODE=copy\n"
             # --locked dropped: main has newer pyproject deps (runpod-lifecycle)
@@ -156,7 +157,7 @@ def run_install(ssh, workdir: str) -> None:
             "    break\n"
             "  fi\n"
             "  echo \"uv sync attempt $attempt failed; cleaning partial venv and retrying\"\n"
-            "  rm -rf .venv\n"
+            "  rm -rf .venv \"$UV_PROJECT_ENVIRONMENT\"\n"
             "  sleep 5\n"
             "  if [ $attempt -eq 3 ]; then exit 1; fi\n"
             "done\n"
