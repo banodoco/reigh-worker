@@ -430,10 +430,10 @@ def run(args) -> int:
         )
         with _phase("launch_worker", pod_id=pod_id):
             launch_worker_detached(ssh, export_env(worker_env) + " && " + command)
-        with _phase("queue_matrix", pod_id=pod_id, cases=len(cases)):
-            queued = queue_matrix(db, project_id, cases)
         with _phase("wait_worker_ready", pod_id=pod_id):
             wait_until_ready(db, worker_id=pod_id, timeout_sec=900, progress_every_sec=60)
+        with _phase("queue_matrix", pod_id=pod_id, cases=len(cases)):
+            queued = queue_matrix(db, project_id, cases)
 
         with _phase("run_matrix", pod_id=pod_id, cases=len(cases)):
             results = poll_queued_matrix(db, project_id, queued, worker_id=pod_id)

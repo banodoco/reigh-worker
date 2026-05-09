@@ -2021,9 +2021,12 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
     monkeypatch.setattr("scripts.live_test.variant_fresh.clone_repo_into", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_fresh.run_install", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("scripts.live_test.variant_fresh.clone_and_install_vibecomfy", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("scripts.live_test.variant_fresh.launch_worker_detached", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("scripts.live_test.variant_fresh.wait_until_ready", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("scripts.live_test.variant_fresh.queue_matrix", lambda _db, _project_id, _cases: [(cases[0], "task-1")])
+    monkeypatch.setattr("scripts.live_test.variant_fresh.launch_worker_detached", lambda *_args, **_kwargs: events.append(("launch_worker",)))
+    monkeypatch.setattr("scripts.live_test.variant_fresh.wait_until_ready", lambda *_args, **_kwargs: events.append(("wait_until_ready",)))
+    monkeypatch.setattr(
+        "scripts.live_test.variant_fresh.queue_matrix",
+        lambda _db, _project_id, _cases: events.append(("queue_matrix",)) or [(cases[0], "task-1")],
+    )
     monkeypatch.setattr("scripts.live_test.variant_fresh.poll_queued_matrix", lambda _db, _project_id, _queued, **_kwargs: [])
     monkeypatch.setattr("scripts.live_test.variant_fresh.write_report", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr("scripts.live_test.variant_fresh.fetch_worker_logs", lambda *_args, **_kwargs: "logs")
@@ -2054,10 +2057,9 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
         route_key=[],
     )
     assert run_variant_fresh(args) == 0
-    assert events == [
-        ("create_worker_record", "pod-123", variant_fresh.config.RUNPOD_GPU_TYPE, "pod-123"),
-        ("update_worker_status", "pod-123", "inactive", "pod-123"),
-    ]
+    assert ("create_worker_record", "pod-123", variant_fresh.config.RUNPOD_GPU_TYPE, "pod-123") in events
+    assert ("update_worker_status", "pod-123", "inactive", "pod-123") in events
+    assert events.index(("launch_worker",)) < events.index(("wait_until_ready",)) < events.index(("queue_matrix",))
 
 
 def test_clone_and_install_vibecomfy_validates_required_manifests():
