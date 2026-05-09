@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             worker_id=args.worker_id,
             wgp_profile=args.wgp_profile,
             idle_release_minutes=args.idle_release_minutes,
+            redact_secrets=True,
         )
     )
     print("")

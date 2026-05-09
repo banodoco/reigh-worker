@@ -242,6 +242,7 @@ def _print_dry_run_plan(*, token: str, project_id: str, cases: list, args) -> No
         worker_id="<runpod-pod-id>",
         wgp_profile=args.wgp_profile,
         idle_release_minutes=0,
+        redact_secrets=True,
     )
 
     print("Variant: fresh")

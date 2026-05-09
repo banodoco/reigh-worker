@@ -817,6 +817,20 @@ def test_build_run_worker_command_uses_run_worker_py_and_idle_zero():
     assert "--save-logging logs/worker.log" in command
 
 
+def test_build_run_worker_command_can_redact_access_token():
+    command = build_run_worker_command(
+        "/workspace/Reigh-Worker-LiveTest",
+        reigh_token="secret-token",
+        supabase_url="https://supabase.example",
+        worker_id="worker-1",
+        wgp_profile=3,
+        idle_release_minutes=0,
+        redact_secrets=True,
+    )
+    assert "secret-token" not in command
+    assert "<REIGH_LIVE_TEST_TOKEN>" in command
+
+
 def test_open_session_timeout_includes_latest_pod_status(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("scripts.live_test.ssh_bootstrap.time.sleep", lambda _interval: None)
     monkeypatch.setattr("scripts.live_test.ssh_bootstrap.time.monotonic", iter([0, 0.5, 1.5]).__next__)

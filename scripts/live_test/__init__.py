@@ -25,7 +25,7 @@ def ensure_orchestrator_imports() -> None:
 ensure_orchestrator_imports()
 
 _LAZY_EXPORTS = {
-    "DatabaseClient": ("gpu_orchestrator.database", "DatabaseClient"),
+    "DatabaseClient": ("scripts.live_test.db_client", "DatabaseClient"),
     "RunPodConfig": ("runpod_lifecycle", "RunPodConfig"),
     "launch": ("runpod_lifecycle", "launch"),
     "get_network_volumes": ("runpod_lifecycle", "get_network_volumes"),

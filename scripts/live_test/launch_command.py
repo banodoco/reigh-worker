@@ -27,7 +27,9 @@ def build_run_worker_command(
     worker_id: str,
     wgp_profile: int,
     idle_release_minutes: int,
+    redact_secrets: bool = False,
 ) -> str:
+    rendered_token = "<REIGH_LIVE_TEST_TOKEN>" if redact_secrets else reigh_token
     workdir_q = _quote(workdir)
     prefix = [
         f"cd {workdir_q}",
@@ -47,7 +49,7 @@ def build_run_worker_command(
         "--supabase-url",
         _quote(supabase_url),
         "--reigh-access-token",
-        _quote(reigh_token),
+        _quote(rendered_token),
         "--worker",
         _quote(worker_id),
         "--wgp-profile",
