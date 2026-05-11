@@ -1491,6 +1491,8 @@ def _ltx_first_last_inputs(resolved: ResolvedTask, run_workspace: Path) -> dict[
         "last_name": last_name,
         "width": width,
         "height": height,
+        "template_width": width * 2,
+        "template_height": height * 2,
         "frames": frames,
         "fps": fps,
         "prompt": prompt,
@@ -1519,10 +1521,7 @@ def _write_ltx_first_last_scratchpad(resolved: ResolvedTask, run_workspace: Path
                 f"    workflow.nodes['14'].inputs['noise_seed'] = {values['seed']}",
                 f"    workflow.nodes['15'].inputs['noise_seed'] = {values['seed']}",
                 *_ltx_exact_frame_count_scratchpad_lines(values),
-                f"    workflow.nodes['2079'].inputs['widget_0'] = {values['height']}",
-                f"    workflow.nodes['2079'].inputs['value'] = {values['height']}",
-                f"    workflow.nodes['2080'].inputs['widget_0'] = {values['width']}",
-                f"    workflow.nodes['2080'].inputs['value'] = {values['width']}",
+                *_ltx_template_dimension_scratchpad_lines(values),
                 f"    workflow.nodes['2076'].inputs['value'] = {values['fps']}",
                 f"    workflow.nodes['2110'].inputs['value'] = {values['first_strength']}",
                 f"    workflow.nodes['2108'].inputs['value'] = {values['last_strength']}",
@@ -1541,6 +1540,19 @@ def _ltx_exact_frame_count_scratchpad_lines(values: Mapping[str, Any]) -> list[s
         f"    workflow.nodes['2078'].inputs['widget_0'] = {frames}",
         f"    workflow.nodes['2078'].inputs['value'] = {frames}",
         "    workflow.nodes['2077'].inputs['widget_0'] = 'a'",
+    ]
+
+
+def _ltx_template_dimension_scratchpad_lines(values: Mapping[str, Any]) -> list[str]:
+    # The Runexx LTX first/last templates downscale the configured canvas by
+    # 0.5 before sampling. Worker params are final artifact dimensions.
+    height = int(values["template_height"])
+    width = int(values["template_width"])
+    return [
+        f"    workflow.nodes['2079'].inputs['widget_0'] = {height}",
+        f"    workflow.nodes['2079'].inputs['value'] = {height}",
+        f"    workflow.nodes['2080'].inputs['widget_0'] = {width}",
+        f"    workflow.nodes['2080'].inputs['value'] = {width}",
     ]
 
 
@@ -1604,10 +1616,7 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
                 f"    workflow.nodes['14'].inputs['noise_seed'] = {values['seed']}",
                 f"    workflow.nodes['15'].inputs['noise_seed'] = {values['seed']}",
                 *_ltx_exact_frame_count_scratchpad_lines(values),
-                f"    workflow.nodes['2079'].inputs['widget_0'] = {values['height']}",
-                f"    workflow.nodes['2079'].inputs['value'] = {values['height']}",
-                f"    workflow.nodes['2080'].inputs['widget_0'] = {values['width']}",
-                f"    workflow.nodes['2080'].inputs['value'] = {values['width']}",
+                *_ltx_template_dimension_scratchpad_lines(values),
                 f"    workflow.nodes['2076'].inputs['value'] = {values['fps']}",
                 f"    workflow.nodes['2110'].inputs['value'] = {values['first_strength']}",
                 f"    workflow.nodes['2108'].inputs['value'] = {values['last_strength']}",
@@ -1665,10 +1674,7 @@ def _write_ltx_first_last_raw_video_control_scratchpad(resolved: ResolvedTask, r
                 f"    workflow.nodes['14'].inputs['noise_seed'] = {values['seed']}",
                 f"    workflow.nodes['15'].inputs['noise_seed'] = {values['seed']}",
                 *_ltx_exact_frame_count_scratchpad_lines(values),
-                f"    workflow.nodes['2079'].inputs['widget_0'] = {values['height']}",
-                f"    workflow.nodes['2079'].inputs['value'] = {values['height']}",
-                f"    workflow.nodes['2080'].inputs['widget_0'] = {values['width']}",
-                f"    workflow.nodes['2080'].inputs['value'] = {values['width']}",
+                *_ltx_template_dimension_scratchpad_lines(values),
                 f"    workflow.nodes['2076'].inputs['value'] = {values['fps']}",
                 f"    workflow.nodes['2110'].inputs['value'] = {values['first_strength']}",
                 f"    workflow.nodes['2108'].inputs['value'] = {values['last_strength']}",

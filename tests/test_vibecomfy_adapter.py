@@ -255,8 +255,9 @@ def test_ltx_first_last_scratchpad_binds_anchor_images_and_runtime_fields(monkey
     assert "load_workflow_any('video/ltx2_3_runexx_first_last_frame')" in source
     assert "workflow.nodes['45'].inputs['image'] = \"ltx_first_ltx-task.png\"" in source
     assert "workflow.nodes['47'].inputs['image'] = \"ltx_last_ltx-task.png\"" in source
-    assert "workflow.nodes['2080'].inputs['widget_0'] = 1280" in source
-    assert "workflow.nodes['2079'].inputs['widget_0'] = 720" in source
+    assert "workflow.nodes['2080'].inputs['widget_0'] = 2560" in source
+    assert "workflow.nodes['2079'].inputs['widget_0'] = 1440" in source
+    assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in source
     assert "workflow.nodes['2078'].inputs['widget_0'] = 81" in source
     assert "workflow.nodes['2076'].inputs['value'] = 8" in source
     assert "workflow.nodes['2103'].inputs['value'] = \"travel from start to end\"" in source
@@ -850,6 +851,6 @@ def test_ltx_first_last_materializes_anchors_and_scratchpad(monkeypatch, tmp_pat
     assert "workflow.nodes['14'].inputs['noise_seed'] = 321" in source
     assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in source
     assert "workflow.nodes['2078'].inputs['value'] = 97" in source
-    assert "workflow.nodes['2079'].inputs['value'] = 512" in source
-    assert "workflow.nodes['2080'].inputs['value'] = 768" in source
+    assert "workflow.nodes['2079'].inputs['value'] = 1024" in source
+    assert "workflow.nodes['2080'].inputs['value'] = 1536" in source
     assert "workflow.nodes['2076'].inputs['value'] = 24" in source
