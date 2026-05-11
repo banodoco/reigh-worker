@@ -848,6 +848,7 @@ def test_ltx_first_last_materializes_anchors_and_scratchpad(monkeypatch, tmp_pat
     assert 'workflow.nodes[\'2103\'].inputs[\'value\'] = "ltx bridge prompt"' in source
     assert 'workflow.nodes[\'11\'].inputs[\'text\'] = "ltx negative"' in source
     assert "workflow.nodes['14'].inputs['noise_seed'] = 321" in source
+    assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in source
     assert "workflow.nodes['2078'].inputs['value'] = 97" in source
     assert "workflow.nodes['2079'].inputs['value'] = 512" in source
     assert "workflow.nodes['2080'].inputs['value'] = 768" in source

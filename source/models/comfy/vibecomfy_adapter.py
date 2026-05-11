@@ -1518,8 +1518,7 @@ def _write_ltx_first_last_scratchpad(resolved: ResolvedTask, run_workspace: Path
                 f"    workflow.nodes['11'].inputs['text'] = {json.dumps(values['negative'])}",
                 f"    workflow.nodes['14'].inputs['noise_seed'] = {values['seed']}",
                 f"    workflow.nodes['15'].inputs['noise_seed'] = {values['seed']}",
-                f"    workflow.nodes['2078'].inputs['widget_0'] = {values['frames']}",
-                f"    workflow.nodes['2078'].inputs['value'] = {values['frames']}",
+                *_ltx_exact_frame_count_scratchpad_lines(values),
                 f"    workflow.nodes['2079'].inputs['widget_0'] = {values['height']}",
                 f"    workflow.nodes['2079'].inputs['value'] = {values['height']}",
                 f"    workflow.nodes['2080'].inputs['widget_0'] = {values['width']}",
@@ -1534,6 +1533,15 @@ def _write_ltx_first_last_scratchpad(resolved: ResolvedTask, run_workspace: Path
         encoding="utf-8",
     )
     return scratchpad
+
+
+def _ltx_exact_frame_count_scratchpad_lines(values: Mapping[str, Any]) -> list[str]:
+    frames = int(values["frames"])
+    return [
+        f"    workflow.nodes['2078'].inputs['widget_0'] = {frames}",
+        f"    workflow.nodes['2078'].inputs['value'] = {frames}",
+        "    workflow.nodes['2077'].inputs['widget_0'] = 'a'",
+    ]
 
 
 def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
@@ -1595,8 +1603,7 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
                 f"    workflow.nodes['11'].inputs['text'] = {json.dumps(values['negative'])}",
                 f"    workflow.nodes['14'].inputs['noise_seed'] = {values['seed']}",
                 f"    workflow.nodes['15'].inputs['noise_seed'] = {values['seed']}",
-                f"    workflow.nodes['2078'].inputs['widget_0'] = {values['frames']}",
-                f"    workflow.nodes['2078'].inputs['value'] = {values['frames']}",
+                *_ltx_exact_frame_count_scratchpad_lines(values),
                 f"    workflow.nodes['2079'].inputs['widget_0'] = {values['height']}",
                 f"    workflow.nodes['2079'].inputs['value'] = {values['height']}",
                 f"    workflow.nodes['2080'].inputs['widget_0'] = {values['width']}",
@@ -1657,8 +1664,7 @@ def _write_ltx_first_last_raw_video_control_scratchpad(resolved: ResolvedTask, r
                 f"    workflow.nodes['11'].inputs['text'] = {json.dumps(values['negative'])}",
                 f"    workflow.nodes['14'].inputs['noise_seed'] = {values['seed']}",
                 f"    workflow.nodes['15'].inputs['noise_seed'] = {values['seed']}",
-                f"    workflow.nodes['2078'].inputs['widget_0'] = {values['frames']}",
-                f"    workflow.nodes['2078'].inputs['value'] = {values['frames']}",
+                *_ltx_exact_frame_count_scratchpad_lines(values),
                 f"    workflow.nodes['2079'].inputs['widget_0'] = {values['height']}",
                 f"    workflow.nodes['2079'].inputs['value'] = {values['height']}",
                 f"    workflow.nodes['2080'].inputs['widget_0'] = {values['width']}",
