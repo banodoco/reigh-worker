@@ -68,3 +68,6 @@
 | travel_orchestrator | `travel_orchestrator` |
 | travel_segment_wan22_vace_raw_video_source | `travel_segment__model-wan2_2_vace__guidance-vace_raw__continuity-video_source__profile-default` |
 | travel_segment_ltx_first_last | `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` |
+| vibecomfy z-image direct route | `z_image_turbo` |
+| wgp join child dimensional route | `join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default` |
+| legacy unknown route defaults | `legacy_custom_task` |

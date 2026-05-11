@@ -213,6 +213,57 @@ def test_animate_character_scratchpad_binds_requested_frame_count(monkeypatch, t
     assert "workflow.nodes['232:15'].inputs['fps'] = 16" in source
 
 
+def test_ltx_first_last_scratchpad_binds_anchor_images_and_runtime_fields(monkeypatch, tmp_path):
+    commands = []
+    start = tmp_path / "start.png"
+    end = tmp_path / "end.png"
+    start.write_bytes(b"start")
+    end.write_bytes(b"end")
+
+    def _run(command, cwd, env, text, capture_output, check):
+        commands.append(command)
+        output = Path(cwd) / "out.mp4"
+        output.write_bytes(b"fake")
+        return _completed(stdout="output: out.mp4\n")
+
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda *_args, **_kwargs: None)
+
+    resolved = resolve_task_route(
+        task_id="ltx-task",
+        task_type="travel_segment",
+        params={
+            "model_name": "ltx2_22B_distilled_1_1",
+            "continuity_case": "first_last",
+            "start_image_url": str(start),
+            "end_image_url": str(end),
+            "resolution": "1280x720",
+            "fps": 8,
+            "num_frames": 81,
+            "prompt": "travel from start to end",
+            "negative_prompt": "bad transition",
+            "seed": 123,
+        },
+        backend="vibecomfy",
+    )
+
+    ok, result = handle_vibecomfy_resolved_task(resolved, tmp_path)
+
+    assert ok is True
+    assert result and result.endswith("out.mp4")
+    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    assert "load_workflow_any('video/ltx2_3_runexx_first_last_frame')" in source
+    assert "workflow.nodes['45'].inputs['image'] = \"ltx_first_ltx-task.png\"" in source
+    assert "workflow.nodes['47'].inputs['image'] = \"ltx_last_ltx-task.png\"" in source
+    assert "workflow.nodes['2080'].inputs['widget_0'] = 1280" in source
+    assert "workflow.nodes['2079'].inputs['widget_0'] = 720" in source
+    assert "workflow.nodes['2078'].inputs['widget_0'] = 81" in source
+    assert "workflow.nodes['2076'].inputs['value'] = 8" in source
+    assert "workflow.nodes['2103'].inputs['value'] = \"travel from start to end\"" in source
+    assert "workflow.nodes['11'].inputs['text'] = \"bad transition\"" in source
+    assert "workflow.nodes['14'].inputs['noise_seed'] = 123" in source
+
+
 def test_subprocess_failure_returns_bounded_telemetry(monkeypatch, tmp_path):
     long_stderr = "x" * 5000
     logger = _LogCapture()

@@ -1462,6 +1462,14 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
             "join_clips_segment",
             "video/wanvideo_wrapper_22_14b_vace_cocktail",
         ),
+        "travel_segment_ltx2_first_last": (
+            "travel_segment",
+            "video/ltx2_3_runexx_first_last_frame",
+        ),
+        "travel_segment_ltx2_distilled_first_last": (
+            "travel_segment",
+            "video/ltx2_3_runexx_first_last_frame",
+        ),
     }
     for name, (task_type, template_id) in expected.items():
         case = cases[name]
@@ -1540,6 +1548,14 @@ def test_live_matrix_includes_promoted_vibecomfy_direct_routes():
         (
             "join_clips_segment_wan22_vace",
             "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_first_last",
+            "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
+        ),
+        (
+            "travel_segment_ltx2_distilled_first_last",
+            "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
         ),
         ("image_inpaint", "image_inpaint"),
         ("annotated_image_edit", "annotated_image_edit"),
