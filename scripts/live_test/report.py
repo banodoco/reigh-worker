@@ -14,6 +14,10 @@ def _is_passing_result(result: TaskResult) -> bool:
     return result.final_status == "Complete" and bool(result.generation_ids) and not result.error_summary
 
 
+def all_results_passed(results: list[TaskResult]) -> bool:
+    return all(_is_passing_result(result) for result in results)
+
+
 def _render_markdown(results: list[TaskResult], *, variant: str, pod_id: str | None, passed: int) -> str:
     total = len(results)
     lines = [
@@ -68,4 +72,4 @@ def write_report(
     return output_dir
 
 
-__all__ = ["write_report"]
+__all__ = ["all_results_passed", "write_report"]

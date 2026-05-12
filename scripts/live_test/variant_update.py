@@ -27,7 +27,7 @@ from scripts.live_test.preflight import (
     ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
-from scripts.live_test.report import write_report
+from scripts.live_test.report import all_results_passed, write_report
 from scripts.live_test.safety_gate import assert_safe_to_take_over
 from scripts.live_test.ssh_bootstrap import (
     WorkerProcessInfo,
@@ -755,7 +755,7 @@ def run(args) -> int:
             workdir=workdir,
         )
         preserve_branch = False
-        return 0
+        return 0 if all_results_passed(results) else 1
     finally:
         restore_error: Exception | None = None
         if ssh is not None:

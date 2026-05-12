@@ -31,7 +31,7 @@ from scripts.live_test.preflight import (
     ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
-from scripts.live_test.report import write_report
+from scripts.live_test.report import all_results_passed, write_report
 from scripts.live_test.safety_gate import UnsafeTakeoverError, assert_safe_to_take_over
 from scripts.live_test.ssh_bootstrap import (
     KILL_COMMAND,
@@ -1898,6 +1898,8 @@ def test_write_report_outputs_json_and_markdown(tmp_path: Path):
     assert report_json["passed"] == 1
     assert report_json["total"] == 2
     assert "Summary: `1/2 passed`" in report_md
+    assert all_results_passed(results) is False
+    assert all_results_passed([results[0]]) is True
 
 
 def test_variant_fresh_dry_run_uses_livetest_workspace_and_env_exports(capsys, monkeypatch: pytest.MonkeyPatch):

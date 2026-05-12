@@ -24,7 +24,7 @@ from scripts.live_test.preflight import (
     ensure_user_cloud_generation_enabled,
     get_or_create_live_test_project,
 )
-from scripts.live_test.report import write_report
+from scripts.live_test.report import all_results_passed, write_report
 from scripts.live_test.ssh_bootstrap import (
     clone_and_install_vibecomfy,
     clone_repo_into,
@@ -445,7 +445,7 @@ def run(args) -> int:
             results = poll_queued_matrix(db, project_id, queued, worker_id=pod_id)
         with _phase("write_report", pod_id=pod_id, out_dir=str(out_dir)):
             write_report(results, FRESH_VARIANT, pod_id, out_dir)
-        return 0
+        return 0 if all_results_passed(results) else 1
     finally:
         if ssh is not None:
             try:
