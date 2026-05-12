@@ -14,9 +14,77 @@ from source.runtime.wgp_bridge import (
 )
 
 __all__ = [
+    "DWPOSE_MODEL_ASSETS",
+    "ensure_dwpose_models",
     "get_structure_preprocessor",
     "process_structure_frames",
 ]
+
+WAN2GP_SHARED_MODEL_REPO_ID = "DeepBeepMeep/Wan2.1"
+DWPOSE_MODEL_ASSETS = (
+    ("pose", "yolox_l.onnx"),
+    ("pose", "dw-ll_ucoco_384.onnx"),
+)
+
+
+def _wan2gp_dir() -> Path:
+    return Path(__file__).parent.parent.parent.parent / "Wan2GP"
+
+
+def _download_preprocessor_asset(
+    *,
+    repo_id: str,
+    subfolder: str,
+    filename: str,
+    local_dir: Path,
+    label: str,
+) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    local_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        downloaded = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            local_dir=str(local_dir),
+            subfolder=subfolder,
+        )
+    except (OSError, ValueError, RuntimeError) as e:
+        raise RuntimeError(
+            f"Failed to download {label} model {subfolder}/{filename}: {e}. "
+            f"Please manually download from https://huggingface.co/{repo_id}/tree/main/{subfolder}"
+        ) from e
+    return Path(downloaded)
+
+
+def ensure_dwpose_models(wan_dir: Path | None = None) -> tuple[Path, Path]:
+    """Ensure DWPose detector and pose ONNX assets exist under Wan2GP/ckpts."""
+    root = wan_dir or _wan2gp_dir()
+    resolved: list[Path] = []
+    for subfolder, filename in DWPOSE_MODEL_ASSETS:
+        model_path = root / "ckpts" / subfolder / filename
+        if not model_path.exists():
+            generation_logger.debug_anomaly(
+                "POSE",
+                f"DWPose model {subfolder}/{filename} not found, downloading from Hugging Face...",
+            )
+            _download_preprocessor_asset(
+                repo_id=WAN2GP_SHARED_MODEL_REPO_ID,
+                subfolder=subfolder,
+                filename=filename,
+                local_dir=root / "ckpts",
+                label="DWPose",
+            )
+            generation_logger.debug_anomaly("POSE", f"DWPose model {subfolder}/{filename} downloaded successfully")
+        resolved.append(model_path)
+
+    missing_models = [str(model_path) for model_path in resolved if not model_path.exists()]
+    if missing_models:
+        raise RuntimeError(
+            "Missing DWPose models required for pose preprocessing: "
+            + ", ".join(missing_models)
+        )
+    return resolved[0], resolved[1]
 
 
 def get_structure_preprocessor(
@@ -44,7 +112,7 @@ def get_structure_preprocessor(
     generation_logger.debug_anomaly("PREPROCESSOR_DEBUG", f"Initializing preprocessor with structure_type='{structure_type}'")
 
     if structure_type == "flow":
-        wan_dir = Path(__file__).parent.parent.parent.parent / "Wan2GP"
+        wan_dir = _wan2gp_dir()
         FlowAnnotator = get_flow_annotator_class()
 
         # Ensure RAFT model is downloaded
@@ -89,7 +157,7 @@ def get_structure_preprocessor(
         return process_with_motion_strength
 
     elif structure_type == "canny":
-        wan_dir = Path(__file__).parent.parent.parent.parent / "Wan2GP"
+        wan_dir = _wan2gp_dir()
         CannyVideoAnnotator = get_canny_video_annotator_class()
 
         # Ensure scribble/canny model is downloaded
@@ -130,7 +198,7 @@ def get_structure_preprocessor(
         return process_canny
 
     elif structure_type == "depth":
-        wan_dir = Path(__file__).parent.parent.parent.parent / "Wan2GP"
+        wan_dir = _wan2gp_dir()
         DepthV2VideoAnnotator = get_depth_v2_video_annotator_class()
 
         variant = "vitl"  # Could be configurable
@@ -179,22 +247,9 @@ def get_structure_preprocessor(
         return process_depth
 
     elif structure_type == "pose":
-        wan_dir = Path(__file__).parent.parent.parent.parent / "Wan2GP"
         PoseBodyFaceVideoAnnotator = get_pose_body_face_video_annotator_class()
 
-        det_model_path = wan_dir / "ckpts" / "pose" / "yolox_l.onnx"
-        pose_model_path = wan_dir / "ckpts" / "pose" / "dw-ll_ucoco_384.onnx"
-
-        missing_models = [
-            str(model_path)
-            for model_path in (det_model_path, pose_model_path)
-            if not model_path.exists()
-        ]
-        if missing_models:
-            raise RuntimeError(
-                "Missing DWPose models required for pose preprocessing: "
-                + ", ".join(missing_models)
-            )
+        det_model_path, pose_model_path = ensure_dwpose_models()
 
         cfg = {
             "DETECTION_MODEL": str(det_model_path),

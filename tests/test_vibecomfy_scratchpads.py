@@ -195,6 +195,60 @@ def test_ltx_first_last_control_scratchpad_patches_reusable_iclora_template(tmp_
     assert (tmp_path / "input" / "ltx_control_travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default-task.mp4").exists()
 
 
+def test_ltx_first_last_control_scratchpad_applies_dynamic_loras(tmp_path: Path, monkeypatch) -> None:
+    adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
+    start = tmp_path / "start.png"
+    end = tmp_path / "end.png"
+    control = tmp_path / "cameraman.mp4"
+    start.write_bytes(b"start")
+    end.write_bytes(b"end")
+    control.write_bytes(b"video")
+    monkeypatch.setattr(adapter, "download_image_if_url", lambda value, *_args, **_kwargs: value)
+    monkeypatch.setattr(adapter, "download_video_if_url", lambda value, *_args, **_kwargs: value)
+
+    scratchpad = adapter._write_ltx_first_last_control_scratchpad(
+        _resolved(
+            "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+            {
+                "input_image_paths_resolved": [str(start), str(end)],
+                "travel_guidance": {
+                    "kind": "ltx_control",
+                    "mode": "cameraman",
+                    "videos": [{"path": str(control)}],
+                    "strength": 0.5,
+                },
+                "activated_loras": [
+                    "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-Cameraman_v1/resolve/main/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
+                ],
+                "loras": [
+                    {
+                        "path": "https://huggingface.co/acme/ltx-style/resolve/main/style.safetensors",
+                        "strength": 0.7,
+                    }
+                ],
+                "loras_multipliers": "0.8",
+                "prompt": "follow the cameraman guide",
+                "resolution": "640x360",
+                "num_frames": 17,
+                "seed": 123,
+            },
+        ),
+        tmp_path,
+    )
+
+    text = scratchpad.read_text(encoding="utf-8")
+    assert "_append_model_assets(workflow" in text
+    assert "_chain_lora_loader_model_only(workflow" in text
+    assert '"directory": "loras/ltxv/ltx2"' in text
+    assert '"directory": "loras/Reigh"' in text
+    assert '"name": "Reigh\\\\style.safetensors"' in text
+    assert '"strength": 0.7' in text
+    assert "workflow.nodes['5011'].inputs['lora_name'] = \"LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors\"" in text
+    assert "workflow.nodes['5011'].inputs['widget_1'] = 0.8" in text
+    assert "workflow.nodes['5012'].inputs['widget_1'] = 0.8" in text
+    assert "workflow.replace_edge('5012.image', \"6101.0\")" in text
+
+
 def test_ltx_first_last_raw_video_control_scratchpad_uses_non_iclora_template(tmp_path: Path, monkeypatch) -> None:
     adapter = importlib.import_module("source.models.comfy.vibecomfy_adapter")
     start = tmp_path / "start.png"

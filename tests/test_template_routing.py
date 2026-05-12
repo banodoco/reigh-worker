@@ -561,6 +561,35 @@ def test_section3a_ltx_control_first_last_modes_use_iclora_template(routing, mod
     assert resolved.should_use_vibecomfy is True
 
 
+def test_ltx_control_iclora_route_allows_activated_loras(routing) -> None:
+    resolved = routing.resolve_task_route(
+        task_id="ltx-control-cameraman-lora",
+        task_type="travel_segment",
+        params={
+            "_source_task_type": "travel_segment",
+            "model_name": "ltx2_22B_distilled_1_1",
+            "continuity_case": "first_last",
+            "activated_loras": [
+                "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-Cameraman_v1/resolve/main/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
+            ],
+            "loras_multipliers": "0.8",
+            "travel_guidance": {
+                "kind": "ltx_control",
+                "mode": "cameraman",
+                "videos": [{"path": "/tmp/cameraman.mp4"}],
+            },
+        },
+        backend="vibecomfy",
+    )
+
+    assert resolved.route_key == (
+        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman"
+        "__continuity-first_last__profile-default"
+    )
+    assert resolved.fail_closed_reason is None
+    assert resolved.should_use_vibecomfy is True
+
+
 def test_template_less_vibecomfy_supported_route_fails_closed(routing, monkeypatch) -> None:
     route_key = "template_less_supported_route"
     monkeypatch.setattr(

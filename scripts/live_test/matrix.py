@@ -886,6 +886,15 @@ def build_matrix(
             name="travel_segment_wan22_i2v_first_last",
             task_type="travel_segment",
             fixture_key="wan_2_2_i2v_first_last",
+            param_overrides={
+                "segment_index": 0,
+                "orchestrator_run_id": "live-test-wan22-i2v-first-last",
+                "orchestrator_task_id_ref": "live-test-wan22-i2v-first-last-parent",
+                "orchestrator_details": {
+                    "run_id": "live-test-wan22-i2v-first-last",
+                    "orchestrator_task_id": "live-test-wan22-i2v-first-last-parent",
+                },
+            },
             timeout_sec=timeout_travel_segment_sec,
             route_key="travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
             support_state="vibecomfy_supported",

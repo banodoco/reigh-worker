@@ -168,11 +168,13 @@ def _phase(name: str, **fields):
     log.info("live test phase started", phase=name, **fields)
     try:
         yield
-    except Exception:
-        log.exception(
+    except Exception as exc:
+        log.error(
             "live test phase failed",
             phase=name,
             elapsed_sec=round(time.monotonic() - started_at, 1),
+            error_type=type(exc).__name__,
+            error=str(exc),
             **fields,
         )
         raise

@@ -204,6 +204,16 @@ def test_wgp_only_contracts_omit_templates_and_include_db_artifact_behavior() ->
     assert missing == []
 
 
+def test_travel_orchestrator_declares_pose_preprocessor_assets() -> None:
+    contracts = {contract.capability_id: contract for contract in load_contracts()}
+    travel = contracts["cap.travel_orchestrator"]
+
+    assert {
+        "worker_preprocessor_model_asset:Wan2GP/ckpts/pose/yolox_l.onnx",
+        "worker_preprocessor_model_asset:Wan2GP/ckpts/pose/dw-ll_ucoco_384.onnx",
+    }.issubset(set(travel.static_evidence))
+
+
 def test_unsupported_contracts_include_fail_closed_rationale() -> None:
     missing: list[tuple[str, str]] = []
     for contract in load_contracts():

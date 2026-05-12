@@ -1112,6 +1112,8 @@ def _vibecomfy_unsupported_feature_reason(route_key: str, params: Mapping[str, A
                 "LightX2V slot and expose four user slots; explicit VibeComfy "
                 "backend will not fall back to WGP"
             )
+    elif _is_ltx_control_iclora_route_key(route_key):
+        pass
     else:
         for key in sorted(_VIBECOMFY_DYNAMIC_LORA_KEYS):
             if _has_non_empty_value(params.get(key)):
@@ -1152,6 +1154,14 @@ def _vibecomfy_unsupported_feature_reason(route_key: str, params: Mapping[str, A
 
 def _is_wan_video_route_key(route_key: str) -> bool:
     return route_key in {"wan_2_2_t2i", "wan_2_2_i2v", "animate_character"} or "model-wan22_vace" in route_key
+
+
+def _is_ltx_control_iclora_route_key(route_key: str) -> bool:
+    return (
+        route_key.startswith("travel_segment__model-ltx2_distilled__")
+        and "__guidance-ltx_control_" in route_key
+        and "__continuity-first_last__" in route_key
+    )
 
 
 def _dynamic_lora_count(params: Mapping[str, Any]) -> int:

@@ -1075,7 +1075,9 @@
         "travel_orchestrator_ltx"
       ],
       "static_evidence": [
-        "worker_route:travel_orchestrator"
+        "worker_route:travel_orchestrator",
+        "worker_preprocessor_model_asset:Wan2GP/ckpts/pose/yolox_l.onnx",
+        "worker_preprocessor_model_asset:Wan2GP/ckpts/pose/dw-ll_ucoco_384.onnx"
       ],
       "notes": [
         "WGP-only path: no VibeComfy template is expected for orchestration/stitching behavior."

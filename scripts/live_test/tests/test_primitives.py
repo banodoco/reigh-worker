@@ -1597,6 +1597,20 @@ def test_live_matrix_vace_video_source_routes_use_real_travel_segment_contract()
     assert details["continuation_config"] == {"type": "video_source"}
 
 
+def test_live_matrix_wan_first_last_direct_segment_includes_child_identity():
+    cases = build_matrix(case_names=["travel_segment_wan22_i2v_first_last"])
+    payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")
+    params = payload["params"]
+    details = params["orchestrator_details"]
+
+    assert payload["task_type"] == "travel_segment"
+    assert params["segment_index"] == 0
+    assert params["orchestrator_run_id"]
+    assert params["orchestrator_task_id_ref"]
+    assert details["run_id"]
+    assert details["orchestrator_task_id"]
+
+
 def test_live_matrix_ltx_direct_segments_include_orchestrator_child_identity():
     cases = build_matrix(case_names=["travel_segment_ltx2_control_video_first_last"])
     payload = render_case_payload(cases[0], project_id="project-1", unique_suffix="abc123")

@@ -49,6 +49,11 @@ _OUTPUT_EXTENSIONS = {
 
 _VIBECOMFY_WAN_USER_LORA_DIR = "loras/WanVideo/Reigh"
 _VIBECOMFY_WAN_USER_LORA_PREFIX = "WanVideo\\Reigh"
+_VIBECOMFY_LTX_USER_LORA_DIR = "loras/Reigh"
+_VIBECOMFY_LTX_USER_LORA_PREFIX = "Reigh"
+_VIBECOMFY_LTX_IC_LORA_DIR = "loras/ltxv/ltx2"
+_LTX_UNION_IC_LORA = "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+_LTX_CAMERAMAN_IC_LORA = "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
 
 
 _WANVIDEO_DEFAULTS_HELPER = """
@@ -1582,10 +1587,15 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
         guidance_strength = float(guidance["strength"])
     elif mode in {"pose", "depth", "canny"}:
         guidance_strength = 0.5
-    lora_name = (
+    default_lora_name = (
         "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
         if mode == "cameraman"
         else "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+    )
+    dynamic_loras, lora_assets, ic_lora_name, ic_lora_strength = _ltx_control_lora_payloads(
+        resolved,
+        default_ic_lora_name=default_lora_name,
+        default_ic_lora_strength=guidance_strength,
     )
     guide_source_ref = {
         "pose": "6102.0",
@@ -1603,8 +1613,12 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
                 "from vibecomfy.cli_loader import load_workflow_any",
                 "",
                 "",
+                _WANVIDEO_DYNAMIC_LORA_HELPER,
+                "",
                 "def build():",
                 "    workflow = load_workflow_any('video/ltx2_3_first_last_frame_travel_iclora_control')",
+                f"    _append_model_assets(workflow, {json.dumps(lora_assets)})",
+                f"    _chain_lora_loader_model_only(workflow, {json.dumps(dynamic_loras)}, source_node_id='229', target_ref='5011.model')",
                 f"    workflow.nodes['45'].inputs['image'] = {json.dumps(values['first_name'])}",
                 f"    workflow.nodes['47'].inputs['image'] = {json.dumps(values['last_name'])}",
                 f"    workflow.nodes['5001'].inputs['file'] = {json.dumps(control_name)}",
@@ -1620,10 +1634,10 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
                 f"    workflow.nodes['2076'].inputs['value'] = {values['fps']}",
                 f"    workflow.nodes['2110'].inputs['value'] = {values['first_strength']}",
                 f"    workflow.nodes['2108'].inputs['value'] = {values['last_strength']}",
-                f"    workflow.nodes['5011'].inputs['lora_name'] = {json.dumps(lora_name)}",
-                f"    workflow.nodes['5011'].inputs['widget_0'] = {json.dumps(lora_name)}",
-                f"    workflow.nodes['5011'].inputs['widget_1'] = {guidance_strength}",
-                f"    workflow.nodes['5012'].inputs['widget_1'] = {guidance_strength}",
+                f"    workflow.nodes['5011'].inputs['lora_name'] = {json.dumps(ic_lora_name)}",
+                f"    workflow.nodes['5011'].inputs['widget_0'] = {json.dumps(ic_lora_name)}",
+                f"    workflow.nodes['5011'].inputs['widget_1'] = {ic_lora_strength}",
+                f"    workflow.nodes['5012'].inputs['widget_1'] = {ic_lora_strength}",
                 f"    workflow.replace_edge('5012.image', {json.dumps(guide_source_ref)})",
                 "    return workflow.finalize_metadata()",
                 "",
@@ -1632,6 +1646,53 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
         encoding="utf-8",
     )
     return scratchpad
+
+
+def _ltx_control_lora_payloads(
+    resolved: ResolvedTask,
+    *,
+    default_ic_lora_name: str,
+    default_ic_lora_strength: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], str, float]:
+    entries = _lora_entries_for_params(resolved.params, resolved=resolved)
+    dynamic_loras: list[dict[str, Any]] = []
+    assets: list[dict[str, str]] = []
+    seen_assets: set[tuple[str, str]] = set()
+    ic_lora_name = default_ic_lora_name
+    ic_lora_strength = default_ic_lora_strength
+
+    for entry in entries:
+        filename = _lora_filename(entry)
+        if not filename:
+            continue
+        if filename in {_LTX_UNION_IC_LORA, _LTX_CAMERAMAN_IC_LORA}:
+            ic_lora_name = filename
+            ic_lora_strength = _simple_lora_strength(entry.multiplier)
+            if entry.url:
+                _append_lora_asset(
+                    assets,
+                    seen_assets,
+                    filename=filename,
+                    url=entry.url,
+                    directory=_VIBECOMFY_LTX_IC_LORA_DIR,
+                )
+            continue
+        dynamic_loras.append(
+            {
+                "name": f"{_VIBECOMFY_LTX_USER_LORA_PREFIX}\\{filename}",
+                "strength": _simple_lora_strength(entry.multiplier),
+            }
+        )
+        if entry.url:
+            _append_lora_asset(
+                assets,
+                seen_assets,
+                filename=filename,
+                url=entry.url,
+                directory=_VIBECOMFY_LTX_USER_LORA_DIR,
+            )
+
+    return dynamic_loras, assets, ic_lora_name, ic_lora_strength
 
 
 def _write_ltx_first_last_raw_video_control_scratchpad(resolved: ResolvedTask, run_workspace: Path) -> Path:
@@ -1774,17 +1835,29 @@ def _wanvideo_dynamic_lora_payloads(resolved: ResolvedTask) -> tuple[list[dict[s
             }
         )
         if entry.url:
-            key = (filename, _VIBECOMFY_WAN_USER_LORA_DIR)
-            if key not in seen_assets:
-                assets.append(
-                    {
-                        "name": filename,
-                        "url": entry.url,
-                        "directory": _VIBECOMFY_WAN_USER_LORA_DIR,
-                    }
-                )
-                seen_assets.add(key)
+            _append_lora_asset(
+                assets,
+                seen_assets,
+                filename=filename,
+                url=entry.url,
+                directory=_VIBECOMFY_WAN_USER_LORA_DIR,
+            )
     return loras, assets
+
+
+def _append_lora_asset(
+    assets: list[dict[str, str]],
+    seen_assets: set[tuple[str, str]],
+    *,
+    filename: str,
+    url: str,
+    directory: str,
+) -> None:
+    key = (filename, directory)
+    if key in seen_assets:
+        return
+    assets.append({"name": filename, "url": url, "directory": directory})
+    seen_assets.add(key)
 
 
 def _lora_entries_for_params(params: Mapping[str, Any], *, resolved: ResolvedTask) -> list[LoRAEntry]:
