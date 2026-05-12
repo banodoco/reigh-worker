@@ -2075,12 +2075,17 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
         create_pod_calls.append(kwargs)
         return {"id": "pod-123", "networkVolumeId": "volume-1"}
 
+    def fake_find_gpu_type(gpu_type, api_key):
+        assert gpu_type == variant_fresh.config.RUNPOD_GPU_TYPE
+        assert api_key == "api-key"
+        return {"id": "RTX 4090", "displayName": gpu_type}
+
     monkeypatch.setitem(
         sys.modules,
         "runpod_lifecycle.api",
         types.SimpleNamespace(
             create_pod=fake_create_pod,
-            find_gpu_type=lambda _api_key, gpu_type: {"id": "RTX 4090", "displayName": gpu_type},
+            find_gpu_type=fake_find_gpu_type,
             get_network_volumes=lambda _api_key: [],
         ),
     )

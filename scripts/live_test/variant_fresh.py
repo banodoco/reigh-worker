@@ -168,7 +168,7 @@ def _capture_and_redact_noisy_lifecycle_output():
 def _resolve_runpod_gpu_type_id(api_key: str, requested_gpu_type: str) -> tuple[str, str]:
     from runpod_lifecycle.api import find_gpu_type
 
-    gpu = find_gpu_type(api_key, requested_gpu_type)
+    gpu = find_gpu_type(requested_gpu_type, api_key)
     if not gpu:
         raise RuntimeError(f"RunPod GPU type not found: {requested_gpu_type!r}")
 
