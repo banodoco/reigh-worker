@@ -98,7 +98,7 @@ def test_clone_and_install_vibecomfy_emits_byte_identical_shell_portable():
         "git -C /workspace/vibecomfy fetch origin main",
         "git -C /workspace/vibecomfy checkout main",
         "git -C /workspace/vibecomfy reset --hard FETCH_HEAD",
-        "git -C /workspace/vibecomfy clean -ffd",
+        "git -C /workspace/vibecomfy clean -ffd -e .venv/",
         'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"',
         "uv pip install --python python3.11 -e /workspace/vibecomfy",
         # uv pip install of comfyui + comfy-script
@@ -181,7 +181,7 @@ def test_ensure_git_ref_synced_warm_path_does_not_invoke_uv_sync():
     assert "git -C /opt/reigh-livetest-prebuilt/worker fetch origin main" in command
     assert "git -C /opt/reigh-livetest-prebuilt/worker checkout main" in command
     assert "git -C /opt/reigh-livetest-prebuilt/worker reset --hard FETCH_HEAD" in command
-    assert "git -C /opt/reigh-livetest-prebuilt/worker clean -ffd" in command
+    assert "git -C /opt/reigh-livetest-prebuilt/worker clean -ffd -e .venv/" in command
     # No uv sync, no clone.
     assert "uv sync" not in command
     assert "git clone" not in command

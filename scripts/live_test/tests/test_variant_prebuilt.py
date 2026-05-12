@@ -189,7 +189,7 @@ def test_build_worker_env_layers_hf_and_comfy_models_path_keys():
     assert env["HF_HOME"] == f"{contract.models_path}/huggingface"
     assert env["HF_HUB_CACHE"] == f"{contract.models_path}/huggingface/hub"
     assert env["COMFYUI_EXTRA_MODEL_PATHS_PATH"] == contract.models_path
-    assert env["VIBECOMFY_PYTHON"] == f"{contract.runtime_venv_path}/bin/python"
+    assert env["VIBECOMFY_PYTHON"] == f"{contract.runtime_vibecomfy_path}/.venv/bin/python"
     # Fresh-variant env never sets these three.
     from scripts.live_test import variant_fresh
 

@@ -282,7 +282,7 @@ def clone_and_install_vibecomfy(
             f"git -C {_quote(workdir)} fetch origin {_quote(branch)}\n"
             f"git -C {_quote(workdir)} checkout {_quote(branch)}\n"
             f"git -C {_quote(workdir)} reset --hard FETCH_HEAD\n"
-            f"git -C {_quote(workdir)} clean -ffd\n"
+            f"git -C {_quote(workdir)} clean -ffd -e .venv/\n"
             f"echo \"VibeComfy checkout: $(git -C {_quote(workdir)} rev-parse --short HEAD)\"\n"
             + install_shell
         )
@@ -391,7 +391,7 @@ def ensure_git_ref_synced(
             f"git -C {_quote(workdir)} fetch origin {_quote(ref)}\n"
             f"git -C {_quote(workdir)} checkout {_quote(ref)}\n"
             f"git -C {_quote(workdir)} reset --hard FETCH_HEAD\n"
-            f"git -C {_quote(workdir)} clean -ffd\n"
+            f"git -C {_quote(workdir)} clean -ffd -e .venv/\n"
         )
     else:
         script = (
@@ -399,7 +399,7 @@ def ensure_git_ref_synced(
             f"git -C {_quote(workdir)} fetch origin {_quote(ref)}\n"
             f"git -C {_quote(workdir)} checkout {_quote(ref)}\n"
             f"git -C {_quote(workdir)} reset --hard FETCH_HEAD\n"
-            f"git -C {_quote(workdir)} clean -ffd\n"
+            f"git -C {_quote(workdir)} clean -ffd -e .venv/\n"
         )
     _execute(ssh, "bash -lc " + _quote(script), timeout=1800)
 

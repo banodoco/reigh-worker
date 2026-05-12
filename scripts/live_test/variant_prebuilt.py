@@ -138,7 +138,7 @@ def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args
         service_role_key,
         args,
         vibecomfy_workdir=contract.runtime_vibecomfy_path,
-        vibecomfy_python=f"{contract.runtime_venv_path}/bin/python",
+        vibecomfy_python=f"{contract.runtime_vibecomfy_path}/.venv/bin/python",
     )
     # Bind models cache onto the volume so workflows reuse weights across runs.
     models_root = contract.models_path
@@ -541,13 +541,13 @@ def run(args) -> int:
                         )
                         install_body = _vibecomfy_install_shell(
                             contract.runtime_vibecomfy_path,
-                            python_path=f"{contract.runtime_venv_path}/bin/python",
+                            python_path=f"{contract.runtime_vibecomfy_path}/.venv/bin/python",
                             attention_profile=manifest.attention_profile,
                             run_nodes_restore=True,
                         )
                     else:
                         install_body = (
-                            f"uv pip install --python {contract.runtime_venv_path}/bin/python -e "
+                            f"uv pip install --python {contract.runtime_vibecomfy_path}/.venv/bin/python -e "
                             f"{contract.runtime_vibecomfy_path}\n"
                         )
                     exit_code, _stdout, stderr = ssh.execute_command(
