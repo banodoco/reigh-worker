@@ -64,6 +64,7 @@ def test_worker_preflight_passes_when_required_paths_and_manifests_exist(tmp_pat
         "wan2gp_path",
         "wgp_entrypoint",
         "vibecomfy_available",
+        "vibecomfy_attention_profile",
         "vibecomfy_template_index",
         "vibecomfy_custom_nodes_manifest",
         "task_dispatch_manifest",
@@ -138,6 +139,52 @@ def test_worker_preflight_env_can_force_vibecomfy_for_wgp_backend(tmp_path, monk
 
     assert result.status == "failed"
     assert "vibecomfy_available" in result.failed_checks
+
+
+def test_worker_preflight_requires_sageattention_for_sage_profile(tmp_path, monkeypatch):
+    repo_root, wan2gp = _make_worker_repo(tmp_path)
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
+    monkeypatch.setenv("VIBECOMFY_PATH", str(tmp_path / "vibecomfy"))
+    monkeypatch.setenv("REIGH_VIBECOMFY_ATTENTION_PROFILE", "sage")
+
+    def _fake_find_spec(module_name):
+        if module_name in {"torch", "dotenv", "fastapi", "vibecomfy"}:
+            return SimpleNamespace(origin=f"/fake/{module_name}.py")
+        return None
+
+    monkeypatch.setattr("source.runtime.worker.preflight.importlib.util.find_spec", _fake_find_spec)
+
+    result = run_worker_preflight(
+        repo_root=repo_root,
+        wan2gp_path=wan2gp,
+        main_output_dir=tmp_path / "outputs",
+        backend="vibecomfy",
+    )
+
+    assert result.status == "failed"
+    assert "import:sageattention" in result.failed_checks
+
+
+def test_worker_preflight_accepts_verified_sageattention_profile(tmp_path, monkeypatch):
+    repo_root, wan2gp = _make_worker_repo(tmp_path)
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
+    monkeypatch.setenv("VIBECOMFY_PATH", str(tmp_path / "vibecomfy"))
+    monkeypatch.setenv("REIGH_VIBECOMFY_ATTENTION_PROFILE", "sage")
+
+    monkeypatch.setattr(
+        "source.runtime.worker.preflight.importlib.util.find_spec",
+        lambda name: SimpleNamespace(origin=f"/fake/{name}.py"),
+    )
+
+    result = run_worker_preflight(
+        repo_root=repo_root,
+        wan2gp_path=wan2gp,
+        main_output_dir=tmp_path / "outputs",
+        backend="vibecomfy",
+    )
+
+    assert result.status == PREFLIGHT_STATUS_PASSED
+    assert "import:sageattention" not in result.failed_checks
 
 
 class _FakeQuery:

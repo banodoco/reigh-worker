@@ -1831,6 +1831,25 @@ def test_fresh_vibecomfy_worker_env_uses_service_claim_auth():
     assert env["REIGH_ACCESS_TOKEN"] == "pat-token"
     assert env["SUPABASE_SERVICE_ROLE_KEY"] == "service-key"
     assert env["REIGH_BACKEND"] == "vibecomfy"
+    assert env["VIBECOMFY_ATTENTION_PROFILE"] == "portable"
+
+
+def test_fresh_vibecomfy_worker_env_maps_sage_worker_profile_to_attention_profile():
+    env = build_fresh_worker_env(
+        "pat-token",
+        "https://supabase.example",
+        "service-key",
+        SimpleNamespace(
+            backend="vibecomfy",
+            selector_namespace="production",
+            selector_version=None,
+            worker_contract_version=1,
+            worker_profile="sage",
+        ),
+    )
+
+    assert env["VIBECOMFY_ATTENTION_PROFILE"] == "sage"
+    assert env["REIGH_VIBECOMFY_ATTENTION_PROFILE"] == "sage"
 
 
 def test_fresh_wgp_worker_env_keeps_pat_claim_auth():
@@ -2126,11 +2145,38 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     assert "python3.11 -m pip install -e /workspace/vibecomfy" in command
     assert "python3.11 -m pip install" in command
     assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
+    assert "export VIBECOMFY_ATTENTION_PROFILE=portable" in command
+    assert "SageAttention" not in command
     assert "cd /workspace/vibecomfy" in command
     assert "test -f custom_nodes.lock" in command
     assert "python3.11 -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock" in command
     assert "test -f /workspace/vibecomfy/template_index.json" in command
     assert "test -f /workspace/vibecomfy/workflow_corpus/manifests/coverage.json" in command
+
+
+def test_clone_and_install_vibecomfy_installs_and_verifies_sageattention_when_profile_sage():
+    calls = []
+
+    class DummySSH:
+        def execute_command(self, command, timeout=600):
+            calls.append((command, timeout))
+            return 0, "", ""
+
+    clone_and_install_vibecomfy(
+        DummySSH(),
+        repo_url="https://github.com/peteromallet/VibeComfy.git",
+        branch="branch-a",
+        workdir="/workspace/vibecomfy",
+        python_path="python3.11",
+        attention_profile="sage",
+    )
+
+    command, _timeout = calls[0]
+    assert "export VIBECOMFY_ATTENTION_PROFILE=sage" in command
+    assert "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention" in command
+    assert "python3.11 -m pip install --no-build-isolation /tmp/sageattention" in command
+    assert "import sageattention" in command
+    assert "sageattention verified" in command
 
 
 def test_spawn_takeover_pod_calls_create_record_and_waits_for_ssh(monkeypatch: pytest.MonkeyPatch):
@@ -2670,6 +2716,7 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
             "branch": "vibe-branch",
             "workdir": "/workspace/vibecomfy",
             "python_path": "python3.11",
+            "attention_profile": "portable",
         }
     ]
     assert launched

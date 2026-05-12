@@ -188,8 +188,8 @@ def test_ltx_first_last_control_scratchpad_patches_reusable_iclora_template(tmp_
     assert "workflow.nodes['2078'].inputs['value'] = 25" in text
     assert "workflow.nodes['2079'].inputs['value'] = 720" in text
     assert "workflow.nodes['2080'].inputs['value'] = 1280" in text
-    assert "workflow.nodes['5011'].inputs['widget_1'] = 0.6" in text
-    assert "workflow.nodes['5012'].inputs['widget_1'] = 0.6" in text
+    assert "workflow.nodes['5011'].inputs['strength_model'] = 0.6" in text
+    assert "workflow.nodes['5012'].inputs['strength'] = 0.6" in text
     assert "workflow.replace_edge('5012.image', \"6102.0\")" in text
     assert (tmp_path / "input" / "ltx_first_travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default-task.png").exists()
     assert (tmp_path / "input" / "ltx_last_travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default-task.png").exists()
@@ -244,9 +244,9 @@ def test_ltx_first_last_control_scratchpad_applies_dynamic_loras(tmp_path: Path,
     assert '"directory": "loras/Reigh"' in text
     assert '"name": "Reigh\\\\style.safetensors"' in text
     assert '"strength": 0.7' in text
-    assert "workflow.nodes['5011'].inputs['lora_name'] = \"LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors\"" in text
-    assert "workflow.nodes['5011'].inputs['widget_1'] = 0.8" in text
-    assert "workflow.nodes['5012'].inputs['widget_1'] = 0.8" in text
+    assert "workflow.nodes['5011'].inputs['lora_name'] = \"ltxv/ltx2/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors\"" in text
+    assert "workflow.nodes['5011'].inputs['strength_model'] = 0.8" in text
+    assert "workflow.nodes['5012'].inputs['strength'] = 0.8" in text
     assert "workflow.replace_edge('5012.image', \"6101.0\")" in text
 
 

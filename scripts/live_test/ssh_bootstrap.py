@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 from dataclasses import dataclass
 import time
@@ -45,6 +46,35 @@ class WorkerProcessInfo:
 
 def _quote(value: str) -> str:
     return shlex.quote(str(value))
+
+
+def _resolve_attention_profile(raw: str | None = None) -> str:
+    value = (
+        raw
+        or os.environ.get("REIGH_VIBECOMFY_ATTENTION_PROFILE")
+        or os.environ.get("VIBECOMFY_ATTENTION_PROFILE")
+        or ""
+    ).strip().lower()
+    if value in {"", "default", "portable", "sdpa"}:
+        return "portable"
+    if value in {"optimized", "sage", "sageattn", "sageattention"}:
+        return "sage"
+    raise ValueError("VibeComfy attention profile must be 'portable' or 'sage'")
+
+
+def _sageattention_install_block(python_path: str) -> str:
+    py = _quote(python_path)
+    return (
+        "rm -rf /tmp/sageattention\n"
+        "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention\n"
+        f"{py} -m pip install --no-build-isolation /tmp/sageattention\n"
+        f"{py} - <<'PY'\n"
+        "import sageattention\n"
+        "if not callable(getattr(sageattention, 'sageattn', None)):\n"
+        "    raise RuntimeError('sageattention import succeeded but sageattn is missing')\n"
+        "print('sageattention verified')\n"
+        "PY\n"
+    )
 
 
 def _execute(ssh, command: str, *, timeout: int = 600, check: bool = True) -> tuple[str, str]:
@@ -173,12 +203,16 @@ def clone_and_install_vibecomfy(
     branch: str,
     workdir: str = "/workspace/vibecomfy",
     python_path: str,
+    attention_profile: str | None = None,
 ) -> None:
     parent = workdir.rsplit("/", 1)[0] or "/"
+    resolved_attention_profile = _resolve_attention_profile(attention_profile)
+    sageattention_install = _sageattention_install_block(python_path) if resolved_attention_profile == "sage" else ""
     command = (
         "bash -lc "
         + _quote(
             "set -euo pipefail\n"
+            f"export VIBECOMFY_ATTENTION_PROFILE={_quote(resolved_attention_profile)}\n"
             f"mkdir -p {_quote(parent)}\n"
             f"rm -rf {_quote(workdir)}\n"
             f"git clone --branch {_quote(branch)} --single-branch {_quote(repo_url)} {_quote(workdir)}\n"
@@ -191,6 +225,7 @@ def clone_and_install_vibecomfy(
             f"{_quote(python_path)} -m pip install "
             "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
             "'comfy-script[default]'\n"
+            f"{sageattention_install}"
             f"cd {_quote(workdir)}\n"
             "test -f custom_nodes.lock\n"
             f"{_quote(python_path)} -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock\n"

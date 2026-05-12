@@ -75,6 +75,7 @@ def run_worker_preflight(
 
     vibecomfy_required = _vibecomfy_preflight_required(backend)
     _append_vibecomfy_check(checks, repo_root=repo_root, required=vibecomfy_required)
+    _append_vibecomfy_attention_check(checks, required=vibecomfy_required)
 
     _append_path_check(
         checks,
@@ -223,6 +224,54 @@ def _vibecomfy_preflight_required(backend: str) -> bool:
     if configured is not None:
         return configured.strip().lower() not in {"0", "false", "no"}
     return str(backend).strip().lower() == "vibecomfy"
+
+
+def _vibecomfy_attention_profile() -> str:
+    raw = (
+        os.environ.get("REIGH_VIBECOMFY_ATTENTION_PROFILE")
+        or os.environ.get("VIBECOMFY_ATTENTION_PROFILE")
+        or os.environ.get("REIGH_WORKER_PROFILE")
+        or ""
+    )
+    value = raw.strip().lower()
+    if value in {"", "default", "portable", "sdpa"}:
+        return "portable"
+    if value in {"optimized", "sage", "sageattn", "sageattention"}:
+        return "sage"
+    return value
+
+
+def _append_vibecomfy_attention_check(checks: list[PreflightCheck], *, required: bool) -> None:
+    profile = _vibecomfy_attention_profile()
+    if profile == "portable":
+        checks.append(
+            PreflightCheck(
+                name="vibecomfy_attention_profile",
+                ok=True,
+                detail="portable/sdpa",
+                required=False,
+            )
+        )
+        return
+    if profile != "sage":
+        checks.append(
+            PreflightCheck(
+                name="vibecomfy_attention_profile",
+                ok=False,
+                detail=f"unsupported profile: {profile}",
+                required=required,
+            )
+        )
+        return
+    spec = importlib.util.find_spec("sageattention")
+    checks.append(
+        PreflightCheck(
+            name="import:sageattention",
+            ok=spec is not None,
+            detail=getattr(spec, "origin", None) or "not found",
+            required=required,
+        )
+    )
 
 
 def _append_vibecomfy_check(checks: list[PreflightCheck], *, repo_root: Path, required: bool) -> None:

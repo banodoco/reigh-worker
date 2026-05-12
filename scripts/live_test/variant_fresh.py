@@ -117,11 +117,14 @@ def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args
     if selector_version:
         env["REIGH_SELECTOR_VERSION"] = str(selector_version)
     if backend == "vibecomfy":
+        attention_profile = "sage" if str(getattr(args, "worker_profile", "")).strip().lower() in {"sage", "optimized"} else "portable"
         env.update(
             {
                 "VIBECOMFY_CWD": VIBECOMFY_WORKDIR,
                 "VIBECOMFY_PATH": VIBECOMFY_WORKDIR,
                 "VIBECOMFY_PYTHON": VIBECOMFY_PYTHON,
+                "VIBECOMFY_ATTENTION_PROFILE": attention_profile,
+                "REIGH_VIBECOMFY_ATTENTION_PROFILE": attention_profile,
             }
         )
     return env
@@ -420,6 +423,7 @@ def run(args) -> int:
                     branch=args.vibecomfy_ref,
                     workdir=VIBECOMFY_WORKDIR,
                     python_path=VIBECOMFY_PYTHON,
+                    attention_profile=worker_env.get("VIBECOMFY_ATTENTION_PROFILE"),
                 )
 
         command = build_run_worker_command(

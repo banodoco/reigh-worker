@@ -133,11 +133,14 @@ def _build_worker_env(token: str, supabase_url: str, service_role_key: str, args
     if selector_version:
         env["REIGH_SELECTOR_VERSION"] = str(selector_version)
     if backend == "vibecomfy":
+        attention_profile = "sage" if str(getattr(args, "worker_profile", "")).strip().lower() in {"sage", "optimized"} else "portable"
         env.update(
             {
                 "VIBECOMFY_CWD": VIBECOMFY_WORKDIR,
                 "VIBECOMFY_PATH": VIBECOMFY_WORKDIR,
                 "VIBECOMFY_PYTHON": VIBECOMFY_PYTHON,
+                "VIBECOMFY_ATTENTION_PROFILE": attention_profile,
+                "REIGH_VIBECOMFY_ATTENTION_PROFILE": attention_profile,
             }
         )
     return env
@@ -250,6 +253,7 @@ def _clone_and_install_vibecomfy_with_reconnect(
     branch: str,
     workdir: str,
     python_path: str,
+    attention_profile: str | None = None,
     attempts: int = 2,
 ):
     current_ssh = ssh
@@ -261,6 +265,7 @@ def _clone_and_install_vibecomfy_with_reconnect(
                 branch=branch,
                 workdir=workdir,
                 python_path=python_path,
+                attention_profile=attention_profile,
             )
             return current_ssh
         except Exception as exc:
@@ -713,6 +718,7 @@ def run(args) -> int:
                 branch=getattr(args, "vibecomfy_ref", "megaplan/production-parity-templates"),
                 workdir=VIBECOMFY_WORKDIR,
                 python_path=VIBECOMFY_PYTHON,
+                attention_profile=worker_env.get("VIBECOMFY_ATTENTION_PROFILE"),
             )
         kill_supervisor_and_worker(ssh)
         _register_update_worker_record(db, worker_id, pod_id, args)

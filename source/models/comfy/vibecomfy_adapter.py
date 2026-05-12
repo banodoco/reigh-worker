@@ -52,6 +52,7 @@ _VIBECOMFY_WAN_USER_LORA_PREFIX = "WanVideo\\Reigh"
 _VIBECOMFY_LTX_USER_LORA_DIR = "loras/Reigh"
 _VIBECOMFY_LTX_USER_LORA_PREFIX = "Reigh"
 _VIBECOMFY_LTX_IC_LORA_DIR = "loras/ltxv/ltx2"
+_VIBECOMFY_LTX_IC_LORA_PREFIX = "ltxv/ltx2"
 _LTX_UNION_IC_LORA = "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
 _LTX_CAMERAMAN_IC_LORA = "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
 
@@ -1589,9 +1590,9 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
     elif mode in {"pose", "depth", "canny"}:
         guidance_strength = 0.5
     default_lora_name = (
-        "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
+        f"{_VIBECOMFY_LTX_IC_LORA_PREFIX}/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
         if mode == "cameraman"
-        else "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+        else f"{_VIBECOMFY_LTX_IC_LORA_PREFIX}/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
     )
     dynamic_loras, lora_assets, ic_lora_name, ic_lora_strength = _ltx_control_lora_payloads(
         resolved,
@@ -1637,8 +1638,8 @@ def _write_ltx_first_last_control_scratchpad(resolved: ResolvedTask, run_workspa
                 f"    workflow.nodes['2108'].inputs['value'] = {values['last_strength']}",
                 f"    workflow.nodes['5011'].inputs['lora_name'] = {json.dumps(ic_lora_name)}",
                 f"    workflow.nodes['5011'].inputs['widget_0'] = {json.dumps(ic_lora_name)}",
-                f"    workflow.nodes['5011'].inputs['widget_1'] = {ic_lora_strength}",
-                f"    workflow.nodes['5012'].inputs['widget_1'] = {ic_lora_strength}",
+                f"    workflow.nodes['5011'].inputs['strength_model'] = {ic_lora_strength}",
+                f"    workflow.nodes['5012'].inputs['strength'] = {ic_lora_strength}",
                 f"    workflow.replace_edge('5012.image', {json.dumps(guide_source_ref)})",
                 "    return workflow.finalize_metadata()",
                 "",
@@ -1667,7 +1668,7 @@ def _ltx_control_lora_payloads(
         if not filename:
             continue
         if filename in {_LTX_UNION_IC_LORA, _LTX_CAMERAMAN_IC_LORA}:
-            ic_lora_name = filename
+            ic_lora_name = f"{_VIBECOMFY_LTX_IC_LORA_PREFIX}/{filename}"
             ic_lora_strength = _simple_lora_strength(entry.multiplier)
             if entry.url:
                 _append_lora_asset(
