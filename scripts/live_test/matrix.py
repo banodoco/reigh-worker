@@ -175,6 +175,14 @@ def _build_wan_2_2_i2v_first_last_fixture() -> dict[str, Any]:
                 "parsed_resolution_wh": "832x480",
                 "input_image_paths_resolved": _anchor_pair(),
                 "continuity_case": "first_last",
+                "base_prompt": params.get("prompt", ""),
+                "base_prompts_expanded": [params.get("prompt", "")],
+                "negative_prompts_expanded": [params.get("negative_prompt", "")],
+                "segment_frames_expanded": [int(params.get("num_frames", 81))],
+                "frame_overlap_expanded": [0],
+                "num_new_segments_to_generate": 1,
+                "enhance_prompt": False,
+                "enhanced_prompts_expanded": [""],
             },
         }
     )

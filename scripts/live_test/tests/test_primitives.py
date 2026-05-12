@@ -1609,6 +1609,14 @@ def test_live_matrix_wan_first_last_direct_segment_includes_child_identity():
     assert params["orchestrator_task_id_ref"]
     assert details["run_id"]
     assert details["orchestrator_task_id"]
+    for key in (
+        "base_prompts_expanded",
+        "frame_overlap_expanded",
+        "negative_prompts_expanded",
+        "num_new_segments_to_generate",
+        "segment_frames_expanded",
+    ):
+        assert key in details
 
 
 def test_live_matrix_ltx_direct_segments_include_orchestrator_child_identity():

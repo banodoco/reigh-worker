@@ -183,6 +183,7 @@ def test_ltx_first_last_control_scratchpad_patches_reusable_iclora_template(tmp_
     assert "workflow.nodes['5001'].inputs['video']" in text
     assert "workflow.nodes['6000'].inputs['value'] = \"pose\"" in text
     assert "workflow.nodes['16'].inputs['text'] = \"follow the control guide\"" in text
+    assert "if '2077' in workflow.nodes:" in text
     assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in text
     assert "workflow.nodes['2078'].inputs['value'] = 25" in text
     assert "workflow.nodes['2079'].inputs['value'] = 720" in text
@@ -282,6 +283,7 @@ def test_ltx_first_last_raw_video_control_scratchpad_uses_non_iclora_template(tm
     assert "video/ltx2_3_first_last_frame_travel_iclora_control" not in text
     assert "workflow.nodes['5001'].inputs['video']" in text
     assert "workflow.nodes['2103'].inputs['value'] = \"use the raw video guide\"" in text
+    assert "if '2077' in workflow.nodes:" in text
     assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in text
     assert "workflow.nodes['2078'].inputs['value'] = 25" in text
     assert "workflow.nodes['2079'].inputs['value'] = 720" in text

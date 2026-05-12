@@ -1112,9 +1112,7 @@ def _vibecomfy_unsupported_feature_reason(route_key: str, params: Mapping[str, A
                 "LightX2V slot and expose four user slots; explicit VibeComfy "
                 "backend will not fall back to WGP"
             )
-    elif _is_ltx_control_iclora_route_key(route_key):
-        pass
-    else:
+    elif not _is_ltx_control_iclora_route_key(route_key):
         for key in sorted(_VIBECOMFY_DYNAMIC_LORA_KEYS):
             if _has_non_empty_value(params.get(key)):
                 return (

@@ -1544,7 +1544,8 @@ def _ltx_exact_frame_count_scratchpad_lines(values: Mapping[str, Any]) -> list[s
     return [
         f"    workflow.nodes['2078'].inputs['widget_0'] = {frames}",
         f"    workflow.nodes['2078'].inputs['value'] = {frames}",
-        "    workflow.nodes['2077'].inputs['widget_0'] = 'a'",
+        "    if '2077' in workflow.nodes:",
+        "        workflow.nodes['2077'].inputs['widget_0'] = 'a'",
     ]
 
 
