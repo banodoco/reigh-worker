@@ -4518,7 +4518,7 @@ wheels = [
 [[package]]
 name = "runpod-lifecycle"
 version = "0.3.0"
-source = { git = "https://github.com/banodoco/runpod-lifecycle?rev=megaplan%2Fprebuilt-validation-env#6db7a50b42f05b316ea1e7f6f17de11db48e2e01" }
+source = { git = "https://github.com/banodoco/runpod-lifecycle?rev=megaplan%2Fprebuilt-validation-env#7a861eaf7b77b07ad4f7ab79693c1204dd19835c" }
 dependencies = [
     { name = "httpx" },
     { name = "paramiko" },
