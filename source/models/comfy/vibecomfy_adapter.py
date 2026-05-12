@@ -1497,8 +1497,8 @@ def _ltx_first_last_inputs(resolved: ResolvedTask, run_workspace: Path) -> dict[
         "last_name": last_name,
         "width": width,
         "height": height,
-        "template_width": width * 2,
-        "template_height": height * 2,
+        "template_width": width,
+        "template_height": height,
         "frames": frames,
         "fps": fps,
         "prompt": prompt,
@@ -1551,8 +1551,8 @@ def _ltx_exact_frame_count_scratchpad_lines(values: Mapping[str, Any]) -> list[s
 
 
 def _ltx_template_dimension_scratchpad_lines(values: Mapping[str, Any]) -> list[str]:
-    # The Runexx LTX first/last templates downscale the configured canvas by
-    # 0.5 before sampling. Worker params are final artifact dimensions.
+    # Worker params are final artifact dimensions. The Runexx-derived LTX
+    # templates now emit the configured canvas size directly.
     height = int(values["template_height"])
     width = int(values["template_width"])
     return [
