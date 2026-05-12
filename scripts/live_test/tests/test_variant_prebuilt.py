@@ -353,7 +353,7 @@ def test_vibecomfy_install_shell_with_nodes_restore_is_what_lockfile_drift_trigg
         run_nodes_restore=True,
     )
     assert "vibecomfy.cli nodes restore --lockfile custom_nodes.lock" in body
-    assert "pip install -e /opt/reigh-livetest-prebuilt/vibecomfy" in body
+    assert "uv pip install --python python3.11 -e /opt/reigh-livetest-prebuilt/vibecomfy" in body
 
 
 def test_vibecomfy_install_shell_without_nodes_restore_for_commit_only_drift():
@@ -366,7 +366,7 @@ def test_vibecomfy_install_shell_without_nodes_restore_for_commit_only_drift():
         attention_profile="portable",
         run_nodes_restore=False,
     )
-    assert "pip install -e /opt/reigh-livetest-prebuilt/vibecomfy" in body
+    assert "uv pip install --python python3.11 -e /opt/reigh-livetest-prebuilt/vibecomfy" in body
     assert "vibecomfy.cli nodes restore" not in body
 
 

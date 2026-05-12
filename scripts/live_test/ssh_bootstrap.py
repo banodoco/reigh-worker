@@ -67,7 +67,7 @@ def _sageattention_install_block(python_path: str) -> str:
     return (
         "rm -rf /tmp/sageattention\n"
         "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention\n"
-        f"{py} -m pip install --no-build-isolation /tmp/sageattention\n"
+        f"uv pip install --python {py} --no-build-isolation /tmp/sageattention\n"
         f"{py} - <<'PY'\n"
         "import sageattention\n"
         "if not callable(getattr(sageattention, 'sageattn', None)):\n"
@@ -221,8 +221,8 @@ def _vibecomfy_install_shell(
             f"test -f {_quote(workdir)}/workflow_corpus/manifests/coverage.json\n"
         )
     return (
-        f"{_quote(python_path)} -m pip install -e {_quote(workdir)}\n"
-        f"{_quote(python_path)} -m pip install "
+        f"uv pip install --python {_quote(python_path)} -e {_quote(workdir)}\n"
+        f"uv pip install --python {_quote(python_path)} "
         "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
         "'comfy-script[default]'\n"
         f"{sage}"

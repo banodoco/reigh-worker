@@ -2195,8 +2195,8 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     assert "git -C /workspace/vibecomfy fetch origin branch-a" in command
     assert "git -C /workspace/vibecomfy reset --hard FETCH_HEAD" in command
     assert 'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"' in command
-    assert "python3.11 -m pip install -e /workspace/vibecomfy" in command
-    assert "python3.11 -m pip install" in command
+    assert "uv pip install --python python3.11 -e /workspace/vibecomfy" in command
+    assert "uv pip install --python python3.11" in command
     assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
     assert "export VIBECOMFY_ATTENTION_PROFILE=portable" in command
     assert "SageAttention" not in command
@@ -2227,7 +2227,7 @@ def test_clone_and_install_vibecomfy_installs_and_verifies_sageattention_when_pr
     command, _timeout = calls[0]
     assert "export VIBECOMFY_ATTENTION_PROFILE=sage" in command
     assert "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention" in command
-    assert "python3.11 -m pip install --no-build-isolation /tmp/sageattention" in command
+    assert "uv pip install --python python3.11 --no-build-isolation /tmp/sageattention" in command
     assert "import sageattention" in command
     assert "sageattention verified" in command
 
