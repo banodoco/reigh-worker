@@ -471,6 +471,12 @@ def _maybe_postprocess_vibecomfy_output(
     output_path: Path,
     run_workspace: Path,
 ) -> Path | None:
+    if _is_ltx_first_last_route(resolved.route_key) or _is_ltx_first_last_control_route(resolved.route_key):
+        width, height = _expected_dimensions(resolved.params)
+        if width is not None and height is not None:
+            target = run_workspace / "output" / f"{output_path.stem}-contract.mp4"
+            return _resize_video_to_contract(output_path, target, width=width, height=height)
+
     if resolved.route_key != "video_enhance" or not _bool_param(resolved.params, "enable_interpolation"):
         return None
     interpolation = resolved.params.get("interpolation")
@@ -480,6 +486,36 @@ def _maybe_postprocess_vibecomfy_output(
     fps = int(float(resolved.params.get("fps") or 16))
     target = run_workspace / "output" / f"video-enhance-rife-x{2 ** exp}.mp4"
     return _rife_interpolate_video(output_path, target, fps=fps, exp=exp)
+
+
+def _resize_video_to_contract(input_path: Path, output_path: Path, *, width: int, height: int) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-vf",
+        f"scale={width}:{height}:flags=lanczos",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "copy",
+        str(output_path),
+    ]
+    completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "failed to conform VibeComfy video artifact to output contract: "
+            f"{_bounded(completed.stderr) or _bounded(completed.stdout)}"
+        )
+    return output_path
 
 
 def _rife_exp_from_interpolation_params(interpolation_params: Mapping[str, Any]) -> int:
@@ -1497,8 +1533,8 @@ def _ltx_first_last_inputs(resolved: ResolvedTask, run_workspace: Path) -> dict[
         "last_name": last_name,
         "width": width,
         "height": height,
-        "template_width": width,
-        "template_height": height,
+        "template_width": width * 2,
+        "template_height": height * 2,
         "frames": frames,
         "fps": fps,
         "prompt": prompt,
@@ -1552,7 +1588,8 @@ def _ltx_exact_frame_count_scratchpad_lines(values: Mapping[str, Any]) -> list[s
 
 def _ltx_template_dimension_scratchpad_lines(values: Mapping[str, Any]) -> list[str]:
     # Worker params are final artifact dimensions. The Runexx-derived LTX
-    # templates now emit the configured canvas size directly.
+    # first/last templates run stably at a 2x internal canvas, then the adapter
+    # conforms the produced artifact back to the app contract.
     height = int(values["template_height"])
     width = int(values["template_width"])
     return [

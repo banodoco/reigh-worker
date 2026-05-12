@@ -206,7 +206,8 @@ def test_animate_character_scratchpad_binds_requested_frame_count(monkeypatch, t
 
     assert ok is True
     assert result and result.endswith("out.mp4")
-    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    vibe_command = next(command for command in commands if len(command) > 4 and str(command[4]).endswith("_scratchpad.py"))
+    source = Path(vibe_command[4]).read_text(encoding="utf-8")
     assert "load_workflow_any('video/wan22_animate_native_first_stage')" in source
     assert "workflow.nodes['232:62'].inputs['length'] = 49" in source
     assert "workflow.nodes['232:230'].inputs['length'] = 49" in source
@@ -215,19 +216,24 @@ def test_animate_character_scratchpad_binds_requested_frame_count(monkeypatch, t
 
 def test_ltx_first_last_scratchpad_binds_anchor_images_and_runtime_fields(monkeypatch, tmp_path):
     commands = []
+    validated = []
     start = tmp_path / "start.png"
     end = tmp_path / "end.png"
     start.write_bytes(b"start")
     end.write_bytes(b"end")
 
-    def _run(command, cwd, env, text, capture_output, check):
+    def _run(command, *args, **kwargs):
         commands.append(command)
+        if command[0] == "ffmpeg":
+            Path(command[-1]).write_bytes(b"resized")
+            return _completed()
+        cwd = kwargs["cwd"]
         output = Path(cwd) / "out.mp4"
         output.write_bytes(b"fake")
         return _completed(stdout="output: out.mp4\n")
 
     monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
-    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda path, contract: validated.append((path, contract)))
 
     resolved = resolve_task_route(
         task_id="ltx-task",
@@ -250,13 +256,20 @@ def test_ltx_first_last_scratchpad_binds_anchor_images_and_runtime_fields(monkey
     ok, result = handle_vibecomfy_resolved_task(resolved, tmp_path)
 
     assert ok is True
-    assert result and result.endswith("out.mp4")
-    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    assert result and result.endswith("out-contract.mp4")
+    ffmpeg_command = next(command for command in commands if command[0] == "ffmpeg")
+    assert ffmpeg_command[-3:-1] == ["-c:a", "copy"]
+    assert ffmpeg_command[-1].endswith("/output/out-contract.mp4")
+    assert validated and str(validated[0][0]).endswith("out-contract.mp4")
+    assert validated[0][1].expected_width == 1280
+    assert validated[0][1].expected_height == 720
+    vibe_command = next(command for command in commands if len(command) > 4 and str(command[4]).endswith("_scratchpad.py"))
+    source = Path(vibe_command[4]).read_text(encoding="utf-8")
     assert "load_workflow_any('video/ltx2_3_runexx_first_last_frame')" in source
     assert "workflow.nodes['45'].inputs['image'] = \"ltx_first_ltx-task.png\"" in source
     assert "workflow.nodes['47'].inputs['image'] = \"ltx_last_ltx-task.png\"" in source
-    assert "workflow.nodes['2080'].inputs['widget_0'] = 1280" in source
-    assert "workflow.nodes['2079'].inputs['widget_0'] = 720" in source
+    assert "workflow.nodes['2080'].inputs['widget_0'] = 2560" in source
+    assert "workflow.nodes['2079'].inputs['widget_0'] = 1440" in source
     assert "if '2077' in workflow.nodes:" in source
     assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in source
     assert "workflow.nodes['2078'].inputs['widget_0'] = 81" in source
@@ -621,7 +634,8 @@ def test_qwen_edit_materializes_input_image_and_scratchpad(monkeypatch, tmp_path
     run_dir = tmp_path / "vibecomfy_runs" / "qwen_image_edit-task"
     materialized = list((run_dir / "input").glob("qwen_image_edit_qwen_image_edit-task.*"))
     assert materialized
-    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    vibe_command = next(command for command in commands if len(command) > 4 and str(command[4]).endswith("_scratchpad.py"))
+    source = Path(vibe_command[4]).read_text(encoding="utf-8")
     assert "load_workflow_any('edit/qwen_image_edit')" in source
     assert "workflow.nodes['78'].inputs['image']" in source
     assert 'workflow.set_prompt("qwen_image_edit prompt")' in source
@@ -654,7 +668,8 @@ def test_inpaint_route_uses_mask_composite(monkeypatch, tmp_path):
 
     assert ok is True
     assert result and result.endswith("out.png")
-    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    vibe_command = next(command for command in commands if len(command) > 4 and str(command[4]).endswith("_scratchpad.py"))
+    source = Path(vibe_command[4]).read_text(encoding="utf-8")
     assert "load_workflow_any('edit/qwen_image_edit')" in source
     assert "image_inpaint_image_inpaint-task.jpg" in source
 
@@ -809,19 +824,24 @@ def test_wan_vace_materializes_anchors_control_and_scratchpad(monkeypatch, tmp_p
 
 def test_ltx_first_last_materializes_anchors_and_scratchpad(monkeypatch, tmp_path):
     commands = []
+    validated = []
     first = tmp_path / "first.png"
     last = tmp_path / "last.png"
     first.write_bytes(b"first")
     last.write_bytes(b"last")
 
-    def _run(command, cwd, env, text, capture_output, check):
+    def _run(command, *args, **kwargs):
         commands.append(command)
+        if command[0] == "ffmpeg":
+            Path(command[-1]).write_bytes(b"resized")
+            return _completed()
+        cwd = kwargs["cwd"]
         output = Path(cwd) / "out.mp4"
         output.write_bytes(b"fake")
         return _completed(stdout="output: out.mp4\n")
 
     monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
-    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(vibecomfy_adapter, "validate_video_artifact", lambda path, contract: validated.append((path, contract)))
     resolved = resolve_task_route(
         task_id="ltx-task",
         task_type="travel_segment",
@@ -842,8 +862,13 @@ def test_ltx_first_last_materializes_anchors_and_scratchpad(monkeypatch, tmp_pat
     ok, result = handle_vibecomfy_resolved_task(resolved, tmp_path)
 
     assert ok is True
-    assert result and result.endswith("out.mp4")
-    source = Path(commands[0][4]).read_text(encoding="utf-8")
+    assert result and result.endswith("out-contract.mp4")
+    assert any(command[0] == "ffmpeg" for command in commands)
+    assert validated and str(validated[0][0]).endswith("out-contract.mp4")
+    assert validated[0][1].expected_width == 768
+    assert validated[0][1].expected_height == 512
+    vibe_command = next(command for command in commands if len(command) > 4 and str(command[4]).endswith("_scratchpad.py"))
+    source = Path(vibe_command[4]).read_text(encoding="utf-8")
     assert "load_workflow_any('video/ltx2_3_runexx_first_last_frame')" in source
     assert "ltx_first_ltx-task.png" in source
     assert "ltx_last_ltx-task.png" in source
@@ -853,6 +878,6 @@ def test_ltx_first_last_materializes_anchors_and_scratchpad(monkeypatch, tmp_pat
     assert "if '2077' in workflow.nodes:" in source
     assert "workflow.nodes['2077'].inputs['widget_0'] = 'a'" in source
     assert "workflow.nodes['2078'].inputs['value'] = 97" in source
-    assert "workflow.nodes['2079'].inputs['value'] = 512" in source
-    assert "workflow.nodes['2080'].inputs['value'] = 768" in source
+    assert "workflow.nodes['2079'].inputs['value'] = 1024" in source
+    assert "workflow.nodes['2080'].inputs['value'] = 1536" in source
     assert "workflow.nodes['2076'].inputs['value'] = 24" in source
