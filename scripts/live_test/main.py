@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 
 from scripts.live_test import config
 from scripts.live_test.inspect import main as run_inspect
 from scripts.live_test.variant_fresh import run as run_variant_fresh
+from scripts.live_test.variant_prebuilt import run as run_variant_prebuilt
 from scripts.live_test.variant_update import run as run_variant_update
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Reigh live worker harness.")
-    parser.add_argument("--variant", choices=("fresh", "update"), required=True)
+    # Default stays `fresh` so existing automation continues to work unchanged.
+    # `auto` is opt-in: it preflights a prebuilt volume and falls back to fresh.
+    parser.add_argument(
+        "--variant",
+        choices=("fresh", "update", "prebuilt", "auto"),
+        default="fresh",
+    )
     parser.add_argument("--pod-id", help="Existing RunPod pod ID for update-mode takeover.")
     parser.add_argument(
         "--spawn-takeover",
@@ -105,6 +113,40 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reserved for future matrix fan-out; current harness always runs serially.",
     )
+    # --- Prebuilt validation-environment flags (consumed by variant_prebuilt) ----
+    parser.add_argument(
+        "--prebuilt-volume-name",
+        default=None,
+        help="Override the prebuilt volume name (defaults to PREBUILT_VOLUME_NAME_PREFIX + profile-).",
+    )
+    parser.add_argument(
+        "--strict-prebuilt",
+        action="store_true",
+        help="Prebuilt variant: abort on any delta drift instead of delta-syncing.",
+    )
+    parser.add_argument(
+        "--no-allow-delta",
+        dest="allow_delta",
+        action="store_false",
+        help="Disable delta sync; combine with --strict-prebuilt to enforce zero drift.",
+    )
+    parser.set_defaults(allow_delta=True)
+    parser.add_argument(
+        "--update-manifest-on-sync",
+        action="store_true",
+        help="Rewrite the manifest after a successful delta sync (default: do not rewrite).",
+    )
+    parser.add_argument(
+        "--container-disk-gb",
+        type=int,
+        default=None,
+        help="Container disk size in GB for the consumer pod (prebuilt only; floor 100, default 200).",
+    )
+    parser.add_argument(
+        "--python-version",
+        default=None,
+        help="Override expected python_version for the prebuilt manifest hard-fail drift check.",
+    )
     return parser
 
 
@@ -113,23 +155,101 @@ def _live_test_selector_namespace() -> str:
 
 
 def _finalize_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> argparse.Namespace:
+    # Selector-namespace normalisation runs for all variants (fresh / update /
+    # prebuilt) so vibecomfy+production gets the live-test-scoped namespace
+    # regardless of which driver dispatches.
     if args.wgp_rollback:
         args.backend = "wgp"
     elif args.backend == "vibecomfy" and args.selector_namespace == "production":
         args.selector_namespace = _live_test_selector_namespace()
 
-    if args.variant == "fresh":
+    if args.variant in ("fresh", "prebuilt", "auto"):
         if args.pod_id or args.spawn_takeover:
-            parser.error("--pod-id/--spawn-takeover are only valid with --variant update")
+            parser.error(
+                "--pod-id/--spawn-takeover are only valid with --variant update"
+            )
         if args.no_terminate is None:
             args.no_terminate = False
+        if args.variant in ("prebuilt", "auto"):
+            # Enforce container-disk floor of 100 GB; default to 200 when unset.
+            if args.container_disk_gb is None:
+                args.container_disk_gb = 200
+            if args.container_disk_gb < 100:
+                parser.error(
+                    f"--container-disk-gb must be >= 100 for --variant {args.variant} "
+                    f"(got {args.container_disk_gb})"
+                )
         return args
 
+    # update variant
     if bool(args.pod_id) == bool(args.spawn_takeover):
         parser.error("update variant requires exactly one of --pod-id or --spawn-takeover")
     if args.no_terminate is None:
         args.no_terminate = True
     return args
+
+
+def _auto_dispatch_variant(args: argparse.Namespace) -> str:
+    """Preflight a prebuilt volume and return either 'prebuilt' or 'fresh'.
+
+    Emits a structured `prebuilt_unavailable` log line on stdout when no volume
+    matches, so the operator can see the fallback reason without spelunking
+    through the fresh-variant logs.
+    """
+    api_key = config.get_env("RUNPOD_API_KEY")
+    if not api_key:
+        print(
+            json.dumps(
+                {
+                    "event": "prebuilt_unavailable",
+                    "reason": "RUNPOD_API_KEY not set; cannot enumerate volumes",
+                }
+            ),
+            flush=True,
+        )
+        return "fresh"
+    try:
+        from scripts.live_test._shared import select_network_volume
+
+        selection = select_network_volume(
+            api_key, name_prefix=config.PREBUILT_VOLUME_NAME_PREFIX
+        )
+    except Exception as exc:  # noqa: BLE001 — auto preflight should never explode
+        print(
+            json.dumps(
+                {
+                    "event": "prebuilt_unavailable",
+                    "reason": f"select_network_volume failed: {exc}",
+                }
+            ),
+            flush=True,
+        )
+        return "fresh"
+    if selection is None:
+        print(
+            json.dumps(
+                {
+                    "event": "prebuilt_unavailable",
+                    "reason": (
+                        f"no volume matches prefix {config.PREBUILT_VOLUME_NAME_PREFIX!r}"
+                    ),
+                }
+            ),
+            flush=True,
+        )
+        return "fresh"
+    _, name, data_center_id = selection
+    print(
+        json.dumps(
+            {
+                "event": "prebuilt_available",
+                "volume_name": name,
+                "data_center_id": data_center_id,
+            }
+        ),
+        flush=True,
+    )
+    return "prebuilt"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -138,8 +258,13 @@ def main(argv: list[str] | None = None) -> int:
         return run_inspect(effective_argv[1:])
     parser = build_parser()
     args = _finalize_args(parser.parse_args(effective_argv), parser)
+    if args.variant == "auto":
+        resolved = _auto_dispatch_variant(args)
+        args.variant = resolved
     if args.variant == "fresh":
         return run_variant_fresh(args)
+    if args.variant == "prebuilt":
+        return run_variant_prebuilt(args)
     return run_variant_update(args)
 
 

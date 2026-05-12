@@ -28,20 +28,22 @@ def build_run_worker_command(
     wgp_profile: int,
     idle_release_minutes: int,
     redact_secrets: bool = False,
+    venv_path: str = "/opt/reigh-worker-live-test-venv",
+    python_version: str = "3.10",
 ) -> str:
     workdir_q = _quote(workdir)
     prefix = [
         f"cd {workdir_q}",
         "mkdir -p logs",
         'export PATH="$HOME/.local/bin:$PATH"',
-        'export UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"',
+        f'export UV_PROJECT_ENVIRONMENT="{venv_path}"',
     ]
     worker_parts = [
         "nohup",
         "uv",
         "run",
         "--python",
-        "3.10",
+        python_version,
         "--extra",
         "cuda124",
         "python",

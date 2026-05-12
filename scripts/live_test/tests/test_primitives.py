@@ -807,7 +807,7 @@ def test_terminate_guard_treats_missing_pod_as_already_terminated(monkeypatch: p
 def test_prune_stale_live_test_pods_uses_timestamped_names_when_uptime_missing(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("REIGH_LIVE_TEST_SKIP_STALE_POD_CLEANUP", raising=False)
     terminated: list[tuple[str, str]] = []
-    pods = [
+    fresh_pods = [
         SimpleNamespace(
             id="stale-pod",
             name="reigh-live-test-fresh-20260507t190615z",
@@ -821,11 +821,24 @@ def test_prune_stale_live_test_pods_uses_timestamped_names_when_uptime_missing(m
             created_at=None,
         ),
     ]
+    prebuilt_pods = [
+        SimpleNamespace(
+            id="stale-prebuilt",
+            name="reigh-livetest-prebuilt-20260507t190615z",
+            uptime_seconds=None,
+            created_at=None,
+        ),
+    ]
+    seen_prefixes: list[str] = []
 
     async def fake_list_pods(api_key: str, prefix: str):
         assert api_key == "api-key"
-        assert prefix == "reigh-live-test-fresh-"
-        return pods
+        seen_prefixes.append(prefix)
+        if prefix == "reigh-live-test-fresh-":
+            return fresh_pods
+        if prefix == "reigh-livetest-prebuilt-":
+            return prebuilt_pods
+        return []
 
     async def fake_terminate(api_key: str, pod_id: str):
         terminated.append((api_key, pod_id))
@@ -838,11 +851,16 @@ def test_prune_stale_live_test_pods_uses_timestamped_names_when_uptime_missing(m
         now=datetime(2026, 5, 9, 12, 0, 0, tzinfo=timezone.utc),
     )
 
-    assert result.inspected == 2
-    assert result.stale == ("stale-pod",)
-    assert result.terminated == ("stale-pod",)
+    assert seen_prefixes == [
+        "reigh-live-test-fresh-",
+        "reigh-livetest-prebuilt-",
+        "reigh-livetest-builder-",
+    ]
+    assert result.inspected == 3
+    assert set(result.stale) == {"stale-pod", "stale-prebuilt"}
+    assert set(result.terminated) == {"stale-pod", "stale-prebuilt"}
     assert result.failed == ()
-    assert terminated == [("api-key", "stale-pod")]
+    assert sorted(terminated) == [("api-key", "stale-pod"), ("api-key", "stale-prebuilt")]
 
 
 def test_prune_stale_live_test_pods_can_be_disabled(monkeypatch: pytest.MonkeyPatch):
@@ -864,10 +882,30 @@ def test_build_run_worker_command_uses_run_worker_py_and_idle_zero():
         wgp_profile=3,
         idle_release_minutes=0,
     )
+    # Mechanism: defaults substitute the legacy venv_path and python_version
+    # into the rendered shell command.
     assert "python run_worker.py" in command
     assert "--idle-release-minutes 0" in command
     assert "--save-logging logs/worker.log" in command
     assert 'UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"' in command
+    assert "--python 3.10" in command
+
+
+def test_build_run_worker_command_parameterizes_venv_path_and_python_version():
+    command = build_run_worker_command(
+        "/workspace/Reigh-Worker-LiveTest",
+        reigh_token=None,
+        supabase_url="https://supabase.example",
+        worker_id="worker-1",
+        wgp_profile=3,
+        idle_release_minutes=0,
+        venv_path="/opt/prebuilt-cuda124-venv",
+        python_version="3.11",
+    )
+    assert 'UV_PROJECT_ENVIRONMENT="/opt/prebuilt-cuda124-venv"' in command
+    assert "--python 3.11" in command
+    assert 'UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv"' not in command
+    assert "--python 3.10" not in command
 
 
 def test_build_run_worker_command_can_redact_access_token():
@@ -2381,6 +2419,7 @@ def test_variant_update_spawn_takeover_threads_worker_id_not_pod_id(monkeypatch:
             return None
 
     monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
+    monkeypatch.setattr("scripts.live_test.variant_update._abort_if_prebuilt_cache_present", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr(
@@ -2500,6 +2539,7 @@ def test_variant_update_existing_mode_uses_stale_heartbeat_gate(monkeypatch: pyt
             return None
 
     monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
+    monkeypatch.setattr("scripts.live_test.variant_update._abort_if_prebuilt_cache_present", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr(
@@ -2679,6 +2719,7 @@ def test_variant_update_vibecomfy_refreshes_vibecomfy_checkout(monkeypatch: pyte
             return None
 
     monkeypatch.setattr("scripts.live_test.variant_update.open_session", lambda _pod_id, _api_key: DummySSH())
+    monkeypatch.setattr("scripts.live_test.variant_update._abort_if_prebuilt_cache_present", lambda _ssh: None)
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_branch", lambda _ssh, _workdir=None: "main")
     monkeypatch.setattr("scripts.live_test.variant_update._read_remote_sha", lambda _ssh, _workdir=None: "sha-prev")
     monkeypatch.setattr("scripts.live_test.variant_update.capture_current_worker_cmdline", lambda _ssh: None)

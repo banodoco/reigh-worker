@@ -90,6 +90,23 @@ REMOTE_SYSTEM_DEPS = (
 log = get_logger(__name__)
 
 
+PREBUILT_MANIFEST_PATH = "/workspace/reigh-livetest-prebuilt/env.manifest.json"
+
+
+def _abort_if_prebuilt_cache_present(ssh) -> None:
+    exit_code, _stdout, _stderr = ssh.execute_command(
+        f"test -f {PREBUILT_MANIFEST_PATH}",
+        timeout=30,
+    )
+    if exit_code == 0:
+        raise RuntimeError(
+            "Prebuilt cache present at /workspace/reigh-livetest-prebuilt; "
+            "--variant update would mutate the cached venv at /opt/reigh-worker-live-test-venv. "
+            "Use --variant prebuilt instead, or run `rl prebuilt invalidate --volume-name X` first. "
+            "This applies to both --pod-id and --spawn-takeover modes."
+        )
+
+
 def _timestamp_label() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -690,6 +707,7 @@ def run(args) -> int:
         branch, _sha = push_working_copy_to_temp_branch(worker_repo_path, snapshot)
 
         ssh = open_session(pod_id, api_key)
+        _abort_if_prebuilt_cache_present(ssh)
         workdir = _resolve_update_workdir(db, pod_id, ssh)
         if _remote_dir_exists(ssh, workdir):
             prev_remote_branch = _read_remote_branch(ssh, workdir)

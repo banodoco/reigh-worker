@@ -163,8 +163,81 @@ def clone_repo_into(ssh, workdir: str, repo_url: str, branch: str) -> None:
     _execute(ssh, command, timeout=1800)
 
 
+def _uv_sync_shell(
+    workdir: str,
+    *,
+    env_path: str,
+    extras: tuple[str, ...] = ("cuda124",),
+    with_locked: bool = False,
+) -> str:
+    """Return the shell script body that runs ``uv sync`` with retry semantics.
+
+    Includes the ``cd``, PATH/env exports, and the retry loop. Callers must
+    add any preamble (apt-get install, uv install) themselves.
+    """
+    if not extras:
+        raise ValueError("_uv_sync_shell requires a non-empty extras tuple")
+    extras_args = " ".join(f"--extra {extra}" for extra in extras)
+    locked_flag = " --locked" if with_locked else ""
+    return (
+        f"cd {shlex.quote(workdir)}\n"
+        "export PATH=\"$HOME/.local/bin:$PATH\"\n"
+        f"export UV_PROJECT_ENVIRONMENT={env_path}\n"
+        "export UV_LINK_MODE=copy\n"
+        "for attempt in 1 2 3; do\n"
+        f"  if uv sync{locked_flag} {extras_args}; then\n"
+        "    break\n"
+        "  fi\n"
+        "  echo \"uv sync attempt $attempt failed; cleaning partial venv and retrying\"\n"
+        "  rm -rf .venv \"$UV_PROJECT_ENVIRONMENT\"\n"
+        "  sleep 5\n"
+        "  if [ $attempt -eq 3 ]; then exit 1; fi\n"
+        "done\n"
+    )
+
+
+def _vibecomfy_install_shell(
+    workdir: str,
+    *,
+    python_path: str,
+    attention_profile: str | None,
+    run_nodes_restore: bool = True,
+) -> str:
+    """Return the shell script body that installs VibeComfy + ComfyUI into ``workdir``.
+
+    Assumes the repo has already been cloned/checked-out at ``workdir``. The
+    caller may compose this snippet behind a fresh clone (cold install) or
+    behind a ``git fetch && reset --hard`` (warm sync).
+    """
+    resolved = _resolve_attention_profile(attention_profile)
+    sage = _sageattention_install_block(python_path) if resolved == "sage" else ""
+    nodes_block = ""
+    if run_nodes_restore:
+        nodes_block = (
+            f"cd {_quote(workdir)}\n"
+            "test -f custom_nodes.lock\n"
+            f"{_quote(python_path)} -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock\n"
+            f"test -f {_quote(workdir)}/template_index.json\n"
+            f"test -f {_quote(workdir)}/workflow_corpus/manifests/coverage.json\n"
+        )
+    return (
+        f"{_quote(python_path)} -m pip install -e {_quote(workdir)}\n"
+        f"{_quote(python_path)} -m pip install "
+        "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
+        "'comfy-script[default]'\n"
+        f"{sage}"
+        f"{nodes_block}"
+    )
+
+
 def run_install(ssh, workdir: str) -> None:
     package_list = " ".join(APT_INSTALL_PACKAGES)
+    sync_shell = _uv_sync_shell(
+        workdir,
+        env_path="/opt/reigh-worker-live-test-venv",
+        extras=("cuda124",),
+        with_locked=False,
+    )
     command = (
         "bash -lc "
         + _quote(
@@ -175,22 +248,7 @@ def run_install(ssh, workdir: str) -> None:
             "  curl -LsSf https://astral.sh/uv/install.sh | sh\n"
             "  export PATH=\"$HOME/.local/bin:$PATH\"\n"
             "fi\n"
-            f"cd {shlex.quote(workdir)}\n"
-            "export PATH=\"$HOME/.local/bin:$PATH\"\n"
-            "export UV_PROJECT_ENVIRONMENT=/opt/reigh-worker-live-test-venv\n"
-            # Network volume is MooseFS which doesn't support hardlinks; force copy.
-            "export UV_LINK_MODE=copy\n"
-            # --locked dropped: main has newer pyproject deps (runpod-lifecycle)
-            # that the committed uv.lock doesn't yet include; let uv update lock in-place.
-            "for attempt in 1 2 3; do\n"
-            "  if uv sync --extra cuda124; then\n"
-            "    break\n"
-            "  fi\n"
-            "  echo \"uv sync attempt $attempt failed; cleaning partial venv and retrying\"\n"
-            "  rm -rf .venv \"$UV_PROJECT_ENVIRONMENT\"\n"
-            "  sleep 5\n"
-            "  if [ $attempt -eq 3 ]; then exit 1; fi\n"
-            "done\n"
+            + sync_shell
         )
     )
     _execute(ssh, command, timeout=3600)
@@ -207,7 +265,12 @@ def clone_and_install_vibecomfy(
 ) -> None:
     parent = workdir.rsplit("/", 1)[0] or "/"
     resolved_attention_profile = _resolve_attention_profile(attention_profile)
-    sageattention_install = _sageattention_install_block(python_path) if resolved_attention_profile == "sage" else ""
+    install_shell = _vibecomfy_install_shell(
+        workdir,
+        python_path=python_path,
+        attention_profile=attention_profile,
+        run_nodes_restore=True,
+    )
     command = (
         "bash -lc "
         + _quote(
@@ -221,19 +284,124 @@ def clone_and_install_vibecomfy(
             f"git -C {_quote(workdir)} reset --hard FETCH_HEAD\n"
             f"git -C {_quote(workdir)} clean -ffd\n"
             f"echo \"VibeComfy checkout: $(git -C {_quote(workdir)} rev-parse --short HEAD)\"\n"
-            f"{_quote(python_path)} -m pip install -e {_quote(workdir)}\n"
-            f"{_quote(python_path)} -m pip install "
-            "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
-            "'comfy-script[default]'\n"
-            f"{sageattention_install}"
-            f"cd {_quote(workdir)}\n"
-            "test -f custom_nodes.lock\n"
-            f"{_quote(python_path)} -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock\n"
-            f"test -f {_quote(workdir)}/template_index.json\n"
-            f"test -f {_quote(workdir)}/workflow_corpus/manifests/coverage.json\n"
+            + install_shell
         )
     )
     _execute(ssh, command, timeout=3600)
+
+
+def bundle_venv(ssh, *, source_env_path: str, bundle_path: str) -> str:
+    """Tar+zstd the venv at *source_env_path* into *bundle_path*; return SHA256."""
+    return _bundle_directory(ssh, source_path=source_env_path, bundle_path=bundle_path)
+
+
+def bundle_install_tree(ssh, *, source_path: str, bundle_path: str) -> str:
+    """Tar+zstd an install tree (e.g. VibeComfy checkout) at *source_path*; return SHA256."""
+    return _bundle_directory(ssh, source_path=source_path, bundle_path=bundle_path)
+
+
+def _bundle_directory(ssh, *, source_path: str, bundle_path: str) -> str:
+    parent_dir = bundle_path.rsplit("/", 1)[0] or "/"
+    staging = f"{bundle_path}.staging"
+    source_parent = source_path.rsplit("/", 1)[0] or "/"
+    source_name = source_path.rsplit("/", 1)[1] if "/" in source_path else source_path
+    script = (
+        "set -euo pipefail\n"
+        f"mkdir -p {_quote(parent_dir)}\n"
+        f"rm -f {_quote(staging)}\n"
+        f"tar --use-compress-program 'zstd -1 --threads=0' "
+        f"-cf {_quote(staging)} -C {_quote(source_parent)} {_quote(source_name)}\n"
+        f"sha256sum {_quote(staging)} | awk '{{print $1}}'\n"
+        f"mv {_quote(staging)} {_quote(bundle_path)}\n"
+    )
+    stdout, _stderr = _execute(ssh, "bash -lc " + _quote(script), timeout=7200)
+    digest = ""
+    for line in stdout.splitlines():
+        candidate = line.strip()
+        if len(candidate) == 64 and all(c in "0123456789abcdef" for c in candidate.lower()):
+            digest = candidate.lower()
+    if not digest:
+        raise RuntimeError(
+            f"bundle_directory failed to capture sha256sum output for {source_path} -> {bundle_path}; stdout={stdout!r}"
+        )
+    return digest
+
+
+def extract_bundle_to_container_disk(
+    ssh,
+    *,
+    bundle_path: str,
+    target_path: str,
+    expected_sha256: str,
+) -> None:
+    """Verify the SHA256 of *bundle_path* matches *expected_sha256*, then extract it into *target_path*."""
+    target_parent = target_path.rsplit("/", 1)[0] or "/"
+    sha_script = (
+        "set -euo pipefail\n"
+        f"sha256sum {_quote(bundle_path)} | awk '{{print $1}}'\n"
+    )
+    stdout, _stderr = _execute(ssh, "bash -lc " + _quote(sha_script), timeout=600)
+    observed = stdout.strip().splitlines()[-1].strip().lower() if stdout.strip() else ""
+    if observed != expected_sha256.lower():
+        raise RuntimeError(
+            "extract_bundle_to_container_disk sha256 mismatch for "
+            f"{bundle_path}: expected {expected_sha256}, observed {observed!r}"
+        )
+    extract_script = (
+        "set -euo pipefail\n"
+        f"mkdir -p {_quote(target_parent)}\n"
+        f"rm -rf {_quote(target_path)}\n"
+        f"mkdir -p {_quote(target_path)}\n"
+        f"if command -v pv >/dev/null 2>&1; then\n"
+        f"  pv {_quote(bundle_path)} | tar --use-compress-program 'zstd -d --threads=0' -xf - -C {_quote(target_path)} --strip-components=1\n"
+        f"else\n"
+        f"  tar --use-compress-program 'zstd -d --threads=0' -xf {_quote(bundle_path)} -C {_quote(target_path)} --strip-components=1\n"
+        f"fi\n"
+    )
+    exit_code, ex_stdout, ex_stderr = ssh.execute_command(
+        "bash -lc " + _quote(extract_script), timeout=3600
+    )
+    if exit_code != 0:
+        err_lines = (ex_stderr or "").splitlines()
+        first = err_lines[:50]
+        last = err_lines[-50:] if len(err_lines) > 50 else []
+        diag = "\n".join(first + (["..."] + last if last else []))
+        raise RuntimeError(
+            f"extract_bundle_to_container_disk failed extracting {bundle_path} -> {target_path}; "
+            f"exit={exit_code}; stderr:\n{diag}\nstdout:\n{ex_stdout}"
+        )
+
+
+def ensure_git_ref_synced(
+    ssh,
+    *,
+    workdir: str,
+    repo_url: str,
+    ref: str,
+    force_clone: bool = False,
+) -> None:
+    """Materialize *ref* of *repo_url* at *workdir* without running any uv sync."""
+    parent = workdir.rsplit("/", 1)[0] or "/"
+    if force_clone:
+        script = (
+            "set -euo pipefail\n"
+            f"mkdir -p {_quote(parent)}\n"
+            f"rm -rf {_quote(workdir)}\n"
+            f"git clone {_quote(repo_url)} {_quote(workdir)}\n"
+            f"git -C {_quote(workdir)} fetch origin {_quote(ref)}\n"
+            f"git -C {_quote(workdir)} checkout {_quote(ref)}\n"
+            f"git -C {_quote(workdir)} reset --hard FETCH_HEAD\n"
+            f"git -C {_quote(workdir)} clean -ffd\n"
+        )
+    else:
+        script = (
+            "set -euo pipefail\n"
+            f"git -C {_quote(workdir)} fetch origin {_quote(ref)}\n"
+            f"git -C {_quote(workdir)} checkout {_quote(ref)}\n"
+            f"git -C {_quote(workdir)} reset --hard FETCH_HEAD\n"
+            f"git -C {_quote(workdir)} clean -ffd\n"
+        )
+    _execute(ssh, "bash -lc " + _quote(script), timeout=1800)
 
 
 def export_env(env: dict[str, str]) -> str:
@@ -353,10 +521,14 @@ __all__ = [
     "KILL_COMMAND",
     "PROCESS_SCAN_COMMAND",
     "WorkerProcessInfo",
+    "bundle_install_tree",
+    "bundle_venv",
     "capture_current_worker_cmdline",
     "clone_and_install_vibecomfy",
     "clone_repo_into",
+    "ensure_git_ref_synced",
     "export_env",
+    "extract_bundle_to_container_disk",
     "fetch_worker_logs",
     "kill_supervisor_and_worker",
     "launch_worker_detached",

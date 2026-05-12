@@ -4230,7 +4230,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rembg", extras = ["gpu"], specifier = "==2.0.65" },
     { name = "replicate", specifier = ">=1.0.0" },
-    { name = "runpod-lifecycle", git = "https://github.com/banodoco/runpod-lifecycle?rev=v0.1.0" },
+    { name = "runpod-lifecycle", git = "https://github.com/banodoco/runpod-lifecycle?rev=megaplan%2Fprebuilt-validation-env" },
     { name = "s3tokenizer" },
     { name = "safetensors", specifier = ">=0.4.0" },
     { name = "segment-anything" },
@@ -4517,8 +4517,8 @@ wheels = [
 
 [[package]]
 name = "runpod-lifecycle"
-version = "0.1.0"
-source = { git = "https://github.com/banodoco/runpod-lifecycle?rev=v0.1.0#bdb564e5166d900a3eff577b004725d8992cab4f" }
+version = "0.3.0"
+source = { git = "https://github.com/banodoco/runpod-lifecycle?rev=megaplan%2Fprebuilt-validation-env#3b90ab476001f95518535788458be06308dc26eb" }
 dependencies = [
     { name = "httpx" },
     { name = "paramiko" },

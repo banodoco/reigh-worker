@@ -121,6 +121,30 @@ RUNPOD_MIN_MEMORY_GB = RUNPOD.min_memory_gb
 RUNPOD_STORAGE_VOLUMES = RUNPOD.storage_volumes
 RUNPOD_RAM_TIERS = RUNPOD.ram_tiers
 
+# --------------------------------------------------------------------------- #
+# Prebuilt validation-environment naming + path convention.
+#
+# Volumes follow `reigh-livetest-prebuilt-{profile}-{datacenterid-lowercased}`.
+# At consumer launch time the region is resolved from RunPod's `dataCenterId`
+# via select_network_volume — it is NOT derived from RUNPOD_STORAGE_VOLUMES.
+# find_gpu_type has no region filter; pod-create enforces region implicitly via
+# the attached volume's dataCenterId.
+# --------------------------------------------------------------------------- #
+PREBUILT_VOLUME_NAME_PREFIX = "reigh-livetest-prebuilt-"
+PREBUILT_CACHE_ROOT = "/workspace/reigh-livetest-prebuilt"
+PREBUILT_RUNTIME_VENV_PATH = "/opt/reigh-worker-live-test-venv"
+PREBUILT_RUNTIME_WORKER_PATH = "/opt/reigh-livetest-prebuilt/worker"
+PREBUILT_RUNTIME_VIBECOMFY_PATH = "/opt/reigh-livetest-prebuilt/vibecomfy"
+
+
+def prebuilt_name_for_profile(profile: str, data_center_id: str) -> str:
+    """Return the canonical prebuilt volume name for *profile* in *data_center_id*.
+
+    The data-center suffix is lowercased so it matches the RunPod API
+    convention (e.g. ``eu-no-1``).
+    """
+    return f"{PREBUILT_VOLUME_NAME_PREFIX}{profile}-{data_center_id.lower()}"
+
 TIMEOUT_IMAGE_SEC = 900
 TIMEOUT_INDIVIDUAL_TRAVEL_SEGMENT_SEC = 1500
 TIMEOUT_TRAVEL_ORCHESTRATOR_SEC = 2400
@@ -178,6 +202,11 @@ __all__ = [
     "FIXTURES",
     "LTX_MODEL_ID",
     "ORCHESTRATOR_ROOT",
+    "PREBUILT_CACHE_ROOT",
+    "PREBUILT_RUNTIME_VENV_PATH",
+    "PREBUILT_RUNTIME_VIBECOMFY_PATH",
+    "PREBUILT_RUNTIME_WORKER_PATH",
+    "PREBUILT_VOLUME_NAME_PREFIX",
     "RunpodLifecycleMixin",
     "RUNPOD",
     "RUNPOD_CONTAINER_DISK_GB",
@@ -198,6 +227,7 @@ __all__ = [
     "get_env",
     "get_pod_ssh_details",
     "load_fixture_json",
+    "prebuilt_name_for_profile",
     "require_env",
     "terminate_pod",
 ]
