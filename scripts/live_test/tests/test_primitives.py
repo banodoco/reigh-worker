@@ -2069,11 +2069,18 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
         }[name],
     )
     monkeypatch.setattr("scripts.live_test.variant_fresh._runs_root", lambda: tmp_path)
+    create_pod_calls = []
+
+    def fake_create_pod(**kwargs):
+        create_pod_calls.append(kwargs)
+        return {"id": "pod-123", "networkVolumeId": "volume-1"}
+
     monkeypatch.setitem(
         sys.modules,
         "runpod_lifecycle.api",
         types.SimpleNamespace(
-            create_pod=lambda **_kwargs: {"id": "pod-123", "networkVolumeId": "volume-1"},
+            create_pod=fake_create_pod,
+            find_gpu_type=lambda _api_key, gpu_type: {"id": "RTX 4090", "displayName": gpu_type},
             get_network_volumes=lambda _api_key: [],
         ),
     )
@@ -2117,6 +2124,7 @@ def test_variant_fresh_registers_pod_worker_row_before_launch(monkeypatch: pytes
         route_key=[],
     )
     assert run_variant_fresh(args) == 0
+    assert create_pod_calls[0]["gpu_type_id"] == "RTX 4090"
     assert ("create_worker_record", "pod-123", variant_fresh.config.RUNPOD_GPU_TYPE, "pod-123") in events
     assert ("update_worker_status", "pod-123", "inactive", "pod-123") in events
     assert events.index(("launch_worker",)) < events.index(("wait_until_ready",)) < events.index(("queue_matrix",))

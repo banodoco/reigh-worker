@@ -165,6 +165,27 @@ def _capture_and_redact_noisy_lifecycle_output():
             log.warning("captured runpod lifecycle stderr: %s", captured_stderr)
 
 
+def _resolve_runpod_gpu_type_id(api_key: str, requested_gpu_type: str) -> tuple[str, str]:
+    from runpod_lifecycle.api import find_gpu_type
+
+    gpu = find_gpu_type(api_key, requested_gpu_type)
+    if not gpu:
+        raise RuntimeError(f"RunPod GPU type not found: {requested_gpu_type!r}")
+
+    gpu_type_id = str(gpu.get("id") or "").strip()
+    gpu_display_name = str(gpu.get("displayName") or requested_gpu_type).strip()
+    if not gpu_type_id:
+        raise RuntimeError(f"RunPod GPU type {requested_gpu_type!r} resolved without an id")
+
+    log.info(
+        "resolved RunPod GPU type",
+        requested_gpu_type=requested_gpu_type,
+        gpu_type_id=gpu_type_id,
+        gpu_display_name=gpu_display_name,
+    )
+    return gpu_type_id, gpu_display_name
+
+
 @contextmanager
 def _phase(name: str, **fields):
     started_at = time.monotonic()
@@ -364,6 +385,7 @@ def run(args) -> int:
         from runpod_lifecycle.api import create_pod as create_pod_and_wait
         from runpod_lifecycle.api import get_network_volumes
 
+        resolved_gpu_type_id, resolved_gpu_display_name = _resolve_runpod_gpu_type_id(api_key, config.RUNPOD_GPU_TYPE)
         network_volume_id: str | None = None
         selected_volume_name: str | None = None
         try:
@@ -382,11 +404,17 @@ def run(args) -> int:
         else:
             log.warning("no network volume matched %s; pod will only have ephemeral container disk", list(config.RUNPOD_STORAGE_VOLUMES))
 
-        with _phase("create_runpod_pod", gpu_type=config.RUNPOD_GPU_TYPE, image=config.RUNPOD_WORKER_IMAGE):
+        with _phase(
+            "create_runpod_pod",
+            gpu_type=config.RUNPOD_GPU_TYPE,
+            gpu_type_id=resolved_gpu_type_id,
+            gpu_display_name=resolved_gpu_display_name,
+            image=config.RUNPOD_WORKER_IMAGE,
+        ):
             with _capture_and_redact_noisy_lifecycle_output():
                 pod = create_pod_and_wait(
                     api_key=api_key,
-                    gpu_type_id=config.RUNPOD_GPU_TYPE,
+                    gpu_type_id=resolved_gpu_type_id,
                     image_name=config.RUNPOD_WORKER_IMAGE,
                     name=f"reigh-live-test-fresh-{_timestamp_label().lower()}",
                     network_volume_id=network_volume_id,
