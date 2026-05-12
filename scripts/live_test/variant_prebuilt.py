@@ -163,6 +163,15 @@ def _ensure_mounted(ssh, mount_path: str) -> None:
         )
 
 
+def _install_prebuilt_system_tools(ssh) -> None:
+    exit_code, _stdout, stderr = ssh.execute_command(
+        "bash -lc 'set -euo pipefail && apt-get update && apt-get install -y zstd pv'",
+        timeout=600,
+    )
+    if exit_code != 0:
+        raise RuntimeError(f"failed to install prebuilt system tools: stderr={stderr!r}")
+
+
 def _build_matrix_cases(args) -> list:
     cases = build_matrix(
         anchor_image_a=args.anchor_image_a,
@@ -416,6 +425,9 @@ def run(args) -> int:
 
         with _phase("attach_prebuilt_volume", mount=config.RUNPOD_VOLUME_MOUNT_PATH):
             _ensure_mounted(ssh, config.RUNPOD_VOLUME_MOUNT_PATH)
+
+        with _phase("install_prebuilt_system_tools"):
+            _install_prebuilt_system_tools(ssh)
 
         # Read the manifest BEFORE building a contract; the manifest's
         # python_version + bundle_format_version drive the contract paths

@@ -26,6 +26,7 @@ from scripts.live_test.terminate_guard import LIVE_TEST_POD_PREFIXES, _LIVE_TEST
 from scripts.live_test.variant_prebuilt import (
     _build_worker_env,
     _check_hard_fail_drift,
+    _install_prebuilt_system_tools,
     _resolve_volume,
 )
 
@@ -222,6 +223,20 @@ def test_prebuilt_dry_run_is_side_effect_free(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Variant: prebuilt" in out
     assert "z_image_turbo" in out
+
+
+def test_install_prebuilt_system_tools_installs_zstd_and_pv():
+    calls = []
+
+    class DummySSH:
+        def execute_command(self, command, timeout=600):
+            calls.append((command, timeout))
+            return 0, "", ""
+
+    _install_prebuilt_system_tools(DummySSH())
+    command, timeout = calls[0]
+    assert timeout == 600
+    assert "apt-get install -y zstd pv" in command
 
 
 # --------------------------------------------------------------------------- #
