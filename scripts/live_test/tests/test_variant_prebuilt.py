@@ -380,18 +380,16 @@ def test_prebuilt_health_failure_aborts_before_register_launch_or_queue(monkeypa
     monkeypatch.setattr(variant_prebuilt, "wait_until_ready", forbidden("wait_until_ready"))
     monkeypatch.setattr(variant_prebuilt, "queue_matrix", forbidden("queue_matrix"))
 
-    from runpod_lifecycle import api as runpod_api
+    from runpod_lifecycle import lifecycle
 
-    monkeypatch.setattr(
-        runpod_api,
-        "create_pod",
-        lambda **_kwargs: events.append("create_pod") or {"id": "pod-health-fail"},
-    )
-    monkeypatch.setattr(
-        runpod_api,
-        "get_network_volumes",
-        lambda _api_key: [{"id": "vol-1", "name": args.prebuilt_volume_name}],
-    )
+    async def fake_launch(runpod_config, *, name=None, hooks=None):
+        events.append("launch_pod")
+        assert runpod_config.storage_name == args.prebuilt_volume_name
+        assert runpod_config.ram_tiers == variant_prebuilt.config.RUNPOD_RAM_TIERS
+        assert name == "reigh-livetest-prebuilt-20260513t000000z"
+        return SimpleNamespace(id="pod-health-fail")
+
+    monkeypatch.setattr(lifecycle, "launch", fake_launch)
 
     with pytest.raises(RuntimeError) as info:
         variant_prebuilt.run(args)
@@ -400,7 +398,7 @@ def test_prebuilt_health_failure_aborts_before_register_launch_or_queue(monkeypa
     assert "Prebuilt consumer health validation failed before worker registration/launch" in message
     assert "assets/missing_model_asset" in message
     assert events.index("health_written") < events.index("terminate:pod-health-fail")
-    assert "create_pod" in events
+    assert "launch_pod" in events
     assert "targets_written" in events
     assert "health_written" in events
     assert (tmp_path / "runs" / "20260513T000000Z" / "targets.json").exists()

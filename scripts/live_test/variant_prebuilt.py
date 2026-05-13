@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import asyncio
 import json
 import shlex
 from typing import Any
@@ -577,20 +578,12 @@ def run(args) -> int:
     pod_id: str | None = None
     ssh = None
     try:
-        from runpod_lifecycle.api import create_pod as create_pod_and_wait
-        from runpod_lifecycle.api import get_network_volumes
+        from runpod_lifecycle import RunPodConfig
+        from runpod_lifecycle.lifecycle import launch as launch_pod
 
         resolved_gpu_type_id, resolved_gpu_display_name = _resolve_runpod_gpu_type_id(
             api_key, config.RUNPOD_GPU_TYPE
         )
-        # Look up the volume id explicitly (we know name + datacenter).
-        network_volume_id: str | None = None
-        for vol in get_network_volumes(api_key) or []:
-            if str(vol.get("name") or "") == volume_name:
-                network_volume_id = str(vol.get("id") or "")
-                break
-        if not network_volume_id:
-            raise RuntimeError(f"Could not resolve volume id for {volume_name!r}")
 
         container_disk_gb = args.container_disk_gb if args.container_disk_gb else 200
 
@@ -603,23 +596,24 @@ def run(args) -> int:
             data_center_id=data_center_id,
         ):
             with _capture_and_redact_noisy_lifecycle_output():
-                pod = create_pod_and_wait(
+                pod = asyncio.run(launch_pod(RunPodConfig(
                     api_key=api_key,
-                    gpu_type_id=resolved_gpu_type_id,
-                    image_name=config.RUNPOD_WORKER_IMAGE,
-                    name=f"{PREBUILT_POD_PREFIX}{_timestamp_label().lower()}",
-                    network_volume_id=network_volume_id,
+                    gpu_type=config.RUNPOD_GPU_TYPE,
+                    worker_image=config.RUNPOD_WORKER_IMAGE,
+                    name_prefix=PREBUILT_POD_PREFIX,
+                    storage_name=volume_name,
                     volume_mount_path=config.RUNPOD_VOLUME_MOUNT_PATH,
-                    disk_in_gb=container_disk_gb,
-                    container_disk_in_gb=container_disk_gb,
+                    disk_size_gb=container_disk_gb,
+                    container_disk_gb=container_disk_gb,
                     min_vcpu_count=config.RUNPOD_MIN_VCPU_COUNT,
-                    min_memory_in_gb=config.RUNPOD_MIN_MEMORY_GB,
+                    min_memory_gb=config.RUNPOD_MIN_MEMORY_GB,
+                    ram_tiers=config.RUNPOD_RAM_TIERS,
                     template_id=config.RUNPOD_TEMPLATE_ID,
                     env_vars={},
-                )
-        if not pod or not pod.get("id"):
-            raise RuntimeError("create_pod_and_wait did not return a pod id")
-        pod_id = str(pod["id"])
+                ), name=f"{PREBUILT_POD_PREFIX}{_timestamp_label().lower()}"))
+        if not pod or not pod.id:
+            raise RuntimeError("runpod_lifecycle.launch did not return a pod id")
+        pod_id = str(pod.id)
 
         with _phase("open_ssh_session", pod_id=pod_id):
             ssh = open_session(pod_id, api_key)
