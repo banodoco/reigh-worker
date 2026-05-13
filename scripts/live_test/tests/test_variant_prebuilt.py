@@ -385,7 +385,8 @@ def test_prebuilt_health_failure_aborts_before_register_launch_or_queue(monkeypa
     async def fake_launch(runpod_config, *, name=None, hooks=None):
         events.append("launch_pod")
         assert runpod_config.storage_name == args.prebuilt_volume_name
-        assert runpod_config.ram_tiers == variant_prebuilt.config.RUNPOD_RAM_TIERS
+        assert runpod_config.min_memory_gb == 16
+        assert 16 in runpod_config.ram_tiers
         assert name == "reigh-livetest-prebuilt-20260513t000000z"
         return SimpleNamespace(id="pod-health-fail")
 

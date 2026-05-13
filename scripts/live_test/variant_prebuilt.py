@@ -586,6 +586,10 @@ def run(args) -> int:
         )
 
         container_disk_gb = args.container_disk_gb if args.container_disk_gb else 200
+        prebuilt_min_memory_gb = min(config.RUNPOD_MIN_MEMORY_GB, 16)
+        prebuilt_ram_tiers = tuple(
+            tier for tier in config.RUNPOD_RAM_TIERS if tier >= prebuilt_min_memory_gb
+        ) or (prebuilt_min_memory_gb,)
 
         with _phase(
             "create_runpod_pod",
@@ -606,8 +610,8 @@ def run(args) -> int:
                     disk_size_gb=container_disk_gb,
                     container_disk_gb=container_disk_gb,
                     min_vcpu_count=config.RUNPOD_MIN_VCPU_COUNT,
-                    min_memory_gb=config.RUNPOD_MIN_MEMORY_GB,
-                    ram_tiers=config.RUNPOD_RAM_TIERS,
+                    min_memory_gb=prebuilt_min_memory_gb,
+                    ram_tiers=prebuilt_ram_tiers,
                     template_id=config.RUNPOD_TEMPLATE_ID,
                     env_vars={},
                 ), name=f"{PREBUILT_POD_PREFIX}{_timestamp_label().lower()}"))
