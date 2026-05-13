@@ -618,6 +618,12 @@ def run(args) -> int:
         if not pod or not pod.id:
             raise RuntimeError("runpod_lifecycle.launch did not return a pod id")
         pod_id = str(pod.id)
+        pod_details = {
+            "id": pod_id,
+            "name": getattr(pod, "name", None),
+            "networkVolumeId": getattr(pod, "_storage_volume", None),
+            "ram_tier": getattr(pod, "ram_tier", None),
+        }
 
         with _phase("open_ssh_session", pod_id=pod_id):
             ssh = open_session(pod_id, api_key)
@@ -820,7 +826,7 @@ def run(args) -> int:
 
         worker_env = _build_worker_env(token, supabase_url, service_role_key, args, contract)
 
-        register_worker_record(db, pod_id, pod, args, variant_label=PREBUILT_VARIANT)
+        register_worker_record(db, pod_id, pod_details, args, variant_label=PREBUILT_VARIANT)
 
         command = build_run_worker_command(
             contract.runtime_worker_path,
