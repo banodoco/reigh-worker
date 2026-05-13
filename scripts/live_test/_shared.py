@@ -157,29 +157,48 @@ def select_network_volume(
     api_key: str,
     *,
     name_prefix: str,
+    exact_name: str | None = None,
     data_center_filter: str | None = None,
 ) -> tuple[str, str, str] | None:
-    """Return ``(volume_id, name, data_center_id)`` of the first volume matching *name_prefix*.
+    """Return ``(volume_id, name, data_center_id)`` for a matching volume.
 
     Returns ``None`` if no volume matches. When *data_center_filter* is given,
     only volumes whose ``dataCenterId`` equals (case-insensitive) the filter
-    are considered.
+    are considered. Without a data-center filter, multiple matches are
+    ambiguous and raise instead of depending on RunPod response order.
     """
     from runpod_lifecycle import get_network_volumes
 
     volumes = get_network_volumes(api_key) or []
+    matches: list[tuple[str, str, str]] = []
+    normalized_filter = data_center_filter.lower().replace("_", "-") if data_center_filter else None
     for volume in volumes:
         name = str(volume.get("name") or "")
         volume_id = str(volume.get("id") or "")
         data_center_id = str(volume.get("dataCenterId") or "")
         if not name or not volume_id:
             continue
-        if not name.startswith(name_prefix):
+        if exact_name:
+            if name != exact_name:
+                continue
+        elif not name.startswith(name_prefix):
             continue
-        if data_center_filter and data_center_id.lower() != data_center_filter.lower():
+        if normalized_filter and data_center_id.lower().replace("_", "-") != normalized_filter:
             continue
-        return volume_id, name, data_center_id
-    return None
+        matches.append((volume_id, name, data_center_id))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: (item[2].lower().replace("_", "-"), item[1], item[0]))
+    if len(matches) > 1:
+        candidates = ", ".join(
+            f"{name} ({data_center_id or 'unknown-dc'}, id={volume_id})"
+            for volume_id, name, data_center_id in matches
+        )
+        raise RuntimeError(
+            "Multiple prebuilt volumes match; pass --prebuilt-data-center or --prebuilt-volume-name. "
+            f"Candidates: {candidates}"
+        )
+    return matches[0]
 
 
 def register_worker_record(

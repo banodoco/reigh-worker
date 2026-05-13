@@ -40,7 +40,7 @@ def _patch_dry_run_env(monkeypatch, *, allow_select=False):
     if not allow_select:
         monkeypatch.setattr(
             "scripts.live_test._shared.select_network_volume",
-            lambda api_key, *, name_prefix, data_center_filter=None: None,
+            lambda api_key, *, name_prefix, exact_name=None, data_center_filter=None: None,
         )
 
 
@@ -74,7 +74,7 @@ def test_variant_auto_dry_run_falls_back_to_fresh_when_no_volume(monkeypatch, ca
     # Force the auto preflight to return None (no volume found).
     monkeypatch.setattr(
         "scripts.live_test._shared.select_network_volume",
-        lambda api_key, *, name_prefix, data_center_filter=None: None,
+        lambda api_key, *, name_prefix, exact_name=None, data_center_filter=None: None,
     )
     # Ensure the fresh path's early dry-run branch fires (no token).
     monkeypatch.delenv("REIGH_LIVE_TEST_TOKEN", raising=False)
@@ -111,13 +111,19 @@ def test_variant_auto_dry_run_falls_back_to_fresh_when_no_volume(monkeypatch, ca
 
 def test_variant_auto_dry_run_picks_prebuilt_when_volume_reported(monkeypatch, capsys):
     """auto + matching volume → prebuilt_available JSON log + dispatch to prebuilt."""
-    monkeypatch.setattr(
-        "scripts.live_test._shared.select_network_volume",
-        lambda api_key, *, name_prefix, data_center_filter=None: (
+    selected = {}
+
+    def fake_select(api_key, *, name_prefix, exact_name=None, data_center_filter=None):
+        selected["data_center_filter"] = data_center_filter
+        return (
             "vol-123",
             "reigh-livetest-prebuilt-portable-eu-no-1",
             "eu-no-1",
-        ),
+        )
+
+    monkeypatch.setattr(
+        "scripts.live_test._shared.select_network_volume",
+        fake_select,
     )
     monkeypatch.delenv("REIGH_LIVE_TEST_TOKEN", raising=False)
     monkeypatch.setattr(
@@ -137,14 +143,17 @@ def test_variant_auto_dry_run_picks_prebuilt_when_volume_reported(monkeypatch, c
             "vibecomfy",
             "--case",
             "z_image_turbo",
+            "--prebuilt-data-center",
+            "eu-no-1",
         ]
     )
     assert rc == 0
-    captured = capsys.readouterr().out
-    assert "prebuilt_available" in captured
-    assert "Variant: prebuilt" in captured
+    output = capsys.readouterr().out
+    assert "prebuilt_available" in output
+    assert "Variant: prebuilt" in output
     # And the prebuilt contract paths are surfaced in the dry-run plan.
-    assert "/opt/reigh-livetest-prebuilt/worker" in captured
+    assert "/opt/reigh-livetest-prebuilt/worker" in output
+    assert selected["data_center_filter"] == "eu-no-1"
 
 
 def test_emit_targets_json_scopes_to_selected_case_without_vibecomfy_import(monkeypatch, tmp_path):
@@ -175,6 +184,8 @@ def test_emit_targets_json_scopes_to_selected_case_without_vibecomfy_import(monk
     assert manifest["backend"] == "vibecomfy"
     assert manifest["selection"]["case_names"] == ["z_image_turbo"]
     assert manifest["templates"] == ["image/z_image"]
+    assert manifest["target_count"] == 1
+    assert manifest["template_count"] == 1
     assert [target["case_name"] for target in manifest["targets"]] == ["z_image_turbo"]
     assert manifest["targets"][0]["route_key"] == "z_image_turbo"
     assert manifest["targets"][0]["template_id"] == "image/z_image"
@@ -200,6 +211,8 @@ def test_emit_targets_json_scopes_to_selected_route(tmp_path):
     manifest = json.loads(output_path.read_text(encoding="utf-8"))
     assert manifest["selection"]["route_keys"] == ["image-upscale"]
     assert manifest["templates"] == ["image/basic_image_upscale"]
+    assert manifest["target_count"] == 1
+    assert manifest["template_count"] == 1
     assert [target["case_name"] for target in manifest["targets"]] == ["image_upscale"]
     assert {target["route_key"] for target in manifest["targets"]} == {"image-upscale"}
 

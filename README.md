@@ -121,7 +121,7 @@ default variant remains `fresh`.
 
 Prebuilt report evidence is written under `scripts/live_test/runs/<timestamp>/`:
 
-- `targets.json`: selected Reigh cases/routes/templates only;
+- `targets.json`: selected Reigh cases/routes/templates only, including explicit target/template counts;
 - `targets.enriched.json`: VibeComfy-owned source/schema/model-asset metadata;
 - `env.health.json`: grouped environment/custom-node/source/schema/asset checks;
 - `report.json` and `report.md`: matrix result plus prebuilt metadata.

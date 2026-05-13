@@ -480,13 +480,19 @@ def _resolve_volume(args, api_key: str) -> tuple[str, str]:
         prefix = args.prebuilt_volume_name
     else:
         prefix = f"{config.PREBUILT_VOLUME_NAME_PREFIX}{profile}-"
-    selection = select_network_volume(api_key, name_prefix=prefix)
+    selection = select_network_volume(
+        api_key,
+        name_prefix=prefix,
+        exact_name=args.prebuilt_volume_name,
+        data_center_filter=getattr(args, "prebuilt_data_center", None),
+    )
     if selection is None:
-        recommended = config.prebuilt_name_for_profile(profile, "<dc>")
+        recommended_dc = getattr(args, "prebuilt_data_center", None) or "<dc>"
+        recommended = config.prebuilt_name_for_profile(profile, recommended_dc)
         raise RuntimeError(
             f"No prebuilt volume matches prefix {prefix!r}. "
             f"Build one with: rl prebuilt build --volume-name {recommended} "
-            f"--data-center <dc> --attention-profile {profile}"
+            f"--data-center {recommended_dc} --attention-profile {profile}"
         )
     _, name, data_center_id = selection
     return name, data_center_id

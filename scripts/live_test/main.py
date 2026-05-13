@@ -122,6 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the prebuilt volume name (defaults to PREBUILT_VOLUME_NAME_PREFIX + profile-).",
     )
     parser.add_argument(
+        "--prebuilt-data-center",
+        default=None,
+        help="Prebuilt variant: only use a prebuilt volume from this RunPod data center.",
+    )
+    parser.add_argument(
         "--strict-prebuilt",
         action="store_true",
         help="Prebuilt variant: abort on any delta drift instead of delta-syncing.",
@@ -222,7 +227,9 @@ def _auto_dispatch_variant(args: argparse.Namespace) -> str:
         from scripts.live_test._shared import select_network_volume
 
         selection = select_network_volume(
-            api_key, name_prefix=config.PREBUILT_VOLUME_NAME_PREFIX
+            api_key,
+            name_prefix=config.PREBUILT_VOLUME_NAME_PREFIX,
+            data_center_filter=getattr(args, "prebuilt_data_center", None),
         )
     except Exception as exc:  # noqa: BLE001 — auto preflight should never explode
         print(

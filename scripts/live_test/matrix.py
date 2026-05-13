@@ -1279,6 +1279,8 @@ def build_target_manifest(
             "profile": selected_profile,
         },
         "selection": selection or {"case_names": [], "task_types": [], "route_keys": []},
+        "target_count": len(targets),
+        "template_count": len(template_ids),
         "templates": template_ids,
         "targets": targets,
     }

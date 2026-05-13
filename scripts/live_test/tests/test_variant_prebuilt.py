@@ -86,6 +86,7 @@ def _base_args(**overrides) -> SimpleNamespace:
         selector_version=None,
         worker_contract_version=1,
         prebuilt_volume_name=None,
+        prebuilt_data_center=None,
         python_version=None,
         strict_prebuilt=False,
         allow_delta=True,
@@ -168,7 +169,7 @@ def test_resolve_volume_raises_with_rl_prebuilt_build_when_no_volume(monkeypatch
     args = _base_args(prebuilt_volume_name=None, worker_profile="portable")
     monkeypatch.setattr(
         "scripts.live_test.variant_prebuilt.select_network_volume",
-        lambda api_key, *, name_prefix, data_center_filter=None: None,
+        lambda api_key, *, name_prefix, exact_name=None, data_center_filter=None: None,
     )
     with pytest.raises(RuntimeError) as info:
         _resolve_volume(args, "api-key")
@@ -176,6 +177,28 @@ def test_resolve_volume_raises_with_rl_prebuilt_build_when_no_volume(monkeypatch
     assert "rl prebuilt build --volume-name" in msg
     assert "--attention-profile portable" in msg
     assert "reigh-livetest-prebuilt-portable-" in msg
+
+
+def test_resolve_volume_passes_explicit_prebuilt_data_center(monkeypatch):
+    captured = {}
+
+    def fake_select(api_key, *, name_prefix, exact_name=None, data_center_filter=None):
+        captured["api_key"] = api_key
+        captured["name_prefix"] = name_prefix
+        captured["exact_name"] = exact_name
+        captured["data_center_filter"] = data_center_filter
+        return ("vol-1", "reigh-livetest-prebuilt-portable-eur-no-1", "EUR-NO-1")
+
+    monkeypatch.setattr("scripts.live_test.variant_prebuilt.select_network_volume", fake_select)
+    args = _base_args(prebuilt_data_center="EUR-NO-1")
+
+    assert _resolve_volume(args, "key-1") == ("reigh-livetest-prebuilt-portable-eur-no-1", "EUR-NO-1")
+    assert captured == {
+        "api_key": "key-1",
+        "name_prefix": "reigh-livetest-prebuilt-portable-",
+        "exact_name": None,
+        "data_center_filter": "EUR-NO-1",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -252,6 +275,8 @@ def test_target_manifest_for_cases_excludes_unselected_ready_templates():
 
     assert [target["case_name"] for target in manifest["targets"]] == ["z_image_turbo"]
     assert manifest["templates"] == ["image/z_image"]
+    assert manifest["target_count"] == 1
+    assert manifest["template_count"] == 1
     assert manifest["selection"] == {
         "case_names": ["z_image_turbo"],
         "task_types": [],

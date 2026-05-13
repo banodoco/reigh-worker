@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.live_test.completion_poller import TaskResult, poll_until_complete
+from scripts.live_test._shared import select_network_volume
 from scripts.live_test.heartbeat_waiter import WorkerReadyTimeoutError, wait_until_ready
 from scripts.live_test.inspect import build_status_bundle, render_status_bundle
 from scripts.live_test.launch_command import build_direct_worker_command, build_run_worker_command
@@ -58,6 +59,75 @@ from scripts.live_test.variant_update import (
     _worker_row_exists,
     run as run_variant_update,
 )
+
+
+def test_select_network_volume_requires_data_center_for_multiple_matches(monkeypatch):
+    monkeypatch.setattr(
+        "runpod_lifecycle.get_network_volumes",
+        lambda _api_key: [
+            {
+                "id": "vol-a",
+                "name": "reigh-livetest-prebuilt-portable-eur-no-1",
+                "dataCenterId": "EUR-NO-1",
+            },
+            {
+                "id": "vol-b",
+                "name": "reigh-livetest-prebuilt-portable-us-tx-1",
+                "dataCenterId": "US-TX-1",
+            },
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="Multiple prebuilt volumes match"):
+        select_network_volume("api-key", name_prefix="reigh-livetest-prebuilt-portable-")
+
+
+def test_select_network_volume_filters_data_center(monkeypatch):
+    monkeypatch.setattr(
+        "runpod_lifecycle.get_network_volumes",
+        lambda _api_key: [
+            {
+                "id": "vol-a",
+                "name": "reigh-livetest-prebuilt-portable-eur-no-1",
+                "dataCenterId": "EUR_NO_1",
+            },
+            {
+                "id": "vol-b",
+                "name": "reigh-livetest-prebuilt-portable-us-tx-1",
+                "dataCenterId": "US-TX-1",
+            },
+        ],
+    )
+
+    assert select_network_volume(
+        "api-key",
+        name_prefix="reigh-livetest-prebuilt-portable-",
+        data_center_filter="eur-no-1",
+    ) == ("vol-a", "reigh-livetest-prebuilt-portable-eur-no-1", "EUR_NO_1")
+
+
+def test_select_network_volume_explicit_name_is_exact(monkeypatch):
+    monkeypatch.setattr(
+        "runpod_lifecycle.get_network_volumes",
+        lambda _api_key: [
+            {
+                "id": "vol-a",
+                "name": "reigh-livetest-prebuilt-portable-eur-no-1",
+                "dataCenterId": "EUR-NO-1",
+            },
+            {
+                "id": "vol-b",
+                "name": "reigh-livetest-prebuilt-portable-eur-no-1-copy",
+                "dataCenterId": "EUR-NO-1",
+            },
+        ],
+    )
+
+    assert select_network_volume(
+        "api-key",
+        name_prefix="ignored-prefix",
+        exact_name="reigh-livetest-prebuilt-portable-eur-no-1",
+    ) == ("vol-a", "reigh-livetest-prebuilt-portable-eur-no-1", "EUR-NO-1")
 
 
 def _iso_now(offset_seconds: int = 0) -> str:
