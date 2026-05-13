@@ -110,11 +110,11 @@ class GenerationInputs:
     debug_enabled: bool
     travel_mode: str
     generation_policy: GenerationPolicy
-    model_family: Optional[str] = None
+    model_family_class: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if self.model_family not in {"ltx", "wan"}:
-            self.model_family = _infer_model_family(self.model_name)
+        if self.model_family_class not in {"ltx", "wan"}:
+            self.model_family_class = _infer_model_family(self.model_name)
 
 @dataclass
 class ImageRefs:
@@ -297,9 +297,9 @@ def _resolve_generation_inputs(ctx: SegmentContext, task_id: str, main_output_di
     model_name = segment_params.get("model_name") or orchestrator_details.get("model_name")
     if not model_name:
         raise ValueError(f"Travel segment {task_id}: model_name missing from both segment_params and orchestrator_details")
-    model_family = _get_param("model_family", segment_params, orchestrator_details, default=None)
-    if model_family not in {"ltx", "wan"}:
-        model_family = _infer_model_family(model_name)
+    model_family_class = _get_param("model_family_class", segment_params, orchestrator_details, default=None)
+    if model_family_class not in {"ltx", "wan"}:
+        model_family_class = _infer_model_family(model_name)
 
     # Prompt tiers: `individual_segment_params` > top-level segment payload.
     # Frontend may provide both: enhanced_prompt (AI-enhanced) and base_prompt (user original).
@@ -387,7 +387,7 @@ def _resolve_generation_inputs(ctx: SegmentContext, task_id: str, main_output_di
     travel_mode = generation_policy.travel_mode
 
     return GenerationInputs(
-        model_family=model_family,
+        model_family_class=model_family_class,
         model_name=model_name,
         prompt_for_wgp=prompt_for_wgp,
         negative_prompt_for_wgp=negative_prompt_for_wgp,
@@ -1134,7 +1134,7 @@ def _apply_video_source_continuation(
         task_logger.debug(
             f"[CONTINUATION_PREFIX] Task {task_id}: Set video_source for {policy.continuation.strategy} "
             f"continuation ({policy.continuation.overlap_frames} frames), "
-            f"model_family={gen.model_family}, image_prompt_type={generation_params['image_prompt_type']}"
+            f"model_family_class={gen.model_family_class}, image_prompt_type={generation_params['image_prompt_type']}"
         )
 
 
@@ -1154,13 +1154,13 @@ def _apply_svi_specific_params(
     orchestrator_details = ctx.orchestrator_details
     start_ref_path = image_refs.start_ref_path
     total_frames_for_segment = gen.total_frames_for_segment
-    model_family = getattr(gen, "model_family", None)
-    if model_family not in {"ltx", "wan"}:
-        model_family = "ltx" if "ltx" in str(getattr(gen, "model_name", "")).lower() else "wan"
+    model_family_class = getattr(gen, "model_family_class", None)
+    if model_family_class not in {"ltx", "wan"}:
+        model_family_class = "ltx" if "ltx" in str(getattr(gen, "model_name", "")).lower() else "wan"
 
-    if model_family != "wan":
+    if model_family_class != "wan":
         task_logger.debug(
-            f"[SVI_PAYLOAD] Task {task_id}: Skipping Wan-only SVI params for model_family={model_family}"
+            f"[SVI_PAYLOAD] Task {task_id}: Skipping Wan-only SVI params for model_family_class={model_family_class}"
         )
         return
 

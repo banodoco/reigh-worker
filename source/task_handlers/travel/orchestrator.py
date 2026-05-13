@@ -297,7 +297,7 @@ def _build_segment_travel_guidance_payload(
 # - input_image_paths_resolved, input_image_generation_ids, pair_shot_generation_ids,
 #   base_prompt, base_prompts_expanded, enhanced_prompts_expanded,
 #   negative_prompts_expanded, parsed_resolution_wh, model_name, model_type,
-#   model_family, turbo_mode, num_inference_steps, steps, guidance_scale,
+#   model_family_class, turbo_mode, num_inference_steps, steps, guidance_scale,
 #   phase_config, selected_phase_preset_id, continuation_config, chain_segments,
 #   use_svi, continue_from_video_resolved_path, segment_frames_expanded,
 #   frame_overlap_expanded, fps_helpers, debug_mode_enabled, main_output_dir_for_run,
@@ -344,7 +344,7 @@ def _build_minimal_orchestrator_details(
         "parsed_resolution_wh",
         "model_name",
         "model_type",
-        "model_family",
+        "model_family_class",
         "turbo_mode",
         "num_inference_steps",
         "steps",
@@ -434,7 +434,7 @@ def handle_travel_orchestrator_task(task_params_from_db: dict, main_output_dir_b
 
         # Determine frame quantization step for this model (e.g. 4 for Wan, 8 for LTX-2)
         model_family = _derive_model_family(orchestrator_payload.get("model_name"))
-        orchestrator_payload["model_family"] = model_family
+        orchestrator_payload["model_family_class"] = model_family
         frame_step = _get_frame_step(orchestrator_payload.get("model_name"))
 
         # Set fps_helpers from model native FPS if not explicitly provided
@@ -718,7 +718,7 @@ def handle_travel_orchestrator_task(task_params_from_db: dict, main_output_dir_b
                 "project_id": orchestrator_project_id,
                 "run_id": orchestrator_payload.get("run_id"),
                 "model": orchestrator_payload.get("model_name"),
-                "model_family": model_family,
+                "model_family_class": model_family,
                 "frame_step": frame_step,
                 "fps_helpers": orchestrator_payload.get("fps_helpers"),
                 "segment_count": num_segments,
@@ -2095,7 +2095,7 @@ def handle_travel_orchestrator_task(task_params_from_db: dict, main_output_dir_b
 
                 "parsed_resolution_wh": orchestrator_payload["parsed_resolution_wh"],
                 "model_name": orchestrator_payload["model_name"],
-                "model_family": model_family,
+                "model_family_class": model_family,
                 "seed": orchestrator_payload.get("seed_base", DEFAULT_SEED_BASE),
                 "seed_to_use": orchestrator_payload.get("seed_base", DEFAULT_SEED_BASE),
                 "cfg_star_switch": orchestrator_payload.get("cfg_star_switch", 0),

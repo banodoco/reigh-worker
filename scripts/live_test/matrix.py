@@ -594,13 +594,53 @@ def resolve_case_fixture(case: MatrixCase) -> dict[str, Any]:
     return load_fixture(case.fixture_key)
 
 
+_DERIVE_ROUTE_KEY_CLIENT: Any = None
+
+
+def _derive_route_key_client() -> Any:
+    global _DERIVE_ROUTE_KEY_CLIENT
+    if _DERIVE_ROUTE_KEY_CLIENT is None:
+        _DERIVE_ROUTE_KEY_CLIENT = config.DatabaseClient().supabase
+    return _DERIVE_ROUTE_KEY_CLIENT
+
+
+def _derive_route_key_for_case(case: MatrixCase) -> str:
+    """Resolve route_key via public.derive_route_key, the single source of truth.
+
+    Trusts the DB function rather than the fixture-encoded ``case.route_key`` so
+    a divergence between the fixture and the registered routes surfaces loudly
+    instead of silently shipping an unclaimable task contract.
+    """
+    fixture_params: dict[str, Any]
+    try:
+        fixture = resolve_case_fixture(case) or {}
+        fixture_params = dict(fixture.get("params") or {})
+    except Exception:
+        fixture_params = {}
+    merged_params = _deep_merge(fixture_params, case.param_overrides)
+    response = _derive_route_key_client().rpc(
+        "derive_route_key",
+        {"p_task_type": case.task_type, "p_params": merged_params},
+    ).execute()
+    derived = getattr(response, "data", None)
+    if not isinstance(derived, str) or not derived:
+        raise RuntimeError(
+            "derive_route_key returned no route_key for case "
+            f"{case.name!r} (task_type={case.task_type!r}); fixture must include "
+            "a model_name resolvable via public.model_family_for_model"
+        )
+    return derived
+
+
 def _route_contract(case: MatrixCase, task_marker: str) -> dict[str, Any] | None:
     if not case.route_key:
         return None
 
+    derived_route_key = _derive_route_key_for_case(case)
+
     runtime = case.route_runtime
     snapshot = {
-        "route_key": case.route_key,
+        "route_key": derived_route_key,
         "task_type": case.task_type,
         "selected_backend": runtime.selected_backend,
         "selector_namespace": runtime.selector_namespace,

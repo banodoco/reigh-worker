@@ -99,7 +99,7 @@ def test_supported_direct_routes_resolve_to_vibecomfy_templates(routing) -> None
 def test_direct_route_aliases_match_canonical_selector_keys(
     routing, task_type: str, expected_route_key: str
 ) -> None:
-    assert routing.derive_route_key(task_type, {}) == expected_route_key
+    assert routing.read_route_key_from_contract(task_type, {}) == expected_route_key
 
 
 @pytest.mark.parametrize(
@@ -346,62 +346,6 @@ def test_travel_route_key_distinguishes_wan_vace_payload_context(routing) -> Non
     assert resolved.template_id == "video/wanvideo_wrapper_22_14b_vace_cocktail"
     assert resolved.should_use_vibecomfy is True
     assert resolved.fail_closed_reason is None
-
-
-def test_travel_route_key_distinguishes_wan_vace_control_modes(routing) -> None:
-    base_params = {
-        "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
-        "continuity_case": "first_last",
-        "profile": "default",
-    }
-
-    route_keys = [
-        routing.derive_route_key(
-            "travel_segment",
-            {
-                **base_params,
-                "travel_guidance": {"kind": "vace", "mode": mode},
-            },
-        )
-        for mode in ("flow", "canny", "depth", "raw")
-    ]
-
-    assert route_keys == [
-        "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
-        "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
-        "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
-        "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
-    ]
-    assert len(route_keys) == len(set(route_keys))
-
-
-def test_travel_route_key_distinguishes_ltx_control_modes(routing) -> None:
-    base_params = {
-        "model_name": "ltx2_22B_distilled_1_1",
-        "continuity_case": "first_last",
-        "profile": "default",
-        "guidance_kind": "ltx_control",
-    }
-
-    route_keys = [
-        routing.derive_route_key(
-            "travel_segment",
-            {
-                **base_params,
-                "guidance_mode": mode,
-            },
-        )
-        for mode in ("video", "pose", "depth", "canny", "cameraman")
-    ]
-
-    assert route_keys == [
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
-    ]
-    assert len(route_keys) == len(set(route_keys))
 
 
 def test_section3a_matrix_route_support_is_explicit_and_deterministic(routing) -> None:

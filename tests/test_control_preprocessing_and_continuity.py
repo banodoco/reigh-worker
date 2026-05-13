@@ -6,7 +6,6 @@ import pytest
 from source.media.structure import preprocessors
 from source.task_handlers.tasks.template_routing import (
     WorkerBackend,
-    derive_route_key,
     resolve_task_route,
 )
 
@@ -103,41 +102,6 @@ def test_preprocessor_count_mismatch_fails_closed(monkeypatch):
         preprocessors.process_structure_frames(
             _frames(3), "canny", motion_strength=1.0, canny_intensity=1.0, depth_contrast=1.0
         )
-
-
-@pytest.mark.parametrize(
-    ("params", "expected_continuity"),
-    [
-        ({"model_name": "wan_2_2_i2v_lightning_baseline_2_2_2"}, "first_last"),
-        ({"model_name": "wan_2_2_i2v_lightning_baseline_2_2_2", "video_source": "/tmp/prefix.mp4"}, "video_source"),
-        ({"model_name": "wan_2_2_i2v_lightning_baseline_2_2_2", "svi2pro": True, "continuity_case": "svi"}, "svi"),
-        ({"model_name": "wan_2_2_vace_lightning_baseline_2_2_2", "continuity_case": "join_bridge"}, "join_bridge"),
-        ({"model_name": "ltx2_22B", "independent_segments": True}, "first_last"),
-    ],
-)
-def test_continuity_cases_are_reflected_in_route_keys(params, expected_continuity):
-    route_key = derive_route_key("travel_segment", params)
-
-    assert f"continuity-{expected_continuity}" in route_key
-
-
-def test_standalone_regeneration_fields_drive_video_source_continuity_route():
-    route_key = derive_route_key(
-        "individual_travel_segment",
-        {
-            "model_name": "ltx2_22B_distilled",
-            "travel_guidance": {"kind": "ltx_anchor"},
-            "video_source": "/tmp/regeneration-prefix.mp4",
-            "override_profile": 3,
-            "child_generation_id": "child-1",
-            "pair_shot_generation_id": "pair-1",
-        },
-    )
-
-    assert route_key == (
-        "individual_travel_segment__model-ltx2_distilled__guidance-ltx_anchor"
-        "__continuity-video_source__profile-3"
-    )
 
 
 def test_ltx_control_video_row_uses_raw_vg_template():

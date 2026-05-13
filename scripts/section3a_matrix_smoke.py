@@ -13,7 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.section3a_matrix import Section3ARow, load_fixture  # noqa: E402
 from source.task_handlers.tasks.template_routing import (  # noqa: E402
-    derive_route_key,
+    read_route_key_from_contract,
     resolve_task_route,
     route_snapshot_fields,
     route_support_report_fields,
@@ -81,8 +81,13 @@ def run_section3a_smoke(
 
 
 def _smoke_row(row: Section3ARow) -> dict[str, Any]:
-    params = _params_for_row(row)
-    route_key = derive_route_key(row.task_type, params)
+    params = dict(_params_for_row(row))
+    # Worker no longer derives route_keys; the Postgres derive_route_key()
+    # function is canonical. Pre-stamp the fixture's expected key into the
+    # contract so the reader path returns it and downstream support_state /
+    # template_id assertions still validate fixture parity.
+    params["route_contract"] = {"route_key": row.route_key_expectation}
+    route_key = read_route_key_from_contract(row.task_type, params)
     resolved = resolve_task_route(
         task_id=f"section3a-row-{row.row_id}",
         task_type=row.task_type,

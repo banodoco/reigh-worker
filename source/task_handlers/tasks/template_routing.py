@@ -390,16 +390,23 @@ def parse_worker_backend(value: str | None = None) -> WorkerBackend:
     )
 
 
-def derive_route_key(task_type: str, params: Mapping[str, Any] | None = None) -> str:
+def read_route_key_from_contract(task_type: str, params: Mapping[str, Any] | None = None) -> str:
+    """Read the canonical route_key from the stamped route_contract.
+
+    Worker-side derivation has been removed; the Postgres
+    ``public.derive_route_key`` function is the single source of truth and
+    stamps ``params.route_contract.route_key`` before tasks become claimable.
+    For direct (non-dimensional) task types the function falls back to the
+    static alias map so legacy callers and unit fixtures with no contract
+    still resolve to a stable key.
+    """
+
     task_params = params or {}
-
-    source_task_type = task_params.get("_source_task_type")
-    if source_task_type in _DIMENSIONAL_CHILD_TASK_TYPES:
-        return _dimensional_child_route_key(str(source_task_type), task_params)
-
-    if task_type in _DIMENSIONAL_CHILD_TASK_TYPES:
-        return _dimensional_child_route_key(task_type, task_params)
-
+    contract = task_params.get("route_contract")
+    if isinstance(contract, Mapping):
+        candidate = contract.get("route_key")
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
     return _direct_route_key(task_type)
 
 
@@ -412,7 +419,7 @@ def resolve_task_route(
 ) -> ResolvedTask:
     task_params = dict(params or {})
     selected_backend = _coerce_backend(backend) if backend is not None else parse_worker_backend()
-    route_key = derive_route_key(task_type, task_params)
+    route_key = read_route_key_from_contract(task_type, task_params)
     selector_entry = _selector_entry_for_route_key(route_key)
     support_state = (
         selector_entry.support_state
@@ -500,7 +507,7 @@ def route_snapshot_fields(
 
     task_params = dict(params or {})
     selected_backend = _coerce_backend(backend) if backend is not None else parse_worker_backend()
-    route_key = derive_route_key(task_type, task_params)
+    route_key = read_route_key_from_contract(task_type, task_params)
     selector_entry = _selector_entry_for_route_key(route_key)
     support_state = (
         selector_entry.support_state
@@ -655,7 +662,7 @@ def preflight_parent_child_route(
         return ParentChildRoutePreflight(ok=False, fail_closed_reason=contract_fields)
 
     task_params = dict(child_params or {})
-    child_route_key = derive_route_key(child_task_type, task_params)
+    child_route_key = read_route_key_from_contract(child_task_type, task_params)
     selector_entry = _selector_entry_for_route_key(child_route_key)
     support_state = (
         selector_entry.support_state
@@ -950,32 +957,9 @@ def _is_dimensional_travel_route_key(route_key: str) -> bool:
     )
 
 
-_DIMENSIONAL_CHILD_TASK_TYPES = frozenset(
-    {
-        "travel_segment",
-        "individual_travel_segment",
-        "join_clips_segment",
-    }
-)
-
-
 def _direct_route_key(task_type: str) -> str:
     slugged = _slug(task_type)
     return DIRECT_ROUTE_ALIASES.get(slugged, task_type)
-
-
-def _dimensional_child_route_key(task_type: str, params: Mapping[str, Any]) -> str:
-    """Derive the Cohort E child key without importing comparison scripts."""
-
-    return "__".join(
-        [
-            _slug(task_type),
-            f"model-{_slug(_route_model_family(params))}",
-            f"guidance-{_slug(_route_guidance_key(task_type, params))}",
-            f"continuity-{_slug(_route_continuity_case(task_type, params))}",
-            f"profile-{_slug(_route_profile(params))}",
-        ]
-    )
 
 
 def _slug(value: Any) -> str:
@@ -984,81 +968,6 @@ def _slug(value: Any) -> str:
     text = re.sub(r"[^a-z0-9]+", "_", text)
     text = re.sub(r"_+", "_", text).strip("_")
     return text or "none"
-
-
-def _route_model_family(params: Mapping[str, Any]) -> str:
-    explicit_family = params.get("model_family")
-    if explicit_family:
-        return str(explicit_family)
-
-    normalized = _slug(params.get("model_name") or params.get("model"))
-    if not normalized or normalized == "none":
-        return "unknown"
-    if "wan_2_2" in normalized or "wan22" in normalized:
-        return "wan22_vace" if "vace" in normalized else "wan22_i2v"
-    if "ltx2" in normalized:
-        return "ltx2_distilled" if "distilled" in normalized else "ltx2"
-    if "qwen" in normalized:
-        return "qwen"
-    if "z_image" in normalized:
-        return "z_image"
-    return normalized
-
-
-def _route_guidance_kind(task_type: str, params: Mapping[str, Any]) -> str:
-    explicit_kind = params.get("guidance_kind") or params.get("travel_guidance_kind")
-    if explicit_kind:
-        return str(explicit_kind)
-
-    travel_guidance = params.get("travel_guidance")
-    if isinstance(travel_guidance, Mapping):
-        kind = travel_guidance.get("kind")
-        if kind:
-            return str(kind)
-
-    if params.get("use_uni3c") or params.get("uni3c_guide_video"):
-        return "uni3c"
-    if params.get("svi2pro"):
-        return "vace"
-    if params.get("video_guide") or params.get("video_mask"):
-        return "vace"
-    if task_type == "join_clips_segment" and _route_model_family(params) == "wan22_vace":
-        return "vace"
-
-    return "none"
-
-
-def _route_guidance_mode(params: Mapping[str, Any]) -> str:
-    explicit_mode = params.get("guidance_mode") or params.get("travel_guidance_mode")
-    if explicit_mode:
-        return str(explicit_mode)
-
-    travel_guidance = params.get("travel_guidance")
-    if isinstance(travel_guidance, Mapping):
-        mode = travel_guidance.get("mode")
-        if mode:
-            return str(mode)
-
-    return "none"
-
-
-def _route_guidance_key(task_type: str, params: Mapping[str, Any]) -> str:
-    kind = _route_guidance_kind(task_type, params)
-    mode = _route_guidance_mode(params)
-    if kind in {"vace", "ltx_control"} and mode and mode != "none":
-        return f"{kind}_{mode}"
-    return kind
-
-
-def _route_continuity_case(task_type: str, params: Mapping[str, Any]) -> str:
-    explicit_case = params.get("continuity_case")
-    if explicit_case:
-        return str(explicit_case)
-    if task_type == "join_clips_segment":
-        return "join_bridge"
-    if params.get("video_source"):
-        return "video_source"
-    return "first_last"
 
 
 def _route_profile(params: Mapping[str, Any]) -> str:
@@ -1284,7 +1193,7 @@ __all__ = [
     "SPRINT_2_SELECTOR_MAP",
     "WorkerBackend",
     "WORKER_ROUTE_CONTRACT_VERSION",
-    "derive_route_key",
+    "read_route_key_from_contract",
     "parent_derived_child_route_snapshot_fields",
     "normalize_route_snapshot_fields",
     "parse_worker_backend",
