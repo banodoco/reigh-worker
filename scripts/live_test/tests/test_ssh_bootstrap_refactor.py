@@ -100,7 +100,7 @@ def test_clone_and_install_vibecomfy_emits_byte_identical_shell_portable():
         "git -C /workspace/vibecomfy reset --hard FETCH_HEAD",
         "git -C /workspace/vibecomfy clean -ffd -e .venv/",
         'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"',
-        "uv venv --python python3.11 /workspace/vibecomfy/.venv",
+        "uv venv --seed --python python3.11 /workspace/vibecomfy/.venv",
         "uv pip install --python /workspace/vibecomfy/.venv/bin/python -e /workspace/vibecomfy",
         # uv pip install of comfyui + comfy-script
         "cd /workspace/vibecomfy",

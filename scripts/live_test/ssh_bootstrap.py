@@ -224,7 +224,7 @@ def _vibecomfy_install_shell(
     else:
         install_python = f"{workdir}/.venv/bin/python"
         uv_path = "uv"
-        venv_block = f"uv venv --python {_quote(python_path)} {_quote(workdir)}/.venv\n"
+        venv_block = f"uv venv --seed --python {_quote(python_path)} {_quote(workdir)}/.venv\n"
 
     uv = _quote(uv_path)
     install_py = _quote(install_python)

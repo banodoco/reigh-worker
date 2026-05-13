@@ -2213,7 +2213,7 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     assert "git -C /workspace/vibecomfy fetch origin branch-a" in command
     assert "git -C /workspace/vibecomfy reset --hard FETCH_HEAD" in command
     assert 'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"' in command
-    assert "uv venv --python python3.11 /workspace/vibecomfy/.venv" in command
+    assert "uv venv --seed --python python3.11 /workspace/vibecomfy/.venv" in command
     assert "uv pip install --python /workspace/vibecomfy/.venv/bin/python -e /workspace/vibecomfy" in command
     assert "uv pip install --python /workspace/vibecomfy/.venv/bin/python" in command
     assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
