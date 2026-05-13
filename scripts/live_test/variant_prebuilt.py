@@ -245,6 +245,7 @@ def _print_dry_run_plan(
         redact_secrets=True,
         venv_path=contract.runtime_venv_path,
         python_version=contract.python_version,
+        use_uv=False,
     )
     print("Variant: prebuilt")
     print(f"Project ID: {project_id}")
@@ -597,6 +598,7 @@ def run(args) -> int:
             idle_release_minutes=0,
             venv_path=contract.runtime_venv_path,
             python_version=contract.python_version,
+            use_uv=False,
         )
         with _phase("launch_worker", pod_id=pod_id):
             launch_worker_detached(ssh, export_env(worker_env) + " && " + command)

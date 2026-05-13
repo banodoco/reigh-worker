@@ -908,6 +908,24 @@ def test_build_run_worker_command_parameterizes_venv_path_and_python_version():
     assert "--python 3.10" not in command
 
 
+def test_build_run_worker_command_can_launch_directly_from_prebuilt_venv():
+    command = build_run_worker_command(
+        "/workspace/Reigh-Worker-LiveTest",
+        reigh_token=None,
+        supabase_url="https://supabase.example",
+        worker_id="worker-1",
+        wgp_profile=3,
+        idle_release_minutes=0,
+        venv_path="/opt/reigh-livetest-prebuilt/worker-venv",
+        python_version="3.10",
+        use_uv=False,
+    )
+    assert "uv run" not in command
+    assert "--python 3.10" not in command
+    assert "/opt/reigh-livetest-prebuilt/worker-venv/bin/python run_worker.py" in command
+    assert "--worker worker-1" in command
+
+
 def test_build_run_worker_command_can_redact_access_token():
     command = build_run_worker_command(
         "/workspace/Reigh-Worker-LiveTest",

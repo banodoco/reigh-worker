@@ -30,6 +30,7 @@ def build_run_worker_command(
     redact_secrets: bool = False,
     venv_path: str = "/opt/reigh-worker-live-test-venv",
     python_version: str = "3.10",
+    use_uv: bool = True,
 ) -> str:
     workdir_q = _quote(workdir)
     prefix = [
@@ -38,32 +39,43 @@ def build_run_worker_command(
         'export PATH="$HOME/.local/bin:$PATH"',
         f'export UV_PROJECT_ENVIRONMENT="{venv_path}"',
     ]
-    worker_parts = [
-        "nohup",
-        "uv",
-        "run",
-        "--python",
-        python_version,
-        "--extra",
-        "cuda124",
-        "python",
-        "run_worker.py",
-        "--supabase-url",
-        _quote(supabase_url),
-        "--worker",
-        _quote(worker_id),
-        "--wgp-profile",
-        str(wgp_profile),
-        "--idle-release-minutes",
-        str(idle_release_minutes),
-        "--save-logging",
-        "logs/worker.log",
-        "</dev/null",
-        ">",
-        "logs/startup.log",
-        "2>&1",
-        "&",
-    ]
+    if use_uv:
+        worker_parts = [
+            "nohup",
+            "uv",
+            "run",
+            "--python",
+            python_version,
+            "--extra",
+            "cuda124",
+            "python",
+            "run_worker.py",
+        ]
+    else:
+        worker_parts = [
+            "nohup",
+            f"{venv_path.rstrip('/')}/bin/python",
+            "run_worker.py",
+        ]
+    worker_parts.extend(
+        [
+            "--supabase-url",
+            _quote(supabase_url),
+            "--worker",
+            _quote(worker_id),
+            "--wgp-profile",
+            str(wgp_profile),
+            "--idle-release-minutes",
+            str(idle_release_minutes),
+            "--save-logging",
+            "logs/worker.log",
+            "</dev/null",
+            ">",
+            "logs/startup.log",
+            "2>&1",
+            "&",
+        ]
+    )
     if reigh_token is not None:
         rendered_token = "<REIGH_LIVE_TEST_TOKEN>" if redact_secrets else reigh_token
         worker_arg_index = worker_parts.index("--worker")
