@@ -207,7 +207,12 @@ def _fetch_generations_since(
     return _linked_generation_ids(rows, task_ids)
 
 
-def _failure_summary(task_row: dict[str, Any] | None, final_status: str, generation_ids: list[str]) -> str | None:
+def _failure_summary(
+    task_row: dict[str, Any] | None,
+    final_status: str,
+    generation_ids: list[str],
+    output_location: str | None,
+) -> str | None:
     if task_row is None:
         return "Task row disappeared before completion polling finished"
 
@@ -218,7 +223,7 @@ def _failure_summary(task_row: dict[str, Any] | None, final_status: str, generat
             or f"Task reached terminal status {final_status}"
         )
 
-    if final_status == "Complete" and not generation_ids:
+    if final_status == "Complete" and not generation_ids and not output_location:
         return "Task completed but no linked generations were found"
 
     return None
@@ -281,18 +286,6 @@ def poll_until_complete(
             )
             next_progress_at = now + progress_interval_sec
 
-        worker_error = _worker_error_summary(worker_row)
-        if worker_error:
-            return TaskResult(
-                task_id=task_id,
-                case_name=case_name or task_id,
-                task_type=task_type or str((task_row or {}).get("task_type") or ""),
-                final_status=str((task_row or {}).get("status") or "Worker Error"),
-                output_location=str((task_row or {}).get("output_location")) if (task_row or {}).get("output_location") else None,
-                generation_ids=[],
-                elapsed_sec=round(now - started, 3),
-                error_summary=worker_error,
-            )
         if task_row is not None and task_row.get("status") in TERMINAL_STATUSES:
             final_status = str(task_row["status"])
             generation_ids, generation_location = _fetch_generations_since(
@@ -311,7 +304,25 @@ def poll_until_complete(
                 output_location=str(output_location) if output_location else None,
                 generation_ids=generation_ids,
                 elapsed_sec=round(now - started, 3),
-                error_summary=_failure_summary(task_row, final_status, generation_ids),
+                error_summary=_failure_summary(
+                    task_row,
+                    final_status,
+                    generation_ids,
+                    str(output_location) if output_location else None,
+                ),
+            )
+
+        worker_error = _worker_error_summary(worker_row)
+        if worker_error:
+            return TaskResult(
+                task_id=task_id,
+                case_name=case_name or task_id,
+                task_type=task_type or str((task_row or {}).get("task_type") or ""),
+                final_status=str((task_row or {}).get("status") or "Worker Error"),
+                output_location=str((task_row or {}).get("output_location")) if (task_row or {}).get("output_location") else None,
+                generation_ids=[],
+                elapsed_sec=round(now - started, 3),
+                error_summary=worker_error,
             )
 
         time.sleep(interval_sec)

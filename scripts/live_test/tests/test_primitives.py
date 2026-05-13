@@ -374,6 +374,55 @@ def test_completion_poller_returns_on_complete(monkeypatch: pytest.MonkeyPatch):
     assert result.error_summary is None
 
 
+def test_completion_poller_accepts_direct_output_after_worker_cleanup(monkeypatch: pytest.MonkeyPatch):
+    task_rows = SequenceResponder(
+        [
+            [
+                {
+                    "id": "task-1",
+                    "project_id": "project-1",
+                    "task_type": "z_image_turbo",
+                    "status": "Complete",
+                    "created_at": _iso_now(-10),
+                    "worker_id": "worker-1",
+                    "output_location": "https://out.example/result.png",
+                }
+            ],
+        ]
+    )
+    db = FakeDB(
+        sources={"tasks": task_rows},
+        tables={
+            "workers": [
+                {
+                    "id": "worker-1",
+                    "status": "terminated",
+                    "last_heartbeat": "2026-05-08T16:00:00Z",
+                    "metadata": {"error": "pod cleaned after completion"},
+                }
+            ],
+            "generations": [],
+        },
+    )
+    monkeypatch.setattr("scripts.live_test.completion_poller.time.sleep", lambda _interval: None)
+
+    result = poll_until_complete(
+        db,
+        "task-1",
+        "project-1",
+        timeout_sec=1,
+        interval_sec=0,
+        case_name="case",
+        task_type="z_image_turbo",
+        worker_id="worker-1",
+    )
+
+    assert result.final_status == "Complete"
+    assert result.generation_ids == []
+    assert result.output_location == "https://out.example/result.png"
+    assert result.error_summary is None
+
+
 def test_completion_poller_prints_long_running_progress(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     task_rows = SequenceResponder(
         [
@@ -1956,6 +2005,26 @@ def test_write_report_outputs_json_and_markdown(tmp_path: Path):
     assert "Summary: `1/2 passed`" in report_md
     assert all_results_passed(results) is False
     assert all_results_passed([results[0]]) is True
+
+
+def test_write_report_treats_direct_output_location_as_passing(tmp_path: Path):
+    result = TaskResult(
+        task_id="task-1",
+        case_name="case-a",
+        task_type="z_image_turbo",
+        final_status="Complete",
+        output_location="https://out.example/a.png",
+        generation_ids=[],
+        elapsed_sec=1.234,
+        error_summary=None,
+    )
+
+    out_dir = write_report([result], "prebuilt", "pod-1", tmp_path / "runs" / "direct-output")
+    report_json = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+
+    assert report_json["passed"] == 1
+    assert report_json["total"] == 1
+    assert all_results_passed([result]) is True
 
 
 def test_write_report_accepts_optional_metadata_without_changing_positional_callers(tmp_path):

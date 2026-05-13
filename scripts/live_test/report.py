@@ -11,7 +11,11 @@ from scripts.live_test.completion_poller import TaskResult
 
 
 def _is_passing_result(result: TaskResult) -> bool:
-    return result.final_status == "Complete" and bool(result.generation_ids) and not result.error_summary
+    return (
+        result.final_status == "Complete"
+        and (bool(result.generation_ids) or bool(result.output_location))
+        and not result.error_summary
+    )
 
 
 def all_results_passed(results: list[TaskResult]) -> bool:
