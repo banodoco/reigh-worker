@@ -49,7 +49,8 @@ FRESH_LIVE_TEST_WORKDIR = "/workspace/Reigh-Worker-LiveTest"
 WORKER_REPO_URL = "https://github.com/banodoco/reigh-worker.git"
 VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
 VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
-VIBECOMFY_PYTHON = "python3.11"
+VIBECOMFY_PYTHON = "/opt/reigh-vibecomfy-live-test-venv/bin/python"
+VIBECOMFY_INSTALL_PYTHON = "python3.11"
 REMOTE_UV_ENV = (
     'export UV_CACHE_DIR="/root/.cache/uv-live-test" '
     'UV_PROJECT_ENVIRONMENT="/opt/reigh-worker-live-test-venv" '
@@ -735,7 +736,7 @@ def run(args) -> int:
                 repo_url=VIBECOMFY_REPO_URL,
                 branch=getattr(args, "vibecomfy_ref", "megaplan/production-parity-templates"),
                 workdir=VIBECOMFY_WORKDIR,
-                python_path=VIBECOMFY_PYTHON,
+                python_path=VIBECOMFY_INSTALL_PYTHON,
                 attention_profile=worker_env.get("VIBECOMFY_ATTENTION_PROFILE"),
             )
         kill_supervisor_and_worker(ssh)

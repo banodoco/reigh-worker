@@ -222,9 +222,10 @@ def _vibecomfy_install_shell(
         uv_path = _uv_for_python(python_path)
         venv_block = ""
     else:
-        install_python = f"{workdir}/.venv/bin/python"
+        install_python = "/opt/reigh-vibecomfy-live-test-venv/bin/python"
+        venv_dir = install_python.rsplit("/", 2)[0]
         uv_path = "uv"
-        venv_block = f"uv venv --seed --python {_quote(python_path)} {_quote(workdir)}/.venv\n"
+        venv_block = f"rm -rf {_quote(venv_dir)}\nuv venv --seed --python {_quote(python_path)} {_quote(venv_dir)}\n"
 
     uv = _quote(uv_path)
     install_py = _quote(install_python)

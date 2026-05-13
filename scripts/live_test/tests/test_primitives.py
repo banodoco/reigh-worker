@@ -2213,15 +2213,15 @@ def test_clone_and_install_vibecomfy_validates_required_manifests():
     assert "git -C /workspace/vibecomfy fetch origin branch-a" in command
     assert "git -C /workspace/vibecomfy reset --hard FETCH_HEAD" in command
     assert 'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"' in command
-    assert "uv venv --seed --python python3.11 /workspace/vibecomfy/.venv" in command
-    assert "uv pip install --python /workspace/vibecomfy/.venv/bin/python -e /workspace/vibecomfy" in command
-    assert "uv pip install --python /workspace/vibecomfy/.venv/bin/python" in command
+    assert "uv venv --seed --python python3.11 /opt/reigh-vibecomfy-live-test-venv" in command
+    assert "uv pip install --python /opt/reigh-vibecomfy-live-test-venv/bin/python -e /workspace/vibecomfy" in command
+    assert "uv pip install --python /opt/reigh-vibecomfy-live-test-venv/bin/python" in command
     assert "comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency" in command
     assert "export VIBECOMFY_ATTENTION_PROFILE=portable" in command
     assert "SageAttention" not in command
     assert "cd /workspace/vibecomfy" in command
     assert "test -f custom_nodes.lock" in command
-    assert "/workspace/vibecomfy/.venv/bin/python -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock" in command
+    assert "/opt/reigh-vibecomfy-live-test-venv/bin/python -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock" in command
     assert "test -f /workspace/vibecomfy/template_index.json" in command
     assert "test -f /workspace/vibecomfy/workflow_corpus/manifests/coverage.json" in command
 
@@ -2246,7 +2246,7 @@ def test_clone_and_install_vibecomfy_installs_and_verifies_sageattention_when_pr
     command, _timeout = calls[0]
     assert "export VIBECOMFY_ATTENTION_PROFILE=sage" in command
     assert "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention" in command
-    assert "uv pip install --python /workspace/vibecomfy/.venv/bin/python --no-build-isolation /tmp/sageattention" in command
+    assert "uv pip install --python /opt/reigh-vibecomfy-live-test-venv/bin/python --no-build-isolation /tmp/sageattention" in command
     assert "import sageattention" in command
     assert "sageattention verified" in command
 

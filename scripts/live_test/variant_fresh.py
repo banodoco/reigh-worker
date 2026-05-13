@@ -46,7 +46,8 @@ FRESH_WORKDIR = "/workspace/Reigh-Worker-LiveTest"
 FRESH_REPO_URL = "https://github.com/banodoco/Reigh-Worker.git"
 VIBECOMFY_WORKDIR = "/workspace/vibecomfy"
 VIBECOMFY_REPO_URL = "https://github.com/peteromallet/VibeComfy.git"
-VIBECOMFY_PYTHON = "python3.11"
+VIBECOMFY_PYTHON = "/opt/reigh-vibecomfy-live-test-venv/bin/python"
+VIBECOMFY_INSTALL_PYTHON = "python3.11"
 VIBECOMFY_DEFAULT_CASE_ORDER = {
     "z_image_turbo": 0,
     "z_image_turbo_i2i": 1,
@@ -306,14 +307,14 @@ def run(args) -> int:
                 pod_id=pod_id,
                 ref=args.vibecomfy_ref,
                 workdir=VIBECOMFY_WORKDIR,
-                python=VIBECOMFY_PYTHON,
+                python=VIBECOMFY_INSTALL_PYTHON,
             ):
                 clone_and_install_vibecomfy(
                     ssh,
                     repo_url=VIBECOMFY_REPO_URL,
                     branch=args.vibecomfy_ref,
                     workdir=VIBECOMFY_WORKDIR,
-                    python_path=VIBECOMFY_PYTHON,
+                    python_path=VIBECOMFY_INSTALL_PYTHON,
                     attention_profile=worker_env.get("VIBECOMFY_ATTENTION_PROFILE"),
                 )
 
