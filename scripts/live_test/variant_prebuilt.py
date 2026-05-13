@@ -873,7 +873,7 @@ def run(args) -> int:
                     local_health_path=local_health_path,
                     remote_targets_path=remote_targets_path,
                     remote_enriched_path=remote_enriched_path,
-                    network_volume_id=network_volume_id,
+                    network_volume_id=pod_details.get("networkVolumeId"),
                     gpu_type=config.RUNPOD_GPU_TYPE,
                     gpu_type_id=resolved_gpu_type_id,
                     gpu_display_name=resolved_gpu_display_name,
