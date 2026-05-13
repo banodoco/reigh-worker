@@ -64,10 +64,11 @@ def _resolve_attention_profile(raw: str | None = None) -> str:
 
 def _sageattention_install_block(python_path: str) -> str:
     py = _quote(python_path)
+    uv = _quote(_uv_for_python(python_path))
     return (
         "rm -rf /tmp/sageattention\n"
         "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention\n"
-        f"uv pip install --python {py} --no-build-isolation /tmp/sageattention\n"
+        f"{uv} pip install --python {py} --no-build-isolation /tmp/sageattention\n"
         f"{py} - <<'PY'\n"
         "import sageattention\n"
         "if not callable(getattr(sageattention, 'sageattn', None)):\n"
@@ -84,6 +85,12 @@ def _execute(ssh, command: str, *, timeout: int = 600, check: bool = True) -> tu
             f"Remote command failed with exit {exit_code}: {command}\nstdout:\n{stdout}\nstderr:\n{stderr}"
         )
     return stdout, stderr
+
+
+def _uv_for_python(python_path: str) -> str:
+    if python_path.endswith("/bin/python"):
+        return python_path.rsplit("/", 1)[0] + "/uv"
+    return "uv"
 
 
 def open_session(pod_id: str, api_key: str, *, ssh_wait_timeout: int = 300, poll_interval: int = 5):
@@ -210,6 +217,7 @@ def _vibecomfy_install_shell(
     behind a ``git fetch && reset --hard`` (warm sync).
     """
     resolved = _resolve_attention_profile(attention_profile)
+    uv = _quote(_uv_for_python(python_path))
     sage = _sageattention_install_block(python_path) if resolved == "sage" else ""
     nodes_block = ""
     if run_nodes_restore:
@@ -221,8 +229,8 @@ def _vibecomfy_install_shell(
             f"test -f {_quote(workdir)}/workflow_corpus/manifests/coverage.json\n"
         )
     return (
-        f"uv pip install --python {_quote(python_path)} -e {_quote(workdir)}\n"
-        f"uv pip install --python {_quote(python_path)} "
+        f"{uv} pip install --python {_quote(python_path)} -e {_quote(workdir)}\n"
+        f"{uv} pip install --python {_quote(python_path)} "
         "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
         "'comfy-script[default]'\n"
         f"{sage}"

@@ -559,7 +559,8 @@ def run(args) -> int:
                         )
                     else:
                         install_body = (
-                            f"uv pip install --python {contract.runtime_vibecomfy_path}/.venv/bin/python -e "
+                            f"{contract.runtime_vibecomfy_path}/.venv/bin/uv pip install "
+                            f"--python {contract.runtime_vibecomfy_path}/.venv/bin/python -e "
                             f"{contract.runtime_vibecomfy_path}\n"
                         )
                     exit_code, _stdout, stderr = ssh.execute_command(

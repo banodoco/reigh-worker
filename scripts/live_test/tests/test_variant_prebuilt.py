@@ -385,6 +385,21 @@ def test_vibecomfy_install_shell_without_nodes_restore_for_commit_only_drift():
     assert "vibecomfy.cli nodes restore" not in body
 
 
+def test_vibecomfy_install_shell_uses_venv_local_uv_for_venv_python():
+    from scripts.live_test.ssh_bootstrap import _vibecomfy_install_shell
+
+    body = _vibecomfy_install_shell(
+        "/opt/reigh-livetest-prebuilt/vibecomfy",
+        python_path="/opt/reigh-livetest-prebuilt/vibecomfy/.venv/bin/python",
+        attention_profile="portable",
+        run_nodes_restore=True,
+    )
+    assert (
+        "/opt/reigh-livetest-prebuilt/vibecomfy/.venv/bin/uv pip install --python "
+        "/opt/reigh-livetest-prebuilt/vibecomfy/.venv/bin/python"
+    ) in body
+
+
 def test_variant_prebuilt_phase_order_is_documented_in_run():
     """Static check that run() invokes the bootstrap phases in the required order.
 
