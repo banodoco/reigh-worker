@@ -119,6 +119,32 @@ def test_worker_preflight_does_not_require_vibecomfy_for_wgp_backend(tmp_path, m
     assert vibecomfy_checks["vibecomfy_available"].required is False
 
 
+def test_worker_preflight_does_not_require_wan2gp_for_vibecomfy_backend(tmp_path, monkeypatch):
+    repo_root, wan2gp = _make_worker_repo(tmp_path)
+    shutil.rmtree(wan2gp)
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
+    monkeypatch.setenv("VIBECOMFY_PATH", str(tmp_path / "vibecomfy"))
+    monkeypatch.setattr(
+        "source.runtime.worker.preflight.importlib.util.find_spec",
+        lambda name: SimpleNamespace(origin=f"/fake/{name}.py"),
+    )
+
+    result = run_worker_preflight(
+        repo_root=repo_root,
+        wan2gp_path=wan2gp,
+        main_output_dir=tmp_path / "outputs",
+        backend="vibecomfy",
+    )
+
+    assert result.status == PREFLIGHT_STATUS_PASSED
+    wan2gp_checks = {check.name: check for check in result.checks if check.name.startswith("wan2gp") or check.name == "wgp_entrypoint"}
+    assert wan2gp_checks["wan2gp_path"].required is False
+    assert wan2gp_checks["wan2gp_submodule_marker"].required is False
+    assert wan2gp_checks["wgp_entrypoint"].required is False
+    assert wan2gp_checks["wan2gp_models_dir"].required is False
+    assert wan2gp_checks["wan2gp_plugins_dir"].required is False
+
+
 def test_worker_preflight_env_can_force_vibecomfy_for_wgp_backend(tmp_path, monkeypatch):
     repo_root, wan2gp = _make_worker_repo(tmp_path)
     shutil.rmtree(tmp_path / "vibecomfy")

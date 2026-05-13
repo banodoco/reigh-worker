@@ -66,9 +66,16 @@ def run_worker_preflight(
     checks: list[PreflightCheck] = []
 
     _append_path_check(checks, "repo_root", repo_root, expected_type="dir")
-    _append_path_check(checks, "wan2gp_path", wan2gp_path, expected_type="dir")
-    _append_path_check(checks, "wan2gp_submodule_marker", wan2gp_path / ".git", expected_type="any")
-    _append_path_check(checks, "wgp_entrypoint", wan2gp_path / "wgp.py", expected_type="file")
+    wan2gp_required = _wan2gp_preflight_required(backend)
+    _append_path_check(checks, "wan2gp_path", wan2gp_path, expected_type="dir", required=wan2gp_required)
+    _append_path_check(
+        checks,
+        "wan2gp_submodule_marker",
+        wan2gp_path / ".git",
+        expected_type="any",
+        required=wan2gp_required,
+    )
+    _append_path_check(checks, "wgp_entrypoint", wan2gp_path / "wgp.py", expected_type="file", required=wan2gp_required)
     _append_import_check(checks, "torch")
     _append_import_check(checks, "dotenv")
     _append_import_check(checks, "fastapi")
@@ -89,8 +96,8 @@ def run_worker_preflight(
         repo_root / "source" / "models" / "lora" / "module_manifest.py",
         expected_type="file",
     )
-    _append_path_check(checks, "wan2gp_models_dir", wan2gp_path / "models", expected_type="dir")
-    _append_path_check(checks, "wan2gp_plugins_dir", wan2gp_path / "plugins", expected_type="dir")
+    _append_path_check(checks, "wan2gp_models_dir", wan2gp_path / "models", expected_type="dir", required=wan2gp_required)
+    _append_path_check(checks, "wan2gp_plugins_dir", wan2gp_path / "plugins", expected_type="dir", required=wan2gp_required)
     _append_writable_dir_check(checks, "main_output_dir", main_output_dir)
     _append_writable_dir_check(checks, "uv_cache_dir", Path(os.environ.get("UV_CACHE_DIR", str(repo_root / ".uv-cache"))))
 
@@ -105,6 +112,10 @@ def run_worker_preflight(
         f"[PREFLIGHT] status={result.status} backend={backend} failed={','.join(result.failed_checks) or 'none'}"
     )
     return result
+
+
+def _wan2gp_preflight_required(backend: str) -> bool:
+    return str(backend).strip().lower() != "vibecomfy"
 
 
 def result_from_failure(name: str, detail: str, *, started_at: float | None = None) -> WorkerPreflightResult:
