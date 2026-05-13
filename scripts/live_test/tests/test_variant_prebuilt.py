@@ -18,7 +18,13 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from runpod_lifecycle.prebuilt import PrebuiltEnvContract, PrebuiltManifest
+from runpod_lifecycle.prebuilt import (
+    PrebuiltEnvContract,
+    PrebuiltHealthIssue,
+    PrebuiltHealthReport,
+    PrebuiltManifest,
+    PrebuiltPythonEnvReport,
+)
 
 from scripts.live_test import variant_prebuilt
 from scripts.live_test import variant_update
@@ -225,6 +231,183 @@ def test_prebuilt_dry_run_is_side_effect_free(monkeypatch, capsys):
     assert "z_image_turbo" in out
 
 
+def test_target_manifest_for_cases_excludes_unselected_ready_templates():
+    args = _base_args(
+        backend="vibecomfy",
+        selector_namespace="livet-test",
+        selector_version="v1",
+        worker_contract_version=3,
+        worker_profile="portable",
+        case=["z_image_turbo"],
+        task_type=[],
+        route_key=[],
+        anchor_image_a="https://example.com/a.png",
+        anchor_image_b="https://example.com/b.png",
+        timeout_image=60,
+        timeout_travel_segment=60,
+        timeout_travel_orchestrator=60,
+    )
+    cases = variant_prebuilt._build_matrix_cases(args)
+    manifest = variant_prebuilt._target_manifest_for_cases(cases, args)
+
+    assert [target["case_name"] for target in manifest["targets"]] == ["z_image_turbo"]
+    assert manifest["templates"] == ["image/z_image"]
+    assert manifest["selection"] == {
+        "case_names": ["z_image_turbo"],
+        "task_types": [],
+        "route_keys": [],
+    }
+    assert manifest["selector"] == {
+        "namespace": "livet-test",
+        "version": "v1",
+        "worker_contract_version": 3,
+        "profile": "portable",
+    }
+    # This is a selected-target manifest, not a dump of every VibeComfy ready template.
+    assert "image/qwen_image_2512" not in manifest["templates"]
+    assert "edit/qwen_image_edit" not in manifest["templates"]
+
+
+def test_prebuilt_health_failure_aborts_before_register_launch_or_queue(monkeypatch, tmp_path):
+    events: list[str] = []
+    args = _base_args(
+        dry_run=False,
+        no_terminate=False,
+        prebuilt_volume_name="reigh-livetest-prebuilt-portable-us-tx-1",
+        backend="vibecomfy",
+        selector_namespace="livet-test",
+        case=["z_image_turbo"],
+        task_type=[],
+        route_key=[],
+        anchor_image_a="https://example.com/a.png",
+        anchor_image_b="https://example.com/b.png",
+        timeout_image=60,
+        timeout_travel_segment=60,
+        timeout_travel_orchestrator=60,
+    )
+    manifest = _make_manifest(python_version="3.11")
+
+    class FakeSSH:
+        def __init__(self) -> None:
+            self.commands: list[str] = []
+
+        def execute_command(self, command: str, timeout: int = 600):
+            self.commands.append(command)
+            return 0, "{}", ""
+
+        def disconnect(self):
+            events.append("disconnect")
+
+    fake_ssh = FakeSSH()
+
+    def forbidden(name):
+        def _inner(*_args, **_kwargs):
+            raise AssertionError(f"{name} must not run after failed health")
+
+        return _inner
+
+    health_report = PrebuiltHealthReport(
+        schema_version=1,
+        generated_at_utc="2026-05-13T00:00:00+00:00",
+        volume_name=args.prebuilt_volume_name,
+        data_center_id="us-tx-1",
+        attention_profile="portable",
+        worker_env=PrebuiltPythonEnvReport(
+            label="worker",
+            python_path="/opt/reigh-worker-live-test-venv/bin/python",
+            cwd="/opt/reigh-livetest-prebuilt/worker",
+            python_version="3.11.11",
+            import_ok=True,
+        ),
+        vibecomfy_env=PrebuiltPythonEnvReport(
+            label="vibecomfy",
+            python_path="/opt/reigh-livetest-prebuilt/vibecomfy/.venv/bin/python",
+            cwd="/opt/reigh-livetest-prebuilt/vibecomfy",
+            python_version="3.11.11",
+            import_ok=True,
+        ),
+        issues=[
+            PrebuiltHealthIssue(
+                group="assets",
+                code="missing_model_asset",
+                message="missing checkpoints/z_image.safetensors",
+            )
+        ],
+        targets_path="/workspace/reigh-livetest-prebuilt/runs/run/targets.json",
+        enriched_path="/workspace/reigh-livetest-prebuilt/runs/run/targets.enriched.json",
+    )
+
+    monkeypatch.setattr(
+        variant_prebuilt,
+        "_prepare_context",
+        lambda _args: {
+            "db": object(),
+            "token": "token-1",
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "cases": variant_prebuilt._build_matrix_cases(args),
+        },
+    )
+    monkeypatch.setattr(variant_prebuilt.config, "require_env", lambda name: f"{name.lower()}-value")
+    monkeypatch.setattr(variant_prebuilt, "prune_stale_live_test_pods", lambda _api_key: SimpleNamespace(terminated=[]))
+    monkeypatch.setattr(variant_prebuilt, "_resolve_volume", lambda _args, _api_key: (args.prebuilt_volume_name, "us-tx-1"))
+    monkeypatch.setattr(variant_prebuilt, "_resolve_runpod_gpu_type_id", lambda _api_key, _gpu_type: ("gpu-4090", "RTX 4090"))
+    monkeypatch.setattr(variant_prebuilt, "_runs_root", lambda: tmp_path / "runs")
+    monkeypatch.setattr(variant_prebuilt, "_timestamp_label", lambda: "20260513T000000Z")
+    monkeypatch.setattr(variant_prebuilt, "open_session", lambda _pod_id, _api_key: fake_ssh)
+    monkeypatch.setattr(variant_prebuilt, "_ensure_mounted", lambda *_args, **_kwargs: events.append("mounted"))
+    monkeypatch.setattr(variant_prebuilt, "_install_prebuilt_system_tools", lambda *_args, **_kwargs: events.append("system_tools"))
+    monkeypatch.setattr(variant_prebuilt, "read_manifest", lambda *_args, **_kwargs: manifest)
+    monkeypatch.setattr(variant_prebuilt, "extract_bundle_to_container_disk", lambda *_args, **_kwargs: events.append("extract"))
+    monkeypatch.setattr(variant_prebuilt, "ensure_git_ref_synced", lambda *_args, **_kwargs: events.append("git_sync"))
+    monkeypatch.setattr(variant_prebuilt, "_write_extra_model_paths_yaml", lambda *_args, **_kwargs: events.append("models_bound"))
+    monkeypatch.setattr(variant_prebuilt, "_write_remote_json", lambda *_args, **_kwargs: events.append("targets_written"))
+    monkeypatch.setattr(
+        variant_prebuilt,
+        "_enrich_targets_on_consumer",
+        lambda *_args, **_kwargs: {"schema_version": 1, "targets": []},
+    )
+    monkeypatch.setattr(
+        variant_prebuilt,
+        "run_prebuilt_health_probes",
+        lambda *_args, **_kwargs: health_report,
+    )
+    monkeypatch.setattr(variant_prebuilt, "write_health_report", lambda *_args, **_kwargs: events.append("health_written"))
+    monkeypatch.setattr(variant_prebuilt, "fetch_worker_logs", lambda *_args, **_kwargs: "worker logs")
+    monkeypatch.setattr(variant_prebuilt, "guarded_terminate", lambda pod_id, *_args, **_kwargs: events.append(f"terminate:{pod_id}"))
+    monkeypatch.setattr(variant_prebuilt, "register_worker_record", forbidden("register_worker_record"))
+    monkeypatch.setattr(variant_prebuilt, "launch_worker_detached", forbidden("launch_worker_detached"))
+    monkeypatch.setattr(variant_prebuilt, "wait_until_ready", forbidden("wait_until_ready"))
+    monkeypatch.setattr(variant_prebuilt, "queue_matrix", forbidden("queue_matrix"))
+
+    from runpod_lifecycle import api as runpod_api
+
+    monkeypatch.setattr(
+        runpod_api,
+        "create_pod",
+        lambda **_kwargs: events.append("create_pod") or {"id": "pod-health-fail"},
+    )
+    monkeypatch.setattr(
+        runpod_api,
+        "get_network_volumes",
+        lambda _api_key: [{"id": "vol-1", "name": args.prebuilt_volume_name}],
+    )
+
+    with pytest.raises(RuntimeError) as info:
+        variant_prebuilt.run(args)
+
+    message = str(info.value)
+    assert "Prebuilt consumer health validation failed before worker registration/launch" in message
+    assert "assets/missing_model_asset" in message
+    assert events.index("health_written") < events.index("terminate:pod-health-fail")
+    assert "create_pod" in events
+    assert "targets_written" in events
+    assert "health_written" in events
+    assert (tmp_path / "runs" / "20260513T000000Z" / "targets.json").exists()
+    assert (tmp_path / "runs" / "20260513T000000Z" / "targets.enriched.json").exists()
+    assert (tmp_path / "runs" / "20260513T000000Z" / "env.health.json").exists()
+
+
 def test_install_prebuilt_system_tools_installs_archive_progress_and_video_tools():
     calls = []
 
@@ -414,8 +597,9 @@ def test_variant_prebuilt_phase_order_is_documented_in_run():
     Reads the source of variant_prebuilt.run and confirms the documented _phase
     contexts appear in the required sequence (attach → read_manifest →
     hard_fail → extract_venv → extract_vibecomfy → sync_worker → sync_vibecomfy
-    → verify → bind_models → launch). Verify_extracted_env appears AFTER the
-    sync phases.
+    → bind_models → target/enrichment evidence → health probes → registration
+    → launch). The shared health probe must run AFTER the sync/model-path
+    phases and BEFORE worker registration/launch.
     """
     import inspect
 
@@ -430,8 +614,11 @@ def test_variant_prebuilt_phase_order_is_documented_in_run():
         '_phase("extract_vibecomfy_bundle"',
         '_phase("sync_worker_ref"',
         '_phase("sync_vibecomfy_ref"',
-        '_phase("verify_extracted_env"',
         '_phase("bind_models_dir"',
+        '_phase("write_prebuilt_targets_evidence"',
+        '_phase("enrich_prebuilt_targets"',
+        '_phase("run_prebuilt_consumer_health_probes"',
+        "register_worker_record(",
         '_phase("launch_worker"',
     ]
     last_index = -1
@@ -442,9 +629,13 @@ def test_variant_prebuilt_phase_order_is_documented_in_run():
             f"phase {marker!r} appears out of order (expected after previous phase)"
         )
         last_index = idx
-    # Explicit verify-after-syncs assertion.
-    verify_idx = src.find('_phase("verify_extracted_env"')
+    # Explicit health-after-syncs-before-registration assertion.
+    health_idx = src.find('_phase("run_prebuilt_consumer_health_probes"')
     worker_sync_idx = src.find('_phase("sync_worker_ref"')
     vibe_sync_idx = src.find('_phase("sync_vibecomfy_ref"')
-    assert verify_idx > worker_sync_idx
-    assert verify_idx > vibe_sync_idx
+    register_idx = src.find("register_worker_record(")
+    launch_idx = src.find('_phase("launch_worker"')
+    assert health_idx > worker_sync_idx
+    assert health_idx > vibe_sync_idx
+    assert health_idx < register_idx
+    assert health_idx < launch_idx

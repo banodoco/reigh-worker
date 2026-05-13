@@ -90,6 +90,56 @@ uv run --python 3.10 python -m debug task <task_id>          # Investigate a tas
 uv run --python 3.10 python -m debug tasks --status Failed   # List recent failures
 ```
 
+## VibeComfy Live Validation
+
+The normal development fallback is still a fresh live-test pod:
+
+```bash
+python -m scripts.live_test.main --variant fresh --backend vibecomfy --case z_image_turbo
+```
+
+Use the prebuilt path when a `runpod-lifecycle` prebuilt volume exists for the
+target RunPod data center. It reuses the baked worker/VibeComfy environments,
+then validates the actual consumer pod before worker registration, launch, or
+matrix queueing.
+
+```bash
+# Cheap target-manifest handoff with no DB, RunPod, pod launch, or VibeComfy import.
+python -m scripts.live_test.main --variant fresh --backend vibecomfy \
+  --case z_image_turbo \
+  --emit-targets-json /tmp/reigh-targets.json
+
+# Preferred consumer smoke after the prebuilt health gate is green.
+python -m scripts.live_test.main --variant prebuilt --backend vibecomfy \
+  --case z_image_turbo \
+  --prebuilt-volume-name reigh-livetest-prebuilt-portable-<data-center>
+```
+
+`--variant auto` is opt-in. It checks for a prebuilt volume by the configured
+prefix and falls back to `fresh` when no matching volume is available. The
+default variant remains `fresh`.
+
+Prebuilt report evidence is written under `scripts/live_test/runs/<timestamp>/`:
+
+- `targets.json`: selected Reigh cases/routes/templates only;
+- `targets.enriched.json`: VibeComfy-owned source/schema/model-asset metadata;
+- `env.health.json`: grouped environment/custom-node/source/schema/asset checks;
+- `report.json` and `report.md`: matrix result plus prebuilt metadata.
+
+The `report.json` metadata block records the volume id/name, data center,
+manifest/health/target/enriched paths and hashes, selected profile/templates,
+GPU type, and health-check summary. Fresh and update reports keep the old shape
+unless their callers pass metadata explicitly.
+
+When adding or onboarding a VibeComfy workflow for app-active use:
+
+1. Emit the selected Reigh target JSON with `--emit-targets-json`.
+2. Enrich it in VibeComfy with `python -m vibecomfy.cli workflows enrich-targets`.
+3. Run `rl prebuilt check --enriched-targets-json ...` for the portable RTX 4090 profile.
+4. Reconcile explicit selected assets if the check reports missing models.
+5. Run the cheap `z_image_turbo` smoke first, then broaden the matrix only after health and smoke pass.
+6. Record the run directory and report evidence in the contract or migration notes.
+
 ## Code Health
 
 <img src="scorecard.png" width="800">

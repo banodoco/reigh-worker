@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from scripts.create_test_task import TEST_TASKS
@@ -1231,6 +1232,58 @@ def build_matrix(
     return filter_matrix(cases, case_names=case_names, task_types=task_types, route_keys=route_keys)
 
 
+def build_target_manifest(
+    cases: list[MatrixCase],
+    *,
+    selected_backend: str,
+    selector_namespace: str,
+    selector_version: str | None,
+    worker_contract_version: int,
+    selected_profile: str,
+    selection: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Return a Reigh-owned target manifest for downstream VibeComfy enrichment.
+
+    This deliberately serializes selected live-test case metadata only. It does
+    not import VibeComfy and it does not enumerate every ready template.
+    """
+    targets: list[dict[str, Any]] = []
+    template_ids: list[str] = []
+    seen_templates: set[str] = set()
+    for case in cases:
+        template_id = case.selected_template_id
+        if template_id and template_id not in seen_templates:
+            seen_templates.add(template_id)
+            template_ids.append(template_id)
+        targets.append(
+            {
+                "case_name": case.name,
+                "task_type": case.task_type,
+                "route_key": case.route_key,
+                "support_state": case.support_state,
+                "template_id": template_id,
+                "fixture_key": case.fixture_key,
+                "timeout_sec": case.timeout_sec,
+                "route_runtime": asdict(case.route_runtime),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "producer": "reigh-worker.scripts.live_test",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "backend": selected_backend,
+        "selector": {
+            "namespace": selector_namespace,
+            "version": selector_version,
+            "worker_contract_version": worker_contract_version,
+            "profile": selected_profile,
+        },
+        "selection": selection or {"case_names": [], "task_types": [], "route_keys": []},
+        "templates": template_ids,
+        "targets": targets,
+    }
+
+
 MATRIX = build_matrix()
 
 
@@ -1309,6 +1362,7 @@ __all__ = [
     "Z_IMAGE_TURBO_FIXTURE_KEY",
     "build_case_params_overrides",
     "build_matrix",
+    "build_target_manifest",
     "filter_matrix",
     "poll_queued_matrix",
     "queue_matrix",

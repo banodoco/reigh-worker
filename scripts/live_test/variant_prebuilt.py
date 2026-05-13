@@ -13,13 +13,22 @@ driver is opt-in via ``--variant prebuilt`` or ``--variant auto``.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import json
+import shlex
 from typing import Any
 
 from runpod_lifecycle.prebuilt import (
     PrebuiltEnvContract,
+    PrebuiltHealthReport,
     PrebuiltManifest,
+    build_error_health_report,
+    health_path,
+    manifest_path,
     read_manifest,
-    verify_extracted_env,
+    run_prebuilt_health_probes,
+    write_health_report,
 )
 
 from scripts.live_test import config
@@ -36,7 +45,14 @@ from scripts.live_test._shared import (
 from scripts.live_test.heartbeat_waiter import wait_until_ready
 from scripts.live_test.launch_command import build_run_worker_command
 from scripts.live_test.logger import get_logger
-from scripts.live_test.matrix import build_matrix, poll_queued_matrix, queue_matrix, render_case_payload
+from scripts.live_test.matrix import (
+    MatrixCase,
+    build_matrix,
+    build_target_manifest,
+    poll_queued_matrix,
+    queue_matrix,
+    render_case_payload,
+)
 from scripts.live_test.preflight import (
     assert_user_queue_clean,
     close_stale_live_test_tasks,
@@ -103,7 +119,7 @@ def _attention_profile_from_args(args) -> str:
     return "sage" if profile in {"sage", "optimized"} else "portable"
 
 
-def _recommended_volume_name(profile: str, data_center_id: str = "eu-no-1") -> str:
+def _recommended_volume_name(profile: str, data_center_id: str) -> str:
     return config.prebuilt_name_for_profile(profile, data_center_id)
 
 
@@ -273,6 +289,180 @@ def _print_dry_run_plan(
         print(f"- {case.name} ({case.task_type}{route_suffix}, timeout={case.timeout_sec}s)")
 
 
+def _target_manifest_for_cases(cases: list[MatrixCase], args) -> dict[str, Any]:
+    return build_target_manifest(
+        cases,
+        selected_backend=getattr(args, "backend", "wgp"),
+        selector_namespace=getattr(args, "selector_namespace", "production"),
+        selector_version=getattr(args, "selector_version", None),
+        worker_contract_version=getattr(args, "worker_contract_version", 1),
+        selected_profile=getattr(args, "worker_profile", "default"),
+        selection={
+            "case_names": list(getattr(args, "case", [])),
+            "task_types": list(getattr(args, "task_type", [])),
+            "route_keys": list(getattr(args, "route_key", [])),
+        },
+    )
+
+
+def _write_json_file(path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_health_file(path, report: PrebuiltHealthReport) -> None:
+    _write_json_file(path, dataclasses.asdict(report))
+
+
+def _file_sha256(path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _health_summary(report: PrebuiltHealthReport) -> dict[str, Any]:
+    errors = [issue for issue in report.issues if issue.severity == "error"]
+    return {
+        "ok": report.ok,
+        "issue_count": len(report.issues),
+        "error_count": len(errors),
+        "groups": sorted({issue.group for issue in report.issues}),
+        "error_codes": sorted({f"{issue.group}/{issue.code}" for issue in errors}),
+    }
+
+
+def _prebuilt_report_metadata(
+    *,
+    contract: PrebuiltEnvContract,
+    manifest: PrebuiltManifest,
+    health_report: PrebuiltHealthReport,
+    local_targets_path,
+    local_enriched_path,
+    local_health_path,
+    remote_targets_path: str,
+    remote_enriched_path: str,
+    network_volume_id: str | None,
+    gpu_type: str,
+    gpu_type_id: str,
+    gpu_display_name: str,
+    target_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "prebuilt": {
+            "volume": {
+                "id": network_volume_id,
+                "name": contract.volume_name,
+                "data_center_id": contract.data_center_id,
+            },
+            "profile": {
+                "attention_profile": contract.attention_profile,
+                "selected_profile": (target_manifest.get("selector") or {}).get("profile"),
+                "python_version": contract.python_version,
+            },
+            "gpu": {
+                "requested_type": gpu_type,
+                "type_id": gpu_type_id,
+                "display_name": gpu_display_name,
+            },
+            "manifest": {
+                "remote_path": manifest_path(contract),
+                "sha256": hashlib.sha256(
+                    json.dumps(dataclasses.asdict(manifest), sort_keys=True).encode("utf-8")
+                ).hexdigest(),
+            },
+            "health": {
+                "remote_path": health_path(contract),
+                "local_path": str(local_health_path),
+                "sha256": _file_sha256(local_health_path),
+            },
+            "targets": {
+                "remote_path": remote_targets_path,
+                "local_path": str(local_targets_path),
+                "sha256": _file_sha256(local_targets_path),
+                "templates": list(target_manifest.get("templates") or []),
+                "selection": target_manifest.get("selection") or {},
+            },
+            "enriched": {
+                "remote_path": remote_enriched_path,
+                "local_path": str(local_enriched_path),
+                "sha256": _file_sha256(local_enriched_path),
+            },
+            "check_summary": _health_summary(health_report),
+        }
+    }
+
+
+def _write_remote_json(ssh, *, path: str, payload: dict[str, Any], timeout: int = 120) -> None:
+    body = json.dumps(payload, indent=2, sort_keys=True)
+    script = (
+        "set -euo pipefail\n"
+        f"mkdir -p {shlex.quote(path.rsplit('/', 1)[0])}\n"
+        f"cat > {shlex.quote(path)} <<'REIGH_LIVE_TEST_JSON_EOF'\n"
+        f"{body}\n"
+        "REIGH_LIVE_TEST_JSON_EOF\n"
+    )
+    exit_code, _stdout, stderr = ssh.execute_command(
+        "bash -lc " + shlex.quote(script),
+        timeout=timeout,
+    )
+    if exit_code != 0:
+        raise RuntimeError(f"failed to write remote JSON evidence at {path}: {stderr!r}")
+
+
+def _read_remote_json(ssh, *, path: str, timeout: int = 120) -> dict[str, Any]:
+    exit_code, stdout, stderr = ssh.execute_command(
+        f"cat {shlex.quote(path)}",
+        timeout=timeout,
+    )
+    if exit_code != 0:
+        raise RuntimeError(f"failed to read remote JSON evidence at {path}: {stderr!r}")
+    return json.loads(stdout)
+
+
+def _enrich_targets_on_consumer(
+    ssh,
+    *,
+    contract: PrebuiltEnvContract,
+    remote_targets_path: str,
+    remote_enriched_path: str,
+) -> dict[str, Any]:
+    python_path = f"{contract.runtime_vibecomfy_path}/.venv/bin/python"
+    command = (
+        "set -euo pipefail\n"
+        f"cd {shlex.quote(contract.runtime_vibecomfy_path)}\n"
+        f"{shlex.quote(python_path)} -m vibecomfy.cli workflows enrich-targets "
+        f"--targets-json {shlex.quote(remote_targets_path)} "
+        f"--output {shlex.quote(remote_enriched_path)} "
+        f"--models-root {shlex.quote(contract.models_path)}\n"
+    )
+    exit_code, stdout, stderr = ssh.execute_command(
+        "bash -lc " + shlex.quote(command),
+        timeout=600,
+    )
+    if exit_code != 0:
+        raise RuntimeError(
+            "remote VibeComfy target enrichment failed: "
+            f"stdout={stdout!r} stderr={stderr!r}"
+        )
+    return _read_remote_json(ssh, path=remote_enriched_path)
+
+
+def _raise_for_health_issues(report: PrebuiltHealthReport, *, volume_name: str, data_center_id: str) -> None:
+    if report.ok:
+        return
+    lines = [
+        f"  {i + 1}. [{issue.group}/{issue.code}] {issue.message}"
+        for i, issue in enumerate(report.issues)
+        if issue.severity == "error"
+    ]
+    raise RuntimeError(
+        "Prebuilt consumer health validation failed before worker registration/launch:\n"
+        + "\n".join(lines)
+        + "\n"
+        f"Run `rl prebuilt reconcile --volume-name {volume_name} --data-center {data_center_id} "
+        "--enriched-targets-json <enriched.json>` for fetchable missing assets, or rebuild with "
+        f"`rl prebuilt build --volume-name {volume_name} --data-center {data_center_id}`."
+    )
+
+
 def _resolve_volume(args, api_key: str) -> tuple[str, str]:
     profile = _attention_profile_from_args(args)
     if args.prebuilt_volume_name:
@@ -281,7 +471,7 @@ def _resolve_volume(args, api_key: str) -> tuple[str, str]:
         prefix = f"{config.PREBUILT_VOLUME_NAME_PREFIX}{profile}-"
     selection = select_network_volume(api_key, name_prefix=prefix)
     if selection is None:
-        recommended = _recommended_volume_name(profile)
+        recommended = config.prebuilt_name_for_profile(profile, "<dc>")
         raise RuntimeError(
             f"No prebuilt volume matches prefix {prefix!r}. "
             f"Build one with: rl prebuilt build --volume-name {recommended} "
@@ -378,6 +568,11 @@ def run(args) -> int:
     supabase_url = config.require_env("SUPABASE_URL")
     service_role_key = config.require_env("SUPABASE_SERVICE_ROLE_KEY")
     out_dir = _runs_root() / _timestamp_label()
+    target_manifest = _target_manifest_for_cases(cases, args)
+    local_targets_path = out_dir / "targets.json"
+    local_enriched_path = out_dir / "targets.enriched.json"
+    local_health_path = out_dir / "env.health.json"
+    _write_json_file(local_targets_path, target_manifest)
 
     pod_id: str | None = None
     ssh = None
@@ -576,20 +771,55 @@ def run(args) -> int:
                     if exit_code != 0:
                         raise RuntimeError(f"delta vibecomfy install failed: stderr={stderr!r}")
 
-        with _phase("verify_extracted_env"):
-            issues = verify_extracted_env(ssh, contract, manifest)
-            if issues:
-                numbered = "\n".join(f"  {i+1}. {msg}" for i, msg in enumerate(issues))
-                raise RuntimeError(
-                    "Prebuilt env verification failed:\n"
-                    f"{numbered}\n"
-                    f"Run `rl prebuilt invalidate --volume-name {volume_name}` "
-                    f"&& `rl prebuilt build --volume-name {volume_name} --data-center {data_center_id} "
-                    f"--attention-profile {manifest.attention_profile}` to rebuild."
-                )
-
         with _phase("bind_models_dir", models=contract.models_path):
             _write_extra_model_paths_yaml(ssh, contract)
+
+        remote_evidence_root = f"{contract.cache_root}/runs/{out_dir.name}"
+        remote_targets_path = f"{remote_evidence_root}/targets.json"
+        remote_enriched_path = f"{remote_evidence_root}/targets.enriched.json"
+
+        with _phase("write_prebuilt_targets_evidence", path=remote_targets_path):
+            _write_remote_json(ssh, path=remote_targets_path, payload=target_manifest)
+
+        try:
+            with _phase("enrich_prebuilt_targets", path=remote_enriched_path):
+                enriched_manifest = _enrich_targets_on_consumer(
+                    ssh,
+                    contract=contract,
+                    remote_targets_path=remote_targets_path,
+                    remote_enriched_path=remote_enriched_path,
+                )
+                _write_json_file(local_enriched_path, enriched_manifest)
+        except Exception as exc:
+            report = build_error_health_report(
+                contract,
+                group="workflow_source",
+                code="target_enrichment_failed",
+                reason=str(exc),
+                targets_path=remote_targets_path,
+                enriched_path=remote_enriched_path,
+            )
+            _write_health_file(local_health_path, report)
+            write_health_report(ssh, contract, report)
+            raise
+
+        with _phase("run_prebuilt_consumer_health_probes"):
+            health_report = run_prebuilt_health_probes(
+                ssh,
+                contract,
+                manifest,
+                targets_path=remote_targets_path,
+                enriched_path=remote_enriched_path,
+                enriched_manifest=enriched_manifest,
+            )
+            _write_health_file(local_health_path, health_report)
+            write_health_report(ssh, contract, health_report)
+            _raise_for_health_issues(
+                health_report,
+                volume_name=volume_name,
+                data_center_id=data_center_id,
+            )
+
         worker_env = _build_worker_env(token, supabase_url, service_role_key, args, contract)
 
         register_worker_record(db, pod_id, pod, args, variant_label=PREBUILT_VARIANT)
@@ -614,7 +844,27 @@ def run(args) -> int:
         with _phase("run_matrix", pod_id=pod_id, cases=len(cases)):
             results = poll_queued_matrix(db, project_id, queued, worker_id=pod_id)
         with _phase("write_report", pod_id=pod_id, out_dir=str(out_dir)):
-            write_report(results, PREBUILT_VARIANT, pod_id, out_dir)
+            write_report(
+                results,
+                PREBUILT_VARIANT,
+                pod_id,
+                out_dir,
+                metadata=_prebuilt_report_metadata(
+                    contract=contract,
+                    manifest=manifest,
+                    health_report=health_report,
+                    local_targets_path=local_targets_path,
+                    local_enriched_path=local_enriched_path,
+                    local_health_path=local_health_path,
+                    remote_targets_path=remote_targets_path,
+                    remote_enriched_path=remote_enriched_path,
+                    network_volume_id=network_volume_id,
+                    gpu_type=config.RUNPOD_GPU_TYPE,
+                    gpu_type_id=resolved_gpu_type_id,
+                    gpu_display_name=resolved_gpu_display_name,
+                    target_manifest=target_manifest,
+                ),
+            )
         return 0 if all_results_passed(results) else 1
     finally:
         if ssh is not None:

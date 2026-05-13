@@ -1958,6 +1958,42 @@ def test_write_report_outputs_json_and_markdown(tmp_path: Path):
     assert all_results_passed([results[0]]) is True
 
 
+def test_write_report_accepts_optional_metadata_without_changing_positional_callers(tmp_path):
+    result = TaskResult(
+        task_id="task-1",
+        case_name="case-a",
+        task_type="z_image_turbo",
+        final_status="Complete",
+        output_location="https://out.example/a.png",
+        generation_ids=["gen-1"],
+        elapsed_sec=1.234,
+        error_summary=None,
+    )
+    metadata = {
+        "prebuilt": {
+            "volume": {"id": "vol-1", "name": "reigh-livetest-prebuilt-portable-us-tx-1"},
+            "targets": {"templates": ["image/z_image"], "sha256": "a" * 64},
+            "check_summary": {"ok": True, "error_count": 0},
+        }
+    }
+
+    out_dir = write_report(
+        [result],
+        "prebuilt",
+        "pod-1",
+        tmp_path / "runs" / "case-metadata",
+        metadata=metadata,
+    )
+    report_json = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    report_md = (out_dir / "report.md").read_text(encoding="utf-8")
+    assert report_json["metadata"] == metadata
+    assert '"image/z_image"' in report_md
+
+    fresh_dir = write_report([result], "fresh", "pod-2", tmp_path / "runs" / "case-fresh")
+    fresh_json = json.loads((fresh_dir / "report.json").read_text(encoding="utf-8"))
+    assert "metadata" not in fresh_json
+
+
 def test_variant_fresh_dry_run_uses_livetest_workspace_and_env_exports(capsys, monkeypatch: pytest.MonkeyPatch):
     cases = [MatrixCase(name="case-a", task_type="qwen_image", fixture_key="qwen_image_basic", timeout_sec=900)]
     monkeypatch.setattr(

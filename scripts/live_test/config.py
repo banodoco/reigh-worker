@@ -143,7 +143,12 @@ def prebuilt_name_for_profile(profile: str, data_center_id: str) -> str:
     The data-center suffix is lowercased so it matches the RunPod API
     convention (e.g. ``eu-no-1``).
     """
-    return f"{PREBUILT_VOLUME_NAME_PREFIX}{profile}-{data_center_id.lower()}"
+    try:
+        from runpod_lifecycle.prebuilt import prebuilt_volume_name_for_profile
+
+        return prebuilt_volume_name_for_profile(profile, data_center_id)
+    except Exception:
+        return f"{PREBUILT_VOLUME_NAME_PREFIX}{profile.strip().lower().replace('_', '-')}-{data_center_id.strip().lower().replace('_', '-')}"
 
 TIMEOUT_IMAGE_SEC = 900
 TIMEOUT_INDIVIDUAL_TRAVEL_SEGMENT_SEC = 1500

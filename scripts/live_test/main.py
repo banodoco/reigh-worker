@@ -6,9 +6,11 @@ import argparse
 import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from scripts.live_test import config
 from scripts.live_test.inspect import main as run_inspect
+from scripts.live_test.matrix import build_matrix, build_target_manifest
 from scripts.live_test.variant_fresh import run as run_variant_fresh
 from scripts.live_test.variant_prebuilt import run as run_variant_prebuilt
 from scripts.live_test.variant_update import run as run_variant_update
@@ -147,6 +149,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override expected python_version for the prebuilt manifest hard-fail drift check.",
     )
+    parser.add_argument(
+        "--emit-targets-json",
+        metavar="PATH",
+        help=(
+            "Resolve the selected live-test cases into a Reigh target manifest "
+            "and exit without DB, RunPod, pod launch, or VibeComfy imports."
+        ),
+    )
     return parser
 
 
@@ -252,12 +262,50 @@ def _auto_dispatch_variant(args: argparse.Namespace) -> str:
     return "prebuilt"
 
 
+def _emit_targets_json(args: argparse.Namespace) -> int:
+    cases = build_matrix(
+        anchor_image_a=args.anchor_image_a,
+        anchor_image_b=args.anchor_image_b,
+        timeout_image_sec=args.timeout_image,
+        timeout_travel_segment_sec=args.timeout_travel_segment,
+        timeout_travel_orchestrator_sec=args.timeout_travel_orchestrator,
+        selected_backend=getattr(args, "backend", "wgp"),
+        selector_namespace=getattr(args, "selector_namespace", "production"),
+        selector_version=getattr(args, "selector_version", None),
+        worker_contract_version=getattr(args, "worker_contract_version", 1),
+        selected_profile=getattr(args, "worker_profile", "default"),
+        case_names=getattr(args, "case", []),
+        task_types=getattr(args, "task_type", []),
+        route_keys=getattr(args, "route_key", []),
+    )
+    manifest = build_target_manifest(
+        cases,
+        selected_backend=getattr(args, "backend", "wgp"),
+        selector_namespace=getattr(args, "selector_namespace", "production"),
+        selector_version=getattr(args, "selector_version", None),
+        worker_contract_version=getattr(args, "worker_contract_version", 1),
+        selected_profile=getattr(args, "worker_profile", "default"),
+        selection={
+            "case_names": list(getattr(args, "case", [])),
+            "task_types": list(getattr(args, "task_type", [])),
+            "route_keys": list(getattr(args, "route_key", [])),
+        },
+    )
+    output_path = Path(args.emit_targets_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(str(output_path))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     effective_argv = list(sys.argv[1:] if argv is None else argv)
     if effective_argv and effective_argv[0] == "inspect":
         return run_inspect(effective_argv[1:])
     parser = build_parser()
     args = _finalize_args(parser.parse_args(effective_argv), parser)
+    if args.emit_targets_json:
+        return _emit_targets_json(args)
     if args.variant == "auto":
         resolved = _auto_dispatch_variant(args)
         args.variant = resolved
