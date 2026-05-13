@@ -62,9 +62,9 @@ def _resolve_attention_profile(raw: str | None = None) -> str:
     raise ValueError("VibeComfy attention profile must be 'portable' or 'sage'")
 
 
-def _sageattention_install_block(python_path: str) -> str:
+def _sageattention_install_block(python_path: str, *, uv_path: str | None = None) -> str:
     py = _quote(python_path)
-    uv = _quote(_uv_for_python(python_path))
+    uv = _quote(uv_path or _uv_for_python(python_path))
     return (
         "rm -rf /tmp/sageattention\n"
         "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention\n"
@@ -217,20 +217,31 @@ def _vibecomfy_install_shell(
     behind a ``git fetch && reset --hard`` (warm sync).
     """
     resolved = _resolve_attention_profile(attention_profile)
-    uv = _quote(_uv_for_python(python_path))
-    sage = _sageattention_install_block(python_path) if resolved == "sage" else ""
+    if "/" in python_path:
+        install_python = python_path
+        uv_path = _uv_for_python(python_path)
+        venv_block = ""
+    else:
+        install_python = f"{workdir}/.venv/bin/python"
+        uv_path = "uv"
+        venv_block = f"uv venv --python {_quote(python_path)} {_quote(workdir)}/.venv\n"
+
+    uv = _quote(uv_path)
+    install_py = _quote(install_python)
+    sage = _sageattention_install_block(install_python, uv_path=uv_path) if resolved == "sage" else ""
     nodes_block = ""
     if run_nodes_restore:
         nodes_block = (
             f"cd {_quote(workdir)}\n"
             "test -f custom_nodes.lock\n"
-            f"{_quote(python_path)} -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock\n"
+            f"{install_py} -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock\n"
             f"test -f {_quote(workdir)}/template_index.json\n"
             f"test -f {_quote(workdir)}/workflow_corpus/manifests/coverage.json\n"
         )
     return (
-        f"{uv} pip install --python {_quote(python_path)} -e {_quote(workdir)}\n"
-        f"{uv} pip install --python {_quote(python_path)} "
+        f"{venv_block}"
+        f"{uv} pip install --python {install_py} -e {_quote(workdir)}\n"
+        f"{uv} pip install --python {install_py} "
         "'comfyui@git+https://github.com/peteromallet/ComfyUI.git@fix/latentupscale-model-mmap-residency' "
         "'comfy-script[default]'\n"
         f"{sage}"

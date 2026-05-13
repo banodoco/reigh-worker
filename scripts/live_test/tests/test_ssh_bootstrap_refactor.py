@@ -100,11 +100,12 @@ def test_clone_and_install_vibecomfy_emits_byte_identical_shell_portable():
         "git -C /workspace/vibecomfy reset --hard FETCH_HEAD",
         "git -C /workspace/vibecomfy clean -ffd -e .venv/",
         'echo "VibeComfy checkout: $(git -C /workspace/vibecomfy rev-parse --short HEAD)"',
-        "uv pip install --python python3.11 -e /workspace/vibecomfy",
+        "uv venv --python python3.11 /workspace/vibecomfy/.venv",
+        "uv pip install --python /workspace/vibecomfy/.venv/bin/python -e /workspace/vibecomfy",
         # uv pip install of comfyui + comfy-script
         "cd /workspace/vibecomfy",
         "test -f custom_nodes.lock",
-        "python3.11 -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock",
+        "/workspace/vibecomfy/.venv/bin/python -m vibecomfy.cli nodes restore --lockfile custom_nodes.lock",
         "test -f /workspace/vibecomfy/template_index.json",
         "test -f /workspace/vibecomfy/workflow_corpus/manifests/coverage.json",
     ]
@@ -128,7 +129,7 @@ def test_clone_and_install_vibecomfy_adds_sageattention_for_sage_profile():
         attention_profile="sage",
     )
     assert "git clone --depth 1 https://github.com/thu-ml/SageAttention.git /tmp/sageattention" in command
-    assert "uv pip install --python python3.11 --no-build-isolation /tmp/sageattention" in command
+    assert "uv pip install --python /workspace/vibecomfy/.venv/bin/python --no-build-isolation /tmp/sageattention" in command
     assert "VIBECOMFY_ATTENTION_PROFILE=sage" in command
 
 
