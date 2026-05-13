@@ -407,6 +407,12 @@ def test_prebuilt_health_failure_aborts_before_register_launch_or_queue(monkeypa
     assert (tmp_path / "runs" / "20260513T000000Z" / "env.health.json").exists()
 
 
+def test_primary_gpu_candidate_accepts_lifecycle_candidate_tuple():
+    assert variant_prebuilt._primary_gpu_candidate(
+        ("NVIDIA GeForce RTX 4090", "NVIDIA RTX A5000")
+    ) == "NVIDIA GeForce RTX 4090"
+
+
 def test_install_prebuilt_system_tools_installs_archive_progress_and_video_tools():
     calls = []
 

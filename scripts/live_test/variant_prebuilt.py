@@ -120,6 +120,16 @@ def _attention_profile_from_args(args) -> str:
     return "sage" if profile in {"sage", "optimized"} else "portable"
 
 
+def _primary_gpu_candidate(gpu_type: Any) -> str:
+    if isinstance(gpu_type, str):
+        return gpu_type
+    for candidate in gpu_type or ():
+        text = str(candidate).strip()
+        if text:
+            return text
+    raise RuntimeError("No RunPod GPU type configured for prebuilt live test")
+
+
 def _recommended_volume_name(profile: str, data_center_id: str) -> str:
     return config.prebuilt_name_for_profile(profile, data_center_id)
 
@@ -581,8 +591,9 @@ def run(args) -> int:
         from runpod_lifecycle import RunPodConfig
         from runpod_lifecycle.lifecycle import launch as launch_pod
 
+        primary_gpu_type = _primary_gpu_candidate(config.RUNPOD_GPU_TYPE)
         resolved_gpu_type_id, resolved_gpu_display_name = _resolve_runpod_gpu_type_id(
-            api_key, config.RUNPOD_GPU_TYPE
+            api_key, primary_gpu_type
         )
 
         container_disk_gb = args.container_disk_gb if args.container_disk_gb else 200
