@@ -165,7 +165,7 @@ def _ensure_mounted(ssh, mount_path: str) -> None:
 
 def _install_prebuilt_system_tools(ssh) -> None:
     exit_code, _stdout, stderr = ssh.execute_command(
-        "bash -lc 'set -euo pipefail && apt-get update && apt-get install -y zstd pv'",
+        "bash -lc 'set -euo pipefail && apt-get update && apt-get install -y zstd pv ffmpeg'",
         timeout=600,
     )
     if exit_code != 0:
@@ -208,8 +208,13 @@ def _write_extra_model_paths_yaml(ssh, contract: PrebuiltEnvContract) -> None:
         "  loras: loras\n"
         "  embeddings: embeddings\n"
         "  diffusion_models: diffusion_models\n"
+        "  text_encoders: text_encoders\n"
+        "  clip_vision: clip_vision\n"
         "  clip: clip\n"
+        "  controlnet: controlnet\n"
         "  upscale_models: upscale_models\n"
+        "  onnx: onnx\n"
+        "  sam2: sam2\n"
     )
     target = f"{contract.runtime_vibecomfy_path}/extra_model_paths.yaml"
     script = (

@@ -225,7 +225,7 @@ def test_prebuilt_dry_run_is_side_effect_free(monkeypatch, capsys):
     assert "z_image_turbo" in out
 
 
-def test_install_prebuilt_system_tools_installs_zstd_and_pv():
+def test_install_prebuilt_system_tools_installs_archive_progress_and_video_tools():
     calls = []
 
     class DummySSH:
@@ -236,7 +236,7 @@ def test_install_prebuilt_system_tools_installs_zstd_and_pv():
     _install_prebuilt_system_tools(DummySSH())
     command, timeout = calls[0]
     assert timeout == 600
-    assert "apt-get install -y zstd pv" in command
+    assert "apt-get install -y zstd pv ffmpeg" in command
 
 
 # --------------------------------------------------------------------------- #
