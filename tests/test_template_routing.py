@@ -200,50 +200,6 @@ def test_video_enhance_vibecomfy_route_allows_interpolation_postprocess(routing)
     assert resolved.fail_closed_reason is None
 
 
-def test_mode_specific_wan_vace_vibecomfy_route_requires_control_video(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="task-vace-no-control",
-        task_type="travel_segment",
-        params={
-            "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
-            "travel_guidance": {"kind": "vace", "mode": "depth"},
-            "continuity_case": "first_last",
-            "profile": "default",
-        },
-        backend="vibecomfy",
-    )
-
-    assert (
-        resolved.route_key
-        == "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default"
-    )
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.should_use_vibecomfy is False
-    assert resolved.fail_closed_reason
-    assert "no control/guidance video" in resolved.fail_closed_reason
-
-
-def test_mode_specific_wan_vace_vibecomfy_route_allows_control_video(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="task-vace-control",
-        task_type="travel_segment",
-        params={
-            "model_name": "wan_2_2_vace_lightning_baseline_2_2_2",
-            "travel_guidance": {
-                "kind": "vace",
-                "mode": "depth",
-                "videos": [{"path": "/tmp/depth-guide.mp4"}],
-            },
-            "continuity_case": "first_last",
-            "profile": "default",
-        },
-        backend="vibecomfy",
-    )
-
-    assert resolved.should_use_vibecomfy is True
-    assert resolved.fail_closed_reason is None
-
-
 def test_routing_telemetry_fields_are_compact_and_stable(routing) -> None:
     resolved = routing.resolve_task_route(
         task_id="telemetry-task",
@@ -268,7 +224,7 @@ def test_routing_telemetry_fields_are_compact_and_stable(routing) -> None:
 
 
 @pytest.mark.parametrize("task_type", ["travel_segment", "individual_travel_segment"])
-def test_travel_children_derive_route_and_fail_closed_under_vibecomfy(
+def test_travel_children_use_direct_route_and_fail_closed_under_vibecomfy(
     routing, task_type: str
 ) -> None:
     resolved = routing.resolve_task_route(
@@ -283,10 +239,7 @@ def test_travel_children_derive_route_and_fail_closed_under_vibecomfy(
         backend="vibecomfy",
     )
 
-    assert (
-        resolved.route_key
-        == f"{task_type}__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3"
-    )
+    assert resolved.route_key == task_type
     assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_UNSUPPORTED
     assert resolved.template_id is None
     assert resolved.should_use_vibecomfy is False
@@ -316,36 +269,10 @@ def test_template_independent_child_route_avoids_wan_vace_cocktail_keys(routing)
             resolved.params.get("model"),
         )
     ).lower()
-    assert (
-        resolved.route_key
-        == "individual_travel_segment__model-ltx2__guidance-ltx_anchor__continuity-first_last__profile-default"
-    )
+    assert resolved.route_key == "individual_travel_segment"
     assert "vace" not in combined_route_bits
     assert "cocktail" not in combined_route_bits
     assert "wan_2_2" not in combined_route_bits
-
-
-def test_travel_route_key_distinguishes_wan_vace_payload_context(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="wan-vace-child",
-        task_type="travel_segment",
-        params={
-            "model_name": "wan_2_2_vace_14B",
-            "travel_guidance": {"kind": "vace"},
-            "video_source": "/tmp/svi-prefix.mp4",
-            "wgp_profile": "default",
-        },
-        backend="vibecomfy",
-    )
-
-    assert (
-        resolved.route_key
-        == "travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default"
-    )
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.template_id == "video/wanvideo_wrapper_22_14b_vace_cocktail"
-    assert resolved.should_use_vibecomfy is True
-    assert resolved.fail_closed_reason is None
 
 
 def test_section3a_matrix_route_support_is_explicit_and_deterministic(routing) -> None:
@@ -395,145 +322,6 @@ def test_sprint12_route_docs_cover_selector_maps_section3a_and_app_snapshots(rou
         assert f"`{route_key}`" in inventory
 
 
-@pytest.mark.parametrize(
-    ("model_name", "expected_route_key"),
-    [
-        (
-            "ltx2_22B",
-            "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
-        ),
-        (
-            "ltx2_22B_distilled_1_1",
-            "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
-        ),
-    ],
-)
-def test_section3a_ltx_first_last_rows_are_supported_after_adapter_wiring(
-    routing, model_name: str, expected_route_key: str
-) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="ltx-promoted",
-        task_type="travel_segment",
-        params={
-            "model_name": model_name,
-            "continuity_case": "first_last",
-            "profile": "default",
-        },
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == expected_route_key
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.template_id == "video/ltx2_3_runexx_first_last_frame"
-    assert resolved.fail_closed_reason is None
-    assert resolved.should_use_vibecomfy is True
-
-
-def test_section3a_wan_i2v_first_last_is_supported_after_anchor_wiring(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="section3a-wan-i2v",
-        task_type="travel_segment",
-        params={
-            "_source_task_type": "travel_segment",
-            "model_name": "wan_2_2_i2v_lightning_baseline_2_2_2",
-            "start_image_url": "start.png",
-            "end_image_url": "end.png",
-            "continuity_case": "first_last",
-            "guidance_kind": "none",
-        },
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default"
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.template_id == "video/wanvideo_wrapper_22_14b_i2v_kijai"
-    assert resolved.fail_closed_reason is None
-    assert resolved.should_use_vibecomfy is True
-
-
-def test_section3a_ltx_raw_video_control_first_last_is_supported(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="ltx-control-video",
-        task_type="travel_segment",
-        params={
-            "model_name": "ltx2_22B_distilled_1_1",
-            "continuity_case": "first_last",
-            "travel_guidance": {
-                "kind": "ltx_control",
-                "mode": "video",
-                "videos": [{"path": "/tmp/video.mp4"}],
-            },
-        },
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == (
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video"
-        "__continuity-first_last__profile-default"
-    )
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.template_id == "video/ltx2_3_runexx_first_last_raw_video_guide"
-    assert resolved.fail_closed_reason is None
-    assert resolved.should_use_vibecomfy is True
-
-
-@pytest.mark.parametrize("mode", ["pose", "depth", "canny", "cameraman"])
-def test_section3a_ltx_control_first_last_modes_use_iclora_template(routing, mode: str) -> None:
-    resolved = routing.resolve_task_route(
-        task_id=f"ltx-control-{mode}",
-        task_type="travel_segment",
-        params={
-            "_source_task_type": "travel_segment",
-            "model_name": "ltx2_22B_distilled_1_1",
-            "continuity_case": "first_last",
-            "travel_guidance": {
-                "kind": "ltx_control",
-                "mode": mode,
-                "videos": [{"path": f"/tmp/{mode}.mp4"}],
-            },
-        },
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == (
-        f"travel_segment__model-ltx2_distilled__guidance-ltx_control_{mode}"
-        "__continuity-first_last__profile-default"
-    )
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.template_id == "video/ltx2_3_first_last_frame_travel_iclora_control"
-    assert resolved.fail_closed_reason is None
-    assert resolved.should_use_vibecomfy is True
-
-
-def test_ltx_control_iclora_route_allows_activated_loras(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="ltx-control-cameraman-lora",
-        task_type="travel_segment",
-        params={
-            "_source_task_type": "travel_segment",
-            "model_name": "ltx2_22B_distilled_1_1",
-            "continuity_case": "first_last",
-            "activated_loras": [
-                "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-Cameraman_v1/resolve/main/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
-            ],
-            "loras_multipliers": "0.8",
-            "travel_guidance": {
-                "kind": "ltx_control",
-                "mode": "cameraman",
-                "videos": [{"path": "/tmp/cameraman.mp4"}],
-            },
-        },
-        backend="vibecomfy",
-    )
-
-    assert resolved.route_key == (
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman"
-        "__continuity-first_last__profile-default"
-    )
-    assert resolved.fail_closed_reason is None
-    assert resolved.should_use_vibecomfy is True
-
-
 def test_template_less_vibecomfy_supported_route_fails_closed(routing, monkeypatch) -> None:
     route_key = "template_less_supported_route"
     monkeypatch.setattr(
@@ -564,45 +352,6 @@ def test_template_less_vibecomfy_supported_route_fails_closed(routing, monkeypat
     assert resolved.fail_closed_reason
     assert "has no template" in resolved.fail_closed_reason
     assert "will not fall back to WGP" in resolved.fail_closed_reason
-
-
-def test_join_clips_segment_uses_dimensional_route_key(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="join-child",
-        task_type="join_clips_segment",
-        params={
-            "model": "wan_2_2_vace_lightning_baseline_2_2_2",
-            "model_family": "wan22_vace",
-            "guidance_kind": "vace",
-            "continuity_case": "join_bridge",
-            "wgp_profile": "default",
-        },
-        backend="vibecomfy",
-    )
-
-    assert (
-        resolved.route_key
-        == "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default"
-    )
-    assert resolved.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert resolved.template_id == "video/wanvideo_wrapper_22_14b_vace_cocktail"
-    assert resolved.should_use_vibecomfy is True
-    assert resolved.fail_closed_reason is None
-
-
-def test_join_clips_segment_defaults_to_join_bridge_for_wan_vace(routing) -> None:
-    resolved = routing.resolve_task_route(
-        task_id="join-child-defaults",
-        task_type="join_clips_segment",
-        params={"model": "wan_2_2_vace_lightning_baseline_2_2_2"},
-        backend="wgp",
-    )
-
-    assert (
-        resolved.route_key
-        == "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default"
-    )
-    assert resolved.fail_closed_reason is None
 
 
 def test_wan_2_2_t2i_is_vibecomfy_supported_when_explicit(routing) -> None:
@@ -658,27 +407,23 @@ def test_route_snapshot_fields_are_top_level_columns_plus_json_snapshot(routing)
         parent_route_key="join_clips_orchestrator",
     )
 
-    route_key = (
-        "join_clips_segment__model-wan22_vace__guidance-vace__"
-        "continuity-join_bridge__profile-default"
-    )
     assert fields == {
         "selector_namespace": "production",
-        "route_key": route_key,
+        "route_key": "join_clips_segment",
         "selected_backend": "wgp",
         "selector_version": 42,
-        "support_state": "vibecomfy_supported",
+        "support_state": "vibecomfy_unsupported",
         "selected_profile": "default",
-        "selected_template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+        "selected_template_id": None,
         "route_run_id": None,
         "worker_contract_version": 1,
         "route_selection_snapshot": {
             "selector_namespace": "production",
-            "route_key": route_key,
+            "route_key": "join_clips_segment",
             "selected_backend": "wgp",
             "selector_version": 42,
-            "support_state": "vibecomfy_supported",
-            "template_id": "video/wanvideo_wrapper_22_14b_vace_cocktail",
+            "support_state": "vibecomfy_unsupported",
+            "template_id": None,
             "selected_profile": "default",
             "route_run_id": None,
             "worker_contract_version": 1,
@@ -716,11 +461,7 @@ def test_parent_derived_child_snapshot_uses_parent_contract_not_env(
         },
     )
 
-    route_key = (
-        "join_clips_segment__model-wan22_vace__guidance-vace__"
-        "continuity-join_bridge__profile-default"
-    )
-    assert fields["route_key"] == route_key
+    assert fields["route_key"] == "join_clips_segment"
     assert fields["selected_backend"] == "wgp"
     assert fields["selector_namespace"] == "canary"
     assert fields["selector_version"] == 8
@@ -820,14 +561,12 @@ def test_parent_child_route_preflight_reports_incompatible_vibecomfy_child(routi
         },
     )
 
-    assert preflight.ok is True
+    assert preflight.ok is False
     assert preflight.parent_route_key == "join_clips_orchestrator"
-    assert preflight.child_route_key == (
-        "join_clips_segment__model-wan22_vace__guidance-vace__"
-        "continuity-join_bridge__profile-default"
-    )
-    assert preflight.template_id == "video/wanvideo_wrapper_22_14b_vace_cocktail"
-    assert preflight.fail_closed_reason is None
+    assert preflight.child_route_key == "join_clips_segment"
+    assert preflight.template_id is None
+    assert preflight.fail_closed_reason
+    assert "explicit VibeComfy backend will not fall back to WGP" in preflight.fail_closed_reason
 
 
 def test_parent_derived_child_snapshot_self_routes_on_missing_parent_contract(
@@ -1643,10 +1382,9 @@ def test_parallel_join_child_creation_derives_transition_and_final_snapshots_fro
     ]
     assert calls[2]["dependant_on"] == ["created-1", "created-2"]
     for call in calls[:2]:
-        assert call["route_snapshot_fields"]["route_key"] == (
-            "join_clips_segment__model-wan22_vace__guidance-vace__"
-            "continuity-join_bridge__profile-default"
-        )
+        assert call["route_snapshot_fields"]["route_key"] == "join_clips_segment"
+        assert call["route_snapshot_fields"]["support_state"] == "vibecomfy_unsupported"
+        assert call["route_snapshot_fields"]["selected_template_id"] is None
         assert call["route_snapshot_fields"]["selected_backend"] == "wgp"
         assert call["route_snapshot_fields"]["selector_namespace"] == "canary"
         assert call["route_snapshot_fields"]["selector_version"] == 8
@@ -2180,7 +1918,7 @@ def test_task_formatter_displays_route_contract_and_repair_signals(routing) -> N
 
     assert "Route: route=travel_orchestrator backend=wgp" in formatted
     assert "Repair Signals: parent_repair_required" in formatted
-    assert "Route: route=travel_segment__" in formatted
+    assert "Route: route=travel_segment backend=vibecomfy" in formatted
     assert "backend=vibecomfy" in formatted
     assert "mixed_backend" in formatted
     assert "wrong_parent_route_key" in formatted
