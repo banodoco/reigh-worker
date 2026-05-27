@@ -830,15 +830,51 @@ def test_parent_child_route_preflight_reports_incompatible_vibecomfy_child(routi
     assert preflight.fail_closed_reason is None
 
 
-def test_parent_derived_child_snapshot_fails_closed_on_missing_parent_contract(
+def test_parent_derived_child_snapshot_self_routes_on_missing_parent_contract(
     routing,
 ) -> None:
-    with pytest.raises(ValueError, match="Missing or malformed parent params.route_contract"):
-        routing.parent_derived_child_route_snapshot_fields(
-            parent_params={},
-            child_task_type="join_clips_segment",
-            child_params={},
-        )
+    fields = routing.parent_derived_child_route_snapshot_fields(
+        parent_params={},
+        child_task_type="join_clips_segment",
+        child_params={},
+        expected_parent_route_key="join_clips_orchestrator",
+    )
+
+    assert fields["selected_backend"] == "wgp"
+    assert fields["selector_namespace"] == "production"
+    assert fields["route_key"]
+    assert fields["selected_profile"] == "default"
+    assert fields["worker_contract_version"] == routing.WORKER_ROUTE_CONTRACT_VERSION
+    assert fields["route_selection_snapshot"]["parent_route_key"] == "join_clips_orchestrator"
+
+
+def test_travel_orchestrator_child_spawn_self_routes_when_production_parent_contract_absent(
+    routing,
+) -> None:
+    parent_params = {
+        "orchestrator_details": {
+            "run_id": "travel-run-1",
+            "prompt": "move between frames",
+            "num_frames": 81,
+        },
+        "parent_generation_id": "parent-generation-1",
+        "tool_type": "travel-between-images",
+    }
+
+    fields = routing.parent_derived_child_route_snapshot_fields(
+        parent_params=parent_params,
+        child_task_type="travel_segment",
+        child_params={
+            "segment_index": 0,
+            "prompt": "move between frames",
+        },
+        expected_parent_route_key="travel_orchestrator",
+    )
+
+    assert fields["selected_backend"] == "wgp"
+    assert fields["selector_namespace"] == "production"
+    assert fields["route_key"] == "travel_segment"
+    assert fields["route_selection_snapshot"]["parent_route_key"] == "travel_orchestrator"
 
 
 def test_parent_derived_child_snapshot_fails_closed_on_malformed_parent_contract(
@@ -929,16 +965,30 @@ def test_parent_derived_control_rows_are_classified_and_parent_stamped(
     assert fields["route_selection_snapshot"]["parent_route_key"] == expected_parent_route_key
 
 
-@pytest.mark.parametrize("child_task_type", ["travel_stitch", "join_clips_orchestrator", "join_final_stitch"])
-def test_parent_derived_control_rows_require_parent_route_contract(
-    routing, child_task_type: str
+@pytest.mark.parametrize(
+    ("child_task_type", "expected_parent_route_key"),
+    [
+        ("travel_stitch", "travel_orchestrator"),
+        ("join_clips_orchestrator", "travel_orchestrator"),
+        ("join_final_stitch", "join_clips_orchestrator"),
+    ],
+)
+def test_parent_derived_control_rows_self_route_when_parent_contract_absent(
+    routing, child_task_type: str, expected_parent_route_key: str
 ) -> None:
-    with pytest.raises(ValueError, match="Missing or malformed parent params.route_contract"):
-        routing.parent_derived_child_route_snapshot_fields(
-            parent_params={},
-            child_task_type=child_task_type,
-            child_params={"orchestrator_details": {}},
-        )
+    fields = routing.parent_derived_child_route_snapshot_fields(
+        parent_params={},
+        child_task_type=child_task_type,
+        child_params={"orchestrator_details": {}},
+        expected_parent_route_key=expected_parent_route_key,
+    )
+
+    assert fields["route_key"] == child_task_type
+    assert fields["selected_backend"] == "wgp"
+    assert fields["selector_namespace"] == "production"
+    assert fields["selected_profile"] == "default"
+    assert fields["route_selection_snapshot"]["support_state"] == "wgp_only"
+    assert fields["route_selection_snapshot"]["parent_route_key"] == expected_parent_route_key
 
 
 @pytest.mark.parametrize(
@@ -1012,6 +1062,24 @@ def test_existing_child_route_contract_consistency_accepts_matching_children(
                 "params": json.dumps({"route_contract": child_route_contract}),
             }
         ],
+        expected_parent_route_key="travel_orchestrator",
+    )
+
+    assert result.ok is True
+    assert result.fail_closed_reason is None
+    assert result.mismatched_task_ids == ()
+
+
+def test_existing_child_route_contract_consistency_accepts_absent_parent_contract(
+    routing,
+) -> None:
+    result = routing.validate_existing_child_route_contracts(
+        parent_params={
+            "orchestrator_details": {"run_id": "travel-run-1"},
+            "parent_generation_id": "parent-generation-1",
+            "tool_type": "travel-between-images",
+        },
+        child_tasks=[{"id": "segment-1", "params": {"segment_index": 0}}],
         expected_parent_route_key="travel_orchestrator",
     )
 

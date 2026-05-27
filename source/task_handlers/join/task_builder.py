@@ -38,6 +38,7 @@ def _route_snapshot_for_join_child(
             child_task_id=child_task_id,
             child_task_type=child_task_type,
             child_params=child_params,
+            expected_parent_route_key=parent_route_key,
         )
         snapshot = fields.get("route_selection_snapshot")
         snapshot_parent_route_key = (

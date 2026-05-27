@@ -647,14 +647,26 @@ def preflight_parent_child_route(
     parent_params: Mapping[str, Any] | None,
     child_task_type: str,
     child_params: Mapping[str, Any] | None = None,
+    expected_parent_route_key: str | None = None,
 ) -> ParentChildRoutePreflight:
     """Validate a DB-created child can inherit its claimed parent's route."""
 
     parent_contract = _extract_parent_route_contract(parent_params)
     if parent_contract is None:
+        task_params = dict(child_params or {})
+        child_route_key = read_route_key_from_contract(child_task_type, task_params)
         return ParentChildRoutePreflight(
-            ok=False,
-            fail_closed_reason="Missing or malformed parent params.route_contract",
+            ok=True,
+            parent_route_key=expected_parent_route_key,
+            child_route_key=child_route_key,
+            backend=WorkerBackend.WGP,
+            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
+            template_id=None,
+            selector_namespace="production",
+            selector_version=None,
+            selected_profile=str(_route_profile(task_params)),
+            route_run_id=None,
+            worker_contract_version=WORKER_ROUTE_CONTRACT_VERSION,
         )
 
     contract_fields = _parse_parent_route_contract(parent_contract)
@@ -709,6 +721,7 @@ def parent_derived_child_route_snapshot_fields(
     child_task_type: str,
     child_params: Mapping[str, Any] | None = None,
     child_task_id: str | None = None,
+    expected_parent_route_key: str | None = None,
 ) -> dict[str, Any]:
     """Build child route snapshot fields from the parent's persisted contract."""
 
@@ -716,6 +729,7 @@ def parent_derived_child_route_snapshot_fields(
         parent_params=parent_params,
         child_task_type=child_task_type,
         child_params=child_params,
+        expected_parent_route_key=expected_parent_route_key,
     )
     if not preflight.ok:
         raise ValueError(preflight.fail_closed_reason or "Parent-derived child route failed closed")
@@ -749,10 +763,7 @@ def validate_existing_child_route_contracts(
 
     parent_contract = _extract_parent_route_contract(parent_params)
     if parent_contract is None:
-        return ChildRouteContractConsistency(
-            ok=False,
-            fail_closed_reason="Missing or malformed parent params.route_contract",
-        )
+        return ChildRouteContractConsistency(ok=True)
 
     parsed_parent = _parse_parent_route_contract(parent_contract)
     if isinstance(parsed_parent, str):

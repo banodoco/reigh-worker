@@ -2266,6 +2266,7 @@ def handle_travel_orchestrator_task(task_params_from_db: dict, main_output_dir_b
                     parent_params=task_params_from_db,
                     child_task_type="travel_segment",
                     child_params=segment_payload,
+                    expected_parent_route_key="travel_orchestrator",
                 ),
             )
             # Record the actual DB ID so subsequent segments depend on the real DB row ID
@@ -2382,6 +2383,7 @@ def handle_travel_orchestrator_task(task_params_from_db: dict, main_output_dir_b
                     parent_params=task_params_from_db,
                     child_task_type="travel_stitch",
                     child_params=stitch_payload,
+                    expected_parent_route_key="travel_orchestrator",
                 ),
             )
             
@@ -2486,6 +2488,7 @@ def handle_travel_orchestrator_task(task_params_from_db: dict, main_output_dir_b
                     parent_params=task_params_from_db,
                     child_task_type="join_clips_orchestrator",
                     child_params={"orchestrator_details": join_orchestrator_payload},
+                    expected_parent_route_key="travel_orchestrator",
                 ),
             )
             travel_logger.debug(
