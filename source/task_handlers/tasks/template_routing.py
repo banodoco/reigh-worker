@@ -108,6 +108,11 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
             support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
             template_id="image/z_image",
             default_resolution="1024x1024",
+            disposition="replaced_by_astrid_d3",
+            blocking_reason=(
+                "Astrid D-3 owns the accepted image/z_image Vibe capability "
+                "via the pip_embedded profile"
+            ),
         ),
         "z_image_turbo_i2i": RouteSelectorEntry(
             route_key="z_image_turbo_i2i",
@@ -164,16 +169,31 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
             route_key="travel_segment",
             support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
             template_id=None,
+            disposition="wgp_only",
+            blocking_reason=(
+                "Native WGP owns travel_segment; Worker VibeComfy is explicitly "
+                "unsupported and fail-closed"
+            ),
         ),
         "individual_travel_segment": RouteSelectorEntry(
             route_key="individual_travel_segment",
             support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
             template_id=None,
+            disposition="wgp_only",
+            blocking_reason=(
+                "Native WGP owns individual_travel_segment; Worker VibeComfy is "
+                "explicitly unsupported and fail-closed"
+            ),
         ),
         "join_clips_segment": RouteSelectorEntry(
             route_key="join_clips_segment",
             support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
             template_id=None,
+            disposition="wgp_only",
+            blocking_reason=(
+                "Native WGP owns join_clips_segment; Worker VibeComfy is explicitly "
+                "unsupported and fail-closed"
+            ),
         ),
         "travel_stitch": RouteSelectorEntry(
             route_key="travel_stitch",
@@ -201,11 +221,21 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
             route_key="image-upscale",
             support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
             template_id="image/basic_image_upscale",
+            disposition="replaced_by_astrid_d4",
+            blocking_reason=(
+                "Astrid D-4 owns the accepted image-upscale Vibe capability "
+                "via the checkout_server profile"
+            ),
         ),
         "image_upscale": RouteSelectorEntry(
             route_key="image_upscale",
             support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
             template_id="image/basic_image_upscale",
+            disposition="replaced_by_astrid_d4",
+            blocking_reason=(
+                "Astrid D-4 owns the accepted image-upscale Vibe capability "
+                "via the checkout_server profile"
+            ),
         ),
         "video_enhance": RouteSelectorEntry(
             route_key="video_enhance",
@@ -1002,6 +1032,14 @@ def _fail_closed_reason(
 
     if selector_entry is None:
         return f"Route {route_key!r} has no VibeComfy selector entry"
+    if (
+        selector_entry.disposition
+        and selector_entry.disposition.startswith("replaced_by_astrid_")
+    ):
+        return (
+            f"{selector_entry.blocking_reason or f'Route {route_key!r} is replaced by Astrid'}; "
+            "explicit VibeComfy backend will not fall back to WGP"
+        )
 
     if selector_entry.support_state != RouteSupportState.VIBECOMFY_SUPPORTED:
         return (

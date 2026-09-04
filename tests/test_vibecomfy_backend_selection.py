@@ -205,10 +205,53 @@ def test_wgp_default_direct_route_preserves_builder_and_queue(monkeypatch, tmp_p
     assert len(queue.submitted) == 1
 
 
+@pytest.mark.parametrize("task_type", ["z_image_turbo", "image-upscale", "image_upscale"])
+def test_astrid_replacement_routes_fail_closed_without_worker_vibe_adapter(
+    monkeypatch, tmp_path, task_type: str
+):
+    task_registry = _import_task_registry(monkeypatch)
+    monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
+
+    def _unexpected_adapter_load():
+        raise AssertionError("Astrid-replaced route must not load Worker Vibe adapter")
+
+    monkeypatch.setattr(
+        "source.task_handlers.tasks.task_execution._load_vibecomfy_handler",
+        _unexpected_adapter_load,
+    )
+    context = _context(_Queue(fail_on_submit=True), tmp_path)
+    context["task_params_dict"] = {"prompt": "replaced route"}
+
+    ok, result = task_registry.TaskRegistry._handle_direct_queue_task(task_type, context)
+
+    assert ok is False
+    assert result and "explicit VibeComfy backend will not fall back to WGP" in result
+    assert "Astrid" in result
+
+
+def test_astrid_replacement_routes_preserve_wgp_queue(monkeypatch, tmp_path):
+    task_registry = _import_task_registry(monkeypatch)
+    monkeypatch.delenv("REIGH_BACKEND", raising=False)
+    built = []
+
+    def _builder(params, task_id, task_type, wan2gp_path, debug_mode):
+        built.append(task_type)
+        return SimpleNamespace(id=task_id, parameters={})
+
+    monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
+    queue = _Queue()
+    context = _context(queue, tmp_path)
+    context["task_params_dict"] = {"prompt": "WGP preserved"}
+
+    for task_type in ("z_image_turbo", "image-upscale", "image_upscale"):
+        ok, _result = task_registry.TaskRegistry._handle_direct_queue_task(task_type, context)
+        assert ok is True
+
+    assert built == ["z_image_turbo", "image-upscale", "image_upscale"]
+    assert len(queue.submitted) == 3
 @pytest.mark.parametrize(
     "task_type",
     [
-        "z_image_turbo",
         "z_image_turbo_i2i",
         "wan_2_2_t2i",
         "qwen_image",
@@ -302,7 +345,7 @@ def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
     }
 
     ok, result = task_registry.TaskRegistry._handle_direct_queue_task(
-        "z_image_turbo",
+        "qwen_image",
         context,
     )
 
@@ -315,10 +358,10 @@ def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
     assert routing_cards
     card = routing_cards[0]
     assert card["task_id"] == "task-1"
-    assert card["task_type"] == "z_image_turbo"
-    assert card["route_key"] == "z_image_turbo"
+    assert card["task_type"] == "qwen_image"
+    assert card["route_key"] == "qwen_image"
     assert card["backend"] == "vibecomfy"
-    assert card["template_id"] == "image/z_image"
+    assert card["template_id"] == "image/qwen_image_2512"
     assert card["support_state"] == "vibecomfy_supported"
     assert card["memory_profile"] == "3"
     assert card["decision"] == "vibecomfy_adapter"

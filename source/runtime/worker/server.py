@@ -7,105 +7,19 @@ import argparse
 import signal
 from pathlib import Path
 
-try:
-    from supabase import create_client
-except ImportError:  # pragma: no cover - tests monkeypatch this seam
-    def create_client(*_args, **_kwargs):
-        raise RuntimeError("supabase client is unavailable")
-
-from source.core.db import config as db_config
 from source.core.log import headless_logger
 from source.core.platform_utils import suppress_alsa_errors
-from source.core.params.task_result import TaskOutcome, TaskResult
-from source.runtime.process_globals import get_bootstrap_controller, run_bootstrap_once
-from source.task_handlers.tasks.task_registry import TaskRegistry
-from source.task_handlers.orchestration.finalization_service import (
-    WorkerPostGenerationRequest,
-    apply_worker_post_generation_policy,
-)
-from source.task_handlers.travel.chaining import handle_travel_chaining_after_wgp
-from source.task_handlers.tasks import task_types
 from source.core.runtime_paths import get_repo_root
 from source.runtime import wgp_bridge
-from source.runtime.worker_protocol import IDLE_RELEASE_EXIT_CODE
-from source.runtime.worker import idle_release
-from source.utils.output_paths import prepare_output_path
+from source.runtime.process_globals import get_bootstrap_controller, run_bootstrap_once
 
 repo_root = str(get_repo_root())
 wan2gp_path = str((Path(repo_root) / "Wan2GP").resolve())
 WORKER_BOOTSTRAP_CONTROLLER = get_bootstrap_controller("worker.server")
-STATUS_FAILED = "Failed"
 _ensure_runtime_bridge_path = wgp_bridge.ensure_wan2gp_on_path
 ensure_wan2gp_on_path = wgp_bridge.ensure_wan2gp_on_path
 
 
-def update_task_status_supabase(*_args, **_kwargs):
-    """Compatibility placeholder for static worker failure contracts."""
-    return None
-
-
-def _resolve_worker_db_client_key(cli_args, *, access_token: str | None) -> str:
-    auth_mode = os.environ.get("WORKER_DB_CLIENT_AUTH_MODE", "").strip().lower()
-    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
-    anon_key = getattr(cli_args, "supabase_anon_key", None) or os.environ.get("SUPABASE_ANON_KEY")
-
-    if auth_mode == "service":
-        if not service_key:
-            raise ValueError("SERVICE_ROLE_KEY is required when WORKER_DB_CLIENT_AUTH_MODE=service")
-        return service_key
-    if auth_mode == "worker":
-        if not access_token:
-            raise ValueError("WORKER_DB_CLIENT_AUTH_MODE=worker requires --reigh-access-token")
-        return access_token
-    # Default: service key > access token > anon key (matches old worker.py behavior)
-    resolved = service_key or access_token or anon_key
-    if not resolved:
-        raise ValueError("No Supabase key found. Provide --reigh-access-token, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_ANON_KEY")
-    return resolved
-
-
-def _is_local_worker_mode(cli_args, *, access_token: str | None) -> bool:
-    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
-    if service_key:
-        return False
-    if os.environ.get("WORKER_DB_CLIENT_AUTH_MODE", "").strip().lower() == "service":
-        return False
-    return bool(access_token)
-
-
-def _initialize_db_runtime(cli_args, *, access_token: str | None, debug_mode_enabled: bool):
-    supabase_url = getattr(cli_args, "supabase_url", None) or os.environ.get("SUPABASE_URL")
-    client_key = _resolve_worker_db_client_key(cli_args, access_token=access_token)
-    client = create_client(supabase_url, client_key)
-    runtime_cfg = db_config.initialize_db_runtime(
-        db_type="supabase",
-        pg_table_name=db_config.PG_TABLE_NAME,
-        supabase_url=supabase_url,
-        supabase_service_key=os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY"),
-        supabase_video_bucket=db_config.SUPABASE_VIDEO_BUCKET,
-        supabase_client=client,
-        supabase_access_token=client_key,
-        supabase_edge_complete_task_url=db_config.SUPABASE_EDGE_COMPLETE_TASK_URL,
-        supabase_edge_create_task_url=db_config.SUPABASE_EDGE_CREATE_TASK_URL,
-        supabase_edge_claim_task_url=db_config.SUPABASE_EDGE_CLAIM_TASK_URL,
-        debug=debug_mode_enabled,
-    )
-    validation_errors = db_config.validate_config(runtime_config=runtime_cfg)
-    if validation_errors:
-        # With access-token auth, missing service key is non-fatal (old behavior: warn only)
-        fatal_errors = [e for e in validation_errors if "SERVICE_KEY" not in e]
-        for err in validation_errors:
-            if "SERVICE_KEY" in err and not access_token:
-                headless_logger.warning(f"[CONFIG] {err} (non-fatal with access token auth)")
-        if fatal_errors:
-            raise ValueError("; ".join(fatal_errors))
-    return runtime_cfg, client_key
-
-
-def _handle_task_failure(task_id: str, error_message: str):
-    """Persist worker failure state using the error message channel."""
-    update_task_status_supabase(task_id, STATUS_FAILED, error_message)
-    return TaskResult.failed(error_message)
 
 
 def bootstrap_runtime_environment() -> dict[str, object]:
@@ -125,96 +39,6 @@ def bootstrap_runtime_environment() -> dict[str, object]:
     )
 
 
-def move_wgp_output_to_task_type_dir(
-    *,
-    output_path: str,
-    task_type: str,
-    task_id: str,
-    main_output_dir_base: Path,
-) -> str:
-    if not task_types.is_wgp_task(task_type):
-        return output_path
-    output_file = Path(output_path)
-    if not output_file.exists():
-        return output_path
-    if output_file.parent.resolve() != main_output_dir_base.resolve():
-        return output_path
-    new_path, _ = prepare_output_path(
-        task_id=task_id,
-        filename=output_file.name,
-        main_output_dir_base=main_output_dir_base,
-        task_type=task_type,
-    )
-    new_path.parent.mkdir(parents=True, exist_ok=True)
-    output_file.rename(new_path)
-    headless_logger.debug(f"Moved WGP output to {new_path}", task_id=task_id)
-    return str(new_path)
-
-
-def process_single_task(
-    *,
-    task_params_dict,
-    main_output_dir_base: Path,
-    task_type: str,
-    project_id_for_task,
-    image_download_dir: Path | str | None = None,
-    colour_match_videos: bool = False,
-    mask_active_frames: bool = True,
-    task_queue=None,
-):
-    task_id = task_params_dict.get("task_id", "unknown")
-    context = {
-        "task_params_dict": task_params_dict,
-        "main_output_dir_base": main_output_dir_base,
-        "task_id": task_id,
-        "project_id": project_id_for_task,
-        "task_queue": task_queue,
-        "colour_match_videos": colour_match_videos,
-        "mask_active_frames": mask_active_frames,
-        "debug_mode": False,
-        "wan2gp_path": wan2gp_path,
-    }
-    result = TaskRegistry.dispatch(task_type, context)
-    if isinstance(result, TaskResult) and result.outcome == TaskOutcome.FAILED:
-        return result
-
-    generation_success, output_location_to_db = result if not isinstance(result, TaskResult) else (True, result.output_path)
-    if generation_success and output_location_to_db:
-        normalized_task_params = dict(task_params_dict)
-        chain_details = normalized_task_params.get("travel_chain_details")
-        if isinstance(chain_details, dict) and chain_details and "enabled" not in chain_details:
-            normalized_task_params["travel_chain_details"] = {
-                **chain_details,
-                "enabled": True,
-            }
-
-        output_location_to_db = apply_worker_post_generation_policy(
-            request=WorkerPostGenerationRequest(
-                task_id=task_id,
-                task_type=task_type,
-                normalized_task_params=normalized_task_params,
-                output_location_to_db=output_location_to_db,
-                image_download_dir=str(image_download_dir) if image_download_dir is not None else None,
-                main_output_dir_base=main_output_dir_base,
-            ),
-            chain_handler=lambda **kwargs: handle_travel_chaining_after_wgp(
-                wgp_task_params=kwargs["normalized_task_params"],
-                actual_wgp_output_video_path=kwargs["actual_wgp_output_video_path"],
-                image_download_dir=kwargs["image_download_dir"],
-                main_output_dir_base=main_output_dir_base,
-            ),
-            relocate_output=move_wgp_output_to_task_type_dir,
-            log_error=lambda message: headless_logger.error(message, task_id=task_id),
-        )
-
-    if isinstance(result, TaskResult):
-        return TaskResult(
-            outcome=result.outcome,
-            output_path=output_location_to_db,
-            thumbnail_url=result.thumbnail_url,
-            metadata=result.metadata,
-        )
-    return TaskResult.success(output_location_to_db) if generation_success else TaskResult.failed(output_location_to_db or "generation failed")
 
 
 def _worker_backend_name() -> str:
@@ -228,22 +52,14 @@ def _uses_vibecomfy_backend() -> bool:
 def parse_args():
     parser = argparse.ArgumentParser("WanGP Worker Server")
     parser.add_argument("--main-output-dir", type=str, default="./outputs")
-    parser.add_argument("--poll-interval", type=int, default=10)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--worker", type=str, default=None)
-    parser.add_argument("--save-logging", type=str, nargs='?', const='logs/worker.log', default=None)
-    parser.add_argument("--migrate-only", action="store_true")
+    parser.add_argument("--save-logging", type=str, nargs="?", const="logs/worker.log", default=None)
     parser.add_argument("--colour-match-videos", action="store_true")
     parser.add_argument("--mask-active-frames", dest="mask_active_frames", action="store_true", default=True)
     parser.add_argument("--no-mask-active-frames", dest="mask_active_frames", action="store_false")
-    parser.add_argument("--queue-workers", type=int, default=1, dest="queue_workers")
     parser.add_argument("--preload-model", type=str, default="")
-    parser.add_argument("--db-type", type=str, default="supabase")
-    parser.add_argument("--supabase-url", type=str, default="https://wczysqzxlwdndgxitrvc.supabase.co")
-    parser.add_argument("--reigh-access-token", type=str, default=None, help="Access token for Reigh API (preferred)")
-    parser.add_argument("--supabase-access-token", type=str, default=None, help="Legacy alias for --reigh-access-token")
-    parser.add_argument("--supabase-anon-key", type=str, default=None, help="Supabase anon key (set via env SUPABASE_ANON_KEY)")
-    idle_release.add_cli_args(parser)
+    parser.add_argument("--reigh-access-token", type=str, default=None, help="Access token for Reigh API")
 
     # WGP Globals
     parser.add_argument("--wgp-attention-mode", type=str, default=None)
@@ -262,223 +78,47 @@ def parse_args():
     return parser.parse_args()
 
 
+def _wait_for_shutdown() -> None:
+    """Keep the passive worker substrate alive until its supervisor stops it."""
+    if os.name == "nt":
+        import time
+
+        time.sleep(3600)
+    else:
+        signal.pause()
+
+
 def main():
-    import sys
-    import time
     import datetime
     import logging
+    import sys
+
     from dotenv import load_dotenv
 
     headless_logger.essential("main() entered")
-
     load_dotenv()
     bootstrap_runtime_environment()
 
-    # -----------------------------------------------------------------------
-    # Subprocess tracker — records every subprocess we spawn so we can
-    # report them at shutdown time for forensic analysis of phantom CTRL_C.
-    # -----------------------------------------------------------------------
-    import threading as _threading_mod
-    _subprocess_registry_lock = _threading_mod.Lock()
-    _subprocess_registry: list[dict] = []  # {pid, cmd, started, ended, returncode}
-
-    def _register_subprocess(pid: int, cmd: str):
-        with _subprocess_registry_lock:
-            _subprocess_registry.append({
-                "pid": pid, "cmd": cmd,
-                "started": time.time(), "ended": None, "returncode": None,
-            })
-
-    def _deregister_subprocess(pid: int, returncode: int | None):
-        with _subprocess_registry_lock:
-            for entry in _subprocess_registry:
-                if entry["pid"] == pid and entry["ended"] is None:
-                    entry["ended"] = time.time()
-                    entry["returncode"] = returncode
-                    break
-
-    def _dump_subprocess_registry():
-        """Log all tracked subprocesses — active and recently exited."""
-        with _subprocess_registry_lock:
-            if not _subprocess_registry:
-                headless_logger.essential("[SHUTDOWN-DIAG] No tracked subprocesses")
-                return
-            now = time.time()
-            for entry in _subprocess_registry:
-                status = "ACTIVE" if entry["ended"] is None else f"exited rc={entry['returncode']}"
-                age = now - entry["started"]
-                ended_ago = f", ended {now - entry['ended']:.1f}s ago" if entry["ended"] else ""
-                headless_logger.essential(
-                    f"[SHUTDOWN-DIAG] subprocess pid={entry['pid']} "
-                    f"status={status} age={age:.1f}s{ended_ago} cmd={entry['cmd'][:120]}"
-                )
-
-    # Expose the registry globally so subprocess_utils can use it
-    globals()["_register_subprocess"] = _register_subprocess
-    globals()["_deregister_subprocess"] = _deregister_subprocess
-
-    def _dump_all_thread_stacks():
-        """Log stack traces for ALL threads, not just the main thread."""
-        import traceback as _tb
-        headless_logger.essential("[SHUTDOWN-DIAG] --- All thread stacks ---")
-        for thread_id, frame in sys._current_frames().items():
-            # Try to find the thread name
-            thread_name = "unknown"
-            for t in _threading_mod.enumerate():
-                if t.ident == thread_id:
-                    thread_name = t.name
-                    break
-            headless_logger.essential(f"[SHUTDOWN-DIAG] Thread {thread_id} ({thread_name}):")
-            for line in _tb.format_stack(frame):
-                for stack_line in line.rstrip().splitlines():
-                    headless_logger.essential(f"  {stack_line}")
-
-    def _dump_child_processes():
-        """Use psutil (if available) to enumerate actual child processes."""
+    def _request_shutdown(signum, _frame):
         try:
-            import psutil
-            current = psutil.Process()
-            children = current.children(recursive=True)
-            if not children:
-                headless_logger.essential("[SHUTDOWN-DIAG] No child processes (psutil)")
-                return
-            for child in children:
-                try:
-                    headless_logger.essential(
-                        f"[SHUTDOWN-DIAG] child pid={child.pid} name={child.name()} "
-                        f"status={child.status()} cmdline={' '.join(child.cmdline()[:5])}"
-                    )
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    headless_logger.essential(f"[SHUTDOWN-DIAG] child pid={child.pid} (gone/access denied)")
-        except ImportError:
-            headless_logger.essential("[SHUTDOWN-DIAG] psutil not available — cannot enumerate children")
-        except Exception as e:
-            headless_logger.essential(f"[SHUTDOWN-DIAG] child process enumeration failed: {e}")
-
-    def _full_shutdown_diagnostics(source_label: str):
-        """Dump comprehensive diagnostics at shutdown time."""
-        headless_logger.essential(f"[SHUTDOWN-DIAG] === Diagnostics triggered by: {source_label} ===")
-        headless_logger.essential(f"[SHUTDOWN-DIAG] PID={os.getpid()} PPID={os.getppid()}")
-        headless_logger.essential(f"[SHUTDOWN-DIAG] Active threads: {_threading_mod.active_count()}")
-        try:
-            _dump_all_thread_stacks()
-        except Exception as e:
-            headless_logger.essential(f"[SHUTDOWN-DIAG] thread stack dump failed: {e}")
-        try:
-            _dump_subprocess_registry()
-        except Exception as e:
-            headless_logger.essential(f"[SHUTDOWN-DIAG] subprocess registry dump failed: {e}")
-        try:
-            _dump_child_processes()
-        except Exception as e:
-            headless_logger.essential(f"[SHUTDOWN-DIAG] child process dump failed: {e}")
-
-    def _request_shutdown(signum, frame):
-        # Log who raised us and the stack at the moment of the signal so that
-        # unexpected shutdowns (e.g. someone else sending SIGINT/SIGTERM to this
-        # console group) leave a forensic trail in the worker log.
-        import traceback as _tb
-        try:
-            sig_name = signal.Signals(signum).name
+            signal_name = signal.Signals(signum).name
         except (ValueError, AttributeError):
-            sig_name = f"signum={signum}"
-        headless_logger.essential(f"[SHUTDOWN] {sig_name} received; stack at signal delivery:")
-        for line in _tb.format_stack(frame):
-            for stack_line in line.rstrip().splitlines():
-                headless_logger.essential(f"  {stack_line}")
-        _full_shutdown_diagnostics(f"signal {sig_name}")
+            signal_name = f"signum={signum}"
+        headless_logger.essential(f"[SHUTDOWN] {signal_name} received")
         raise KeyboardInterrupt
 
-    # Steady-state SIGTERM/SIGINT map to the existing KeyboardInterrupt cleanup path.
-    # SIGTERM during DB init, WGP import, or task_queue.start() still exits before
-    # the later cleanup finally runs; that startup-window limitation is unchanged.
     signal.signal(signal.SIGTERM, _request_shutdown)
     signal.signal(signal.SIGINT, _request_shutdown)
 
-    # On Windows, console control events (Ctrl+C, Ctrl+Break, window close, logoff,
-    # shutdown) are delivered to the console group rather than as POSIX signals.
-    # Install a console-control handler so we can log the specific event that
-    # caused the shutdown — next time "it just crashed" happens we will know
-    # whether it was Ctrl+C, the window closing, the user logging off, etc.
-    #
-    # IMPORTANT: On Windows, CTRL_C_EVENT (code 0) can be triggered NOT only by
-    # a user pressing Ctrl+C, but also by:
-    #   1. GenerateConsoleCtrlEvent() called by any process in the console group
-    #   2. A subprocess that crashes while sharing our console group
-    #   3. Fortran/MKL runtimes (via numpy/scipy) installing their own handlers
-    # The enhanced handler below logs thread stacks + child processes so we can
-    # identify the true source.
-    if os.name == "nt":
-        try:
-            import ctypes
-            from ctypes import wintypes
-            _CTRL_EVENT_NAMES = {
-                0: "CTRL_C_EVENT",
-                1: "CTRL_BREAK_EVENT",
-                2: "CTRL_CLOSE_EVENT",
-                5: "CTRL_LOGOFF_EVENT",
-                6: "CTRL_SHUTDOWN_EVENT",
-            }
-            _HANDLER_ROUTINE = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
-
-            def _win_ctrl_handler(event):
-                name = _CTRL_EVENT_NAMES.get(event, f"UNKNOWN_EVENT_{event}")
-                headless_logger.essential(f"[SHUTDOWN] Windows console control event: {name} (code={event})")
-                # Dump full diagnostics — this is the key forensic data.
-                # The console handler runs on a dedicated OS thread, so we can
-                # see what every Python thread was doing at the moment of the event.
-                try:
-                    _full_shutdown_diagnostics(f"console ctrl event {name}")
-                except Exception as diag_err:
-                    headless_logger.essential(f"[SHUTDOWN] diagnostics failed in ctrl handler: {diag_err}")
-                # Return False so the default handler runs (which raises KI for
-                # CTRL_C_EVENT and terminates the process for CTRL_CLOSE_EVENT etc.)
-                return False
-
-            _ctrl_handler_ref = _HANDLER_ROUTINE(_win_ctrl_handler)
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            if not kernel32.SetConsoleCtrlHandler(_ctrl_handler_ref, True):
-                headless_logger.essential(f"SetConsoleCtrlHandler failed: {ctypes.get_last_error()}")
-            # Keep a module-level reference to prevent GC collecting the callback
-            globals()["_win_ctrl_handler_keepalive"] = _ctrl_handler_ref
-
-            # Log the console process group ID — helpful for understanding which
-            # processes share our console and could send us CTRL_C_EVENT.
-            try:
-                _GetConsoleProcessList = kernel32.GetConsoleProcessList
-                _GetConsoleProcessList.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
-                _GetConsoleProcessList.restype = wintypes.DWORD
-                _pids_buf = (wintypes.DWORD * 64)()
-                _n = _GetConsoleProcessList(_pids_buf, 64)
-                _console_pids = [_pids_buf[i] for i in range(_n)]
-                headless_logger.essential(
-                    f"[STARTUP] Console group PIDs (count={_n}): {_console_pids}; our PID={os.getpid()}"
-                )
-            except Exception as e:
-                headless_logger.essential(f"[STARTUP] Could not enumerate console group: {e}")
-
-        except (OSError, AttributeError, ImportError) as e:
-            headless_logger.essential(f"Could not install console control handler: {e}")
-
     headless_logger.essential("bootstrap done")
-
     cli_args = parse_args()
     headless_logger.essential(f"args parsed: worker={cli_args.worker}, debug={cli_args.debug}")
-    local_http_server = None
 
-    # Resolve access token: prefer explicit CLI values, then the environment.
-    # Live workers launch with REIGH_ACCESS_TOKEN in env so crash/argparse logs
-    # cannot echo the credential as part of the process command line.
-    access_token = (
-        cli_args.reigh_access_token
-        or cli_args.supabase_access_token
-        or os.environ.get("REIGH_ACCESS_TOKEN")
-    )
+    access_token = cli_args.reigh_access_token or os.environ.get("REIGH_ACCESS_TOKEN")
     if not access_token:
         print("Error: Worker authentication credential is required", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
-    # Auto-derive worker_id when not explicitly provided
     if not cli_args.worker:
         cli_args.worker = os.environ.get("RUNPOD_POD_ID") or "local-worker"
     os.environ["WORKER_ID"] = cli_args.worker
@@ -492,7 +132,6 @@ def main():
         install_stdout_filter,
         suppress_library_logging,
     )
-    from source.core.log.lifecycle import lifecycle, run_summary
 
     debug_mode = cli_args.debug or _is_env_debug()
     if debug_mode:
@@ -500,6 +139,7 @@ def main():
         enable_debug_mode()
         try:
             from mmgp import offload
+
             offload.default_verboseLevel = 2
         except ImportError:
             pass
@@ -507,60 +147,44 @@ def main():
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             log_dir = "logs"
             os.makedirs(log_dir, exist_ok=True)
-            log_file = os.path.join(log_dir, f"debug_{timestamp}.log")
-            set_log_file(log_file)
-            headless_logger.essential(f"Debug logging enabled. Saving to {log_file}")
+            set_log_file(os.path.join(log_dir, f"debug_{timestamp}.log"))
     else:
         disable_debug_mode()
         suppress_library_logging()
         install_stdout_filter()
-
     if cli_args.save_logging:
         set_log_file(cli_args.save_logging)
 
-    # Initialize DB runtime
-    headless_logger.essential("initializing DB...")
+    local_http_server = None
+    from source.runtime.worker.local_http import start_local_http_server
+
+    port = int(os.environ.get("REIGH_LOCAL_WORKER_PORT", "8765"))
+    materialization_dir = Path(
+        os.environ.get("REIGH_LOCAL_WORKER_DIR", str(Path.home() / ".reigh-local-files"))
+    ).expanduser()
     try:
-        _, client_key = _initialize_db_runtime(cli_args, access_token=access_token, debug_mode_enabled=debug_mode)
-        os.environ["SUPABASE_URL"] = cli_args.supabase_url
-        headless_logger.essential("DB initialized")
-    except (ValueError, OSError, KeyError) as e:
-        headless_logger.essential(f"DB init failed: {e}")
-        sys.exit(1)
+        local_http_server = start_local_http_server(
+            materialization_dir=materialization_dir,
+            port=port,
+            worker_id=cli_args.worker,
+            version="worker",
+            auth_optional=os.environ.get("REIGH_LOCAL_WORKER_AUTH_OPTIONAL") in ("1", "true", "yes"),
+            file_ttl_seconds=int(os.environ.get("REIGH_LOCAL_WORKER_FILE_TTL_SECONDS", "21600")),
+            janitor_interval_seconds=int(os.environ.get("REIGH_LOCAL_WORKER_JANITOR_INTERVAL_SECONDS", "1800")),
+        )
+        headless_logger.essential(
+            f"Local HTTP server listening on 127.0.0.1:{port}, materializing to {materialization_dir}"
+        )
+    except OSError as exc:
+        headless_logger.warning(f"Local HTTP server could not bind to 127.0.0.1:{port}: {exc}")
 
-    if cli_args.migrate_only:
-        sys.exit(0)
-
-    if _is_local_worker_mode(cli_args, access_token=access_token):
-        from source.runtime.worker.local_http import start_local_http_server
-
-        port = int(os.environ.get("REIGH_LOCAL_WORKER_PORT", "8765"))
-        mat_dir = Path(os.environ.get("REIGH_LOCAL_WORKER_DIR", str(Path.home() / ".reigh-local-files"))).expanduser()
-        auth_optional = os.environ.get("REIGH_LOCAL_WORKER_AUTH_OPTIONAL") in ("1", "true", "yes")
-        file_ttl_seconds = int(os.environ.get("REIGH_LOCAL_WORKER_FILE_TTL_SECONDS", "21600"))
-        janitor_interval_seconds = int(os.environ.get("REIGH_LOCAL_WORKER_JANITOR_INTERVAL_SECONDS", "1800"))
+    def _shutdown_local_http() -> None:
+        if local_http_server is None:
+            return
         try:
-            local_http_server = start_local_http_server(
-                materialization_dir=mat_dir,
-                port=port,
-                worker_id=cli_args.worker,
-                version="worker",
-                auth_optional=auth_optional,
-                file_ttl_seconds=file_ttl_seconds,
-                janitor_interval_seconds=janitor_interval_seconds,
-            )
-            headless_logger.essential(
-                f"Local HTTP server listening on 127.0.0.1:{port}, materializing to {mat_dir} "
-                f"(TTL={file_ttl_seconds}s, sweep every {janitor_interval_seconds}s)"
-            )
-            if auth_optional:
-                headless_logger.warning(
-                    "[SECURITY] REIGH_LOCAL_WORKER_AUTH_OPTIONAL=1 — /ingest and /cleanup accept requests "
-                    "WITHOUT Authorization. The brief's localhost-attacker threat model is opt-out in this "
-                    "configuration. Production worker setups must leave this knob unset."
-                )
-        except OSError as e:
-            headless_logger.warning(f"Local HTTP server could not bind to 127.0.0.1:{port}: {e}")
+            local_http_server.shutdown()
+        except BaseException as exc:
+            headless_logger.debug_anomaly("SHUTDOWN", f"local_http_server.shutdown failed: {exc}")
 
     main_output_dir = Path(cli_args.main_output_dir).resolve()
     main_output_dir.mkdir(parents=True, exist_ok=True)
@@ -570,25 +194,13 @@ def main():
         PreflightCheck,
         WorkerPreflightResult,
         finalize_preflight_result,
-        publish_preflight_metadata,
         run_worker_preflight,
         write_preflight_state,
     )
     from source.runtime.worker.warm_cache import publish_warm_cache_state, resolve_warm_cache_plan
 
     def _publish_preflight(result: WorkerPreflightResult, *, ready_for_tasks: bool) -> None:
-        if cli_args.worker and db_config.SUPABASE_CLIENT is not None:
-            metadata_client = db_config.SUPABASE_CLIENT
-            service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
-            if service_key:
-                metadata_client = create_client(cli_args.supabase_url, service_key)
-            publish_preflight_metadata(
-                supabase_client=metadata_client,
-                worker_id=cli_args.worker,
-                result=result,
-                ready_for_tasks=ready_for_tasks,
-            )
-        elif cli_args.worker:
+        if cli_args.worker:
             write_preflight_state(
                 cli_args.worker,
                 {
@@ -606,7 +218,8 @@ def main():
     )
     if not static_preflight.ok:
         _publish_preflight(static_preflight, ready_for_tasks=False)
-        sys.exit(1)
+        _shutdown_local_http()
+        return 1
     _publish_preflight(
         WorkerPreflightResult(
             status=PREFLIGHT_STATUS_RUNNING,
@@ -618,53 +231,10 @@ def main():
         ready_for_tasks=False,
     )
 
-    # Centralized logging with heartbeat guardian
-    from source.core.log import LogBuffer, CustomLogInterceptor, set_log_interceptor
-    from source.runtime.worker.guardian import send_heartbeat_with_logs
-    from source.task_handlers.worker.heartbeat_utils import start_heartbeat_guardian_process
-
-    _log_interceptor_instance = None
-    guardian_process = None
-    guardian_config = None
-    if cli_args.worker:
-        guardian_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or access_token
-        guardian_config = {
-            "db_url": cli_args.supabase_url,
-            "api_key": guardian_key,
-        }
-        # On Windows, the guardian child process crashes due to Ctrl+C
-        # propagation through Fortran runtimes (MKL/numpy) that Python's
-        # signal.signal(SIGINT, SIG_IGN) can't reach. Skip the guardian
-        # on Windows — heartbeats are sent inline instead via the
-        # guardian_config fallback path.
-        if os.name != "nt":
-            guardian_process, log_queue = start_heartbeat_guardian_process(
-                cli_args.worker, cli_args.supabase_url, guardian_key
-            )
-            _global_log_buffer = LogBuffer(max_size=100, shared_queue=log_queue)
-            _log_interceptor_instance = CustomLogInterceptor(_global_log_buffer)
-            set_log_interceptor(_log_interceptor_instance)
-
-    # Show a loading message so users see feedback during the long model-load phase
-    from source.runtime.worker.status_display import show_loading_message
-    show_loading_message()
-
-    task_queue = None
     if _uses_vibecomfy_backend():
-        headless_logger.essential("VibeComfy backend active; skipping WGP import and queue startup")
+        headless_logger.essential("VibeComfy backend active; skipping WGP import")
         wgp_import_check = PreflightCheck("wgp_import", True, "skipped for vibecomfy backend", required=False)
     else:
-        _publish_preflight(
-            WorkerPreflightResult(
-                status=PREFLIGHT_STATUS_RUNNING,
-                checks=static_preflight.checks,
-                started_at=static_preflight.started_at,
-                completed_at=static_preflight.completed_at,
-                phase="wgp_import",
-            ),
-            ready_for_tasks=False,
-        )
-        # Apply WGP overrides
         original_cwd = os.getcwd()
         original_argv = sys.argv[:]
         try:
@@ -672,366 +242,78 @@ def main():
             sys.path.insert(0, wan2gp_path)
             sys.argv = ["worker.py"]
             import wgp as wgp_mod
-            sys.argv = original_argv
 
-            if cli_args.wgp_attention_mode: wgp_mod.attention_mode = cli_args.wgp_attention_mode
-            if cli_args.wgp_compile: wgp_mod.compile = cli_args.wgp_compile
+            if cli_args.wgp_attention_mode:
+                wgp_mod.attention_mode = cli_args.wgp_attention_mode
+            if cli_args.wgp_compile:
+                wgp_mod.compile = cli_args.wgp_compile
             if cli_args.wgp_profile:
                 wgp_mod.force_profile_no = cli_args.wgp_profile
                 wgp_mod.default_profile = cli_args.wgp_profile
-            if cli_args.wgp_vae_config: wgp_mod.vae_config = cli_args.wgp_vae_config
-            if cli_args.wgp_boost: wgp_mod.boost = cli_args.wgp_boost
-            if cli_args.wgp_transformer_quantization: wgp_mod.transformer_quantization = cli_args.wgp_transformer_quantization
-            if cli_args.wgp_transformer_dtype_policy: wgp_mod.transformer_dtype_policy = cli_args.wgp_transformer_dtype_policy
-            if cli_args.wgp_text_encoder_quantization: wgp_mod.text_encoder_quantization = cli_args.wgp_text_encoder_quantization
-            if cli_args.wgp_vae_precision: wgp_mod.server_config["vae_precision"] = cli_args.wgp_vae_precision
-            if cli_args.wgp_mixed_precision: wgp_mod.server_config["mixed_precision"] = cli_args.wgp_mixed_precision
-            if cli_args.wgp_preload_policy: wgp_mod.server_config["preload_model_policy"] = [x.strip() for x in cli_args.wgp_preload_policy.split(',')]
-            if cli_args.wgp_preload: wgp_mod.server_config["preload_in_VRAM"] = cli_args.wgp_preload
-            if "transformer_types" not in wgp_mod.server_config: wgp_mod.server_config["transformer_types"] = []
-
+            if cli_args.wgp_vae_config:
+                wgp_mod.vae_config = cli_args.wgp_vae_config
+            if cli_args.wgp_boost:
+                wgp_mod.boost = cli_args.wgp_boost
+            if cli_args.wgp_transformer_quantization:
+                wgp_mod.transformer_quantization = cli_args.wgp_transformer_quantization
+            if cli_args.wgp_transformer_dtype_policy:
+                wgp_mod.transformer_dtype_policy = cli_args.wgp_transformer_dtype_policy
+            if cli_args.wgp_text_encoder_quantization:
+                wgp_mod.text_encoder_quantization = cli_args.wgp_text_encoder_quantization
+            if cli_args.wgp_vae_precision:
+                wgp_mod.server_config["vae_precision"] = cli_args.wgp_vae_precision
+            if cli_args.wgp_mixed_precision:
+                wgp_mod.server_config["mixed_precision"] = cli_args.wgp_mixed_precision
+            if cli_args.wgp_preload_policy:
+                wgp_mod.server_config["preload_model_policy"] = [
+                    item.strip() for item in cli_args.wgp_preload_policy.split(",")
+                ]
+            if cli_args.wgp_preload:
+                wgp_mod.server_config["preload_in_VRAM"] = cli_args.wgp_preload
+            if "transformer_types" not in wgp_mod.server_config:
+                wgp_mod.server_config["transformer_types"] = []
             headless_logger.essential("WGP imported OK")
             wgp_import_check = PreflightCheck("wgp_import", True, "wgp imported", required=True)
-
-        except (ImportError, RuntimeError, AttributeError, KeyError) as e:
-            headless_logger.essential(f"WGP import failed: {e}")
+        except (ImportError, RuntimeError, AttributeError, KeyError) as exc:
+            headless_logger.essential(f"WGP import failed: {exc}")
             _publish_preflight(
                 finalize_preflight_result(
                     static_preflight,
-                    extra_checks=[PreflightCheck("wgp_import", False, str(e), required=True)],
+                    extra_checks=[PreflightCheck("wgp_import", False, str(exc), required=True)],
                 ),
                 ready_for_tasks=False,
             )
-            sys.exit(1)
+            _shutdown_local_http()
+            return 1
         finally:
+            sys.argv = original_argv
             os.chdir(original_cwd)
 
-    # Clean up legacy collision-prone LoRA files
     from source.models.lora.lora_utils import cleanup_legacy_lora_collisions, sweep_lora_cache_from_env
+
     cleanup_legacy_lora_collisions()
     sweep_lora_cache_from_env(task_id="worker_startup")
 
-    # Initialize Task Queue. Keep the WGP queue import inside the WGP branch:
-    # importing it pulls in WGP-heavy modules even when VibeComfy owns execution.
-    worker_profile = os.environ.get(
-        "REIGH_WORKER_PROFILE",
-        os.environ.get("WGP_PROFILE", str(cli_args.wgp_profile or "1")),
-    )
-    pending_task_skip = os.environ.get("REIGH_WARM_CACHE_SKIP_REASON") == "pending_tasks"
+    worker_profile = os.environ.get("REIGH_WORKER_PROFILE", os.environ.get("WGP_PROFILE", str(cli_args.wgp_profile or "1")))
     warm_cache_plan = resolve_warm_cache_plan(
         backend=worker_backend,
         profile=worker_profile,
         cli_preload_model=cli_args.preload_model or None,
-        pending_tasks=pending_task_skip,
     )
-    if cli_args.worker:
-        publish_warm_cache_state(
-            cli_args.worker,
-            warm_cache_plan,
-            status="warmup" if warm_cache_plan.enabled else "skipped",
-        )
-    if _uses_vibecomfy_backend():
-        queue_start_check = PreflightCheck("task_queue_start", True, "skipped for vibecomfy backend", required=False)
-    else:
-        from headless_model_management import HeadlessTaskQueue
-
-        _publish_preflight(
-            WorkerPreflightResult(
-                status=PREFLIGHT_STATUS_RUNNING,
-                checks=[*static_preflight.checks, wgp_import_check],
-                started_at=static_preflight.started_at,
-                completed_at=static_preflight.completed_at,
-                phase="task_queue_start",
-            ),
-            ready_for_tasks=False,
-        )
-        try:
-            task_queue = HeadlessTaskQueue(
-                wan_dir=wan2gp_path,
-                max_workers=cli_args.queue_workers,
-                debug_mode=debug_mode,
-                main_output_dir=str(main_output_dir)
-            )
-            preload_model = warm_cache_plan.preload_model
-            task_queue.start(preload_model=preload_model)
-            queue_start_check = PreflightCheck("task_queue_start", True, "task queue started", required=True)
-        except (RuntimeError, ValueError, OSError) as e:
-            headless_logger.essential(f"Queue init failed: {e}")
-            _publish_preflight(
-                finalize_preflight_result(
-                    static_preflight,
-                    extra_checks=[
-                        wgp_import_check,
-                        PreflightCheck("task_queue_start", False, str(e), required=True),
-                    ],
-                ),
-                ready_for_tasks=False,
-            )
-            sys.exit(1)
-    if cli_args.worker:
-        publish_warm_cache_state(
-            cli_args.worker,
-            warm_cache_plan,
-            status="hit" if warm_cache_plan.enabled else "skipped" if warm_cache_plan.skip_reason else "miss",
-        )
+    publish_warm_cache_state(cli_args.worker, warm_cache_plan, status="planned")
     _publish_preflight(
-        finalize_preflight_result(
-            static_preflight,
-            extra_checks=[
-                wgp_import_check,
-                queue_start_check,
-            ],
-        ),
-        ready_for_tasks=True,
+        finalize_preflight_result(static_preflight, extra_checks=[wgp_import_check]),
+        ready_for_tasks=False,
     )
-
-    # Status display with plant animation
-    _gpu_name = "unknown GPU"
-    try:
-        import torch
-        if torch.cuda.is_available():
-            _gpu_name = torch.cuda.get_device_name(0)
-    except Exception:
-        pass
-    _profile_names = {
-        "1": "Max Performance", "2": "High RAM", "3": "Balanced",
-        "4": "Conservative", "5": "Minimum",
-    }
-    _profile_label = _profile_names.get(str(cli_args.wgp_profile), f"Profile {cli_args.wgp_profile}")
-
-    from source.runtime.worker.status_display import WorkerStatusDisplay
-    _display = WorkerStatusDisplay(_gpu_name, _profile_label)
-    _display.show_banner()
-
-    # Import task processing dependencies
-    from source.core.db.task_claim import ClaimPollOutcome, poll_next_task
-    from source.core.db.task_status import (
-        update_task_status_supabase as _update_task_complete,
-        update_task_status,
-    )
-    from source.core.db.lifecycle.task_status_retry import requeue_task_for_retry
-    from source.task_handlers.worker.fatal_error_handler import FatalWorkerError, reset_fatal_error_counter, is_retryable_error
-    from source.task_handlers.worker.worker_utils import cleanup_generated_files
-    from source.runtime.worker.health_labels import write_worker_route_state
-
-    STATUS_COMPLETE = "Complete"
-    STATUS_IN_PROGRESS = "In Progress"
-    max_task_wait_minutes = int(os.getenv("MAX_TASK_WAIT_MINUTES", "5"))
-    idle_tracker = idle_release.IdleReleaseTracker(
-        idle_release.config_from_cli(cli_args, client_key=client_key)
-    )
-    idle_tracker.mark_onboarded()
     headless_logger.essential(
-        f"Task claim loop started backend={worker_backend} worker_id={cli_args.worker or 'local'}"
+        f"Worker substrate ready backend={worker_backend} worker_id={cli_args.worker}; "
+        "task authority remains external"
     )
 
     try:
-        while True:
-            poll_outcome, task_info = poll_next_task(
-                worker_id=cli_args.worker,
-                same_model_only=True,
-                max_task_wait_minutes=max_task_wait_minutes,
-            )
-
-            if poll_outcome == ClaimPollOutcome.EMPTY:
-                idle_tracker.record_empty_poll()
-                if idle_tracker.should_release():
-                    # Don't release while the queue is still processing a task
-                    # or downloading models — reset the timer and keep waiting.
-                    if task_queue and task_queue.has_active_work():
-                        headless_logger.debug_anomaly("WORKER", "Idle release suppressed — queue has active work")
-                        idle_tracker.record_claim()  # reset idle timer
-                    else:
-                        _display.on_task_start()  # clear display
-                        headless_logger.essential(
-                            f"Idle for >={cli_args.idle_release_minutes:.1f} min — releasing resources (exit {IDLE_RELEASE_EXIT_CODE})"
-                        )
-                        run_summary.render_to(headless_logger)
-                        sys.exit(IDLE_RELEASE_EXIT_CODE)
-                _display.animate_idle(cli_args.poll_interval)
-                continue
-            if poll_outcome == ClaimPollOutcome.ERROR:
-                time.sleep(cli_args.poll_interval)
-                continue
-
-            _display.on_task_start()
-            idle_tracker.record_claim()
-            if cli_args.worker:
-                write_worker_route_state(cli_args.worker, task_info)
-
-            current_task_params = task_info["params"]
-            current_task_type = task_info["task_type"]
-            current_project_id = task_info.get("project_id")
-            current_task_id = task_info["task_id"]
-
-            try:
-                with lifecycle.task(
-                    current_task_id,
-                    current_task_type,
-                    project_id=current_project_id,
-                    display_summary=None,
-                ) as anchor:
-                    if current_project_id is None and current_task_type in {"travel_orchestrator", "edit_video_orchestrator"}:
-                        anchor.set(error="Orchestrator missing project_id")
-                        _update_task_complete(current_task_id, STATUS_FAILED, "Orchestrator missing project_id")
-                        continue
-
-                    current_task_params["task_id"] = current_task_id
-                    if "orchestrator_details" in current_task_params:
-                        current_task_params["orchestrator_details"]["orchestrator_task_id"] = current_task_id
-
-                    if _log_interceptor_instance:
-                        _log_interceptor_instance.set_current_task(current_task_id)
-
-                    raw_result = process_single_task(
-                        task_params_dict=current_task_params,
-                        main_output_dir_base=main_output_dir,
-                        task_type=current_task_type,
-                        project_id_for_task=current_project_id,
-                        image_download_dir=current_task_params.get("segment_image_download_dir"),
-                        colour_match_videos=cli_args.colour_match_videos,
-                        mask_active_frames=cli_args.mask_active_frames,
-                        task_queue=task_queue,
-                    )
-
-                    if isinstance(raw_result, TaskResult):
-                        result = raw_result
-                        task_succeeded, output_location = raw_result  # __iter__ unpacking
-                    else:
-                        task_succeeded, output_location = raw_result
-                        result = None
-
-                    if task_succeeded:
-                        reset_fatal_error_counter()
-
-                        orchestrator_types = {"travel_orchestrator", "join_clips_orchestrator", "edit_video_orchestrator"}
-
-                        if current_task_type in orchestrator_types:
-                            if result and result.outcome == TaskOutcome.ORCHESTRATOR_COMPLETE:
-                                _update_task_complete(
-                                    current_task_id, STATUS_COMPLETE,
-                                    result.output_path, result.thumbnail_url)
-                                anchor.set(output=result.output_path)
-                            elif result and result.outcome == TaskOutcome.ORCHESTRATING:
-                                update_task_status(current_task_id, STATUS_IN_PROGRESS, result.output_path)
-                                anchor.set(progress=result.output_path)
-                            elif isinstance(output_location, str) and output_location.startswith("[ORCHESTRATOR_COMPLETE]"):
-                                import json as _json
-                                actual_output = output_location.replace("[ORCHESTRATOR_COMPLETE]", "")
-                                thumbnail_url = None
-                                try:
-                                    data = _json.loads(actual_output)
-                                    actual_output = data.get("output_location", actual_output)
-                                    thumbnail_url = data.get("thumbnail_url")
-                                except (ValueError, TypeError, KeyError):
-                                    pass
-                                _update_task_complete(current_task_id, STATUS_COMPLETE, actual_output, thumbnail_url)
-                                anchor.set(output=actual_output)
-                            else:
-                                update_task_status(current_task_id, STATUS_IN_PROGRESS, output_location)
-                                anchor.set(progress=output_location)
-                        else:
-                            _update_task_complete(current_task_id, STATUS_COMPLETE, output_location)
-                            cleanup_generated_files(output_location, current_task_id, debug_mode)
-                            anchor.set(output=output_location)
-                    else:
-                        error_message = (result.error_message if result else output_location) or "Unknown error"
-                        anchor.set(error=error_message)
-                        is_retryable, error_category, max_attempts = is_retryable_error(error_message)
-                        current_attempts = task_info.get("attempts", 0)
-
-                        if is_retryable and current_attempts < max_attempts:
-                            headless_logger.warning(
-                                f"Task {current_task_id} failed with retryable error ({error_category}), "
-                                f"requeuing for retry (attempt {current_attempts + 1}/{max_attempts})"
-                            )
-                            requeue_task_for_retry(current_task_id, error_message, current_attempts, error_category)
-                        else:
-                            if is_retryable and current_attempts >= max_attempts:
-                                headless_logger.error(
-                                    f"Task {current_task_id} exhausted {max_attempts} retry attempts for {error_category}"
-                                )
-                            _update_task_complete(current_task_id, STATUS_FAILED, output_location)
-            except FatalWorkerError:
-                raise
-            except Exception as e:
-                headless_logger.error(
-                    f"Unhandled exception while processing task {current_task_id}: {e}",
-                    task_id=current_task_id,
-                    exc_info=True,
-                )
-                try:
-                    error_message = str(e) or e.__class__.__name__
-                    is_retryable, error_category, max_attempts = is_retryable_error(error_message)
-                    current_attempts = task_info.get("attempts", 0)
-
-                    if is_retryable and current_attempts < max_attempts:
-                        headless_logger.warning(
-                            f"Task {current_task_id} failed with retryable error ({error_category}), "
-                            f"requeuing for retry (attempt {current_attempts + 1}/{max_attempts})"
-                        )
-                        requeue_task_for_retry(current_task_id, error_message, current_attempts, error_category)
-                    else:
-                        if is_retryable and current_attempts >= max_attempts:
-                            headless_logger.error(
-                                f"Task {current_task_id} exhausted {max_attempts} retry attempts for {error_category}"
-                            )
-                        _update_task_complete(current_task_id, STATUS_FAILED, error_message)
-                except:
-                    headless_logger.error(
-                        f"Failed to persist task failure for {current_task_id} after unhandled exception",
-                        task_id=current_task_id,
-                        exc_info=True,
-                    )
-                continue
-            finally:
-                if _log_interceptor_instance:
-                    _log_interceptor_instance.set_current_task(None)
-                _display.on_task_done()
-
-            time.sleep(1)
-
-    except FatalWorkerError as e:
-        run_summary.render_to(headless_logger)
-        headless_logger.critical(f"Fatal Error: {e}")
-        sys.exit(1)
+        _wait_for_shutdown()
     except KeyboardInterrupt:
-        run_summary.render_to(headless_logger)
         headless_logger.essential("Shutting down...")
     finally:
-        # The cleanup path must not explode on a second signal delivery — that
-        # just produces an ugly traceback and hides whatever the original crash
-        # was. Catch BaseException broadly here since we are already shutting
-        # down and best-effort is the right posture.
-        try:
-            run_summary.render_to(headless_logger)
-        except BaseException as _cleanup_err:
-            headless_logger.debug_anomaly("SHUTDOWN", f"render_to failed: {_cleanup_err}")
-        if local_http_server:
-            try:
-                local_http_server.shutdown()
-            except BaseException as _cleanup_err:
-                headless_logger.debug_anomaly("SHUTDOWN", f"local_http_server.shutdown failed: {_cleanup_err}")
-        if guardian_process:
-            try:
-                guardian_process.terminate()
-                guardian_process.join(5)
-            except BaseException as _cleanup_err:
-                headless_logger.debug_anomaly("SHUTDOWN", f"guardian termination failed: {_cleanup_err}")
-        if cli_args.worker and guardian_config:
-            try:
-                send_heartbeat_with_logs(
-                    cli_args.worker,
-                    0,
-                    0,
-                    [],
-                    guardian_config,
-                    status="terminated",
-                )
-            except BaseException as _cleanup_err:
-                headless_logger.debug_anomaly("SHUTDOWN", f"final heartbeat failed: {_cleanup_err}")
-        if task_queue:
-            try:
-                task_queue.stop()
-            except BaseException as _cleanup_err:
-                headless_logger.debug_anomaly("SHUTDOWN", f"task_queue.stop failed: {_cleanup_err}")
+        _shutdown_local_http()
+    return 0

@@ -14,7 +14,7 @@ from source.task_handlers.tasks.template_routing import resolve_task_route
 def _resolved(params=None):
     return resolve_task_route(
         task_id="adapter-task",
-        task_type="z_image_turbo",
+        task_type="qwen_image_2512",
         params={"prompt": "adapter prompt", **(params or {})},
         backend="vibecomfy",
     )
@@ -107,13 +107,13 @@ def test_defaults_to_python311_and_avoids_unsupported_cli_flags(monkeypatch, tmp
     assert ok is True
     assert command[:4] == ["python3.11", "-m", "vibecomfy.cli", "run"]
     scratchpad = Path(command[4])
-    assert scratchpad.name == "z_image_turbo_scratchpad.py"
+    assert scratchpad.name == "qwen_image_2512_scratchpad.py"
     assert scratchpad.exists()
     scratchpad_source = scratchpad.read_text(encoding="utf-8")
     assert "resolution(1024, 1024)" in scratchpad_source
     assert 'workflow.set_prompt("adapter prompt")' in scratchpad_source
     assert "workflow.set_seed(7)" in scratchpad_source
-    assert "workflow.set_steps(8)" in scratchpad_source
+    assert "nodes['238:224'].inputs['value'] = 8" in scratchpad_source
     assert "--ready" not in command
     assert "--runtime" in command
     assert "--prompt" not in command
@@ -294,7 +294,7 @@ def test_subprocess_failure_returns_bounded_telemetry(monkeypatch, tmp_path):
     assert ok is False
     assert message
     assert "backend=vibecomfy" in message
-    assert "template=image/z_image" in message
+    assert "template=image/qwen_image_2512" in message
     assert "profile=3" in message
     assert "exit_code=17" in message
     assert "small stdout" in message
@@ -306,7 +306,7 @@ def test_subprocess_failure_returns_bounded_telemetry(monkeypatch, tmp_path):
     assert failure_cards
     failure_card = failure_cards[0]
     assert failure_card["backend"] == "vibecomfy"
-    assert failure_card["template_id"] == "image/z_image"
+    assert failure_card["template_id"] == "image/qwen_image_2512"
     assert failure_card["memory_profile"] == 3
     assert failure_card["exit_code"] == 17
     assert len(failure_card["stderr"]) == 4000
@@ -547,33 +547,24 @@ def test_video_output_contract_violation_fails_before_completion(monkeypatch, tm
     assert "frame count mismatch" in message
 
 
-def test_non_default_resolution_is_patched_through_scratchpad(monkeypatch, tmp_path):
-    commands = []
+def test_astrid_replacement_route_is_rejected_before_worker_subprocess(
+    monkeypatch, tmp_path
+):
+    def _unexpected_run(*_args, **_kwargs):
+        raise AssertionError("replaced route must not invoke Worker Vibe subprocess")
 
-    def _run(command, cwd, env, text, capture_output, check):
-        commands.append(command)
-        output = Path(cwd) / "out.png"
-        output.write_text("fake", encoding="utf-8")
-        return _completed(stdout="output: out.png\n")
-
-    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _run)
+    monkeypatch.setattr(vibecomfy_adapter.subprocess, "run", _unexpected_run)
     resolved = resolve_task_route(
         task_id="adapter-task",
         task_type="z_image_turbo",
-        params={"prompt": "non default", "resolution": "896x496", "seed": 123, "num_inference_steps": 5},
+        params={"prompt": "replaced", "resolution": "896x496"},
         backend="vibecomfy",
     )
 
-    ok, result = handle_vibecomfy_resolved_task(resolved, tmp_path)
+    ok, message = handle_vibecomfy_resolved_task(resolved, tmp_path)
 
-    assert ok is True
-    assert result and result.endswith("out.png")
-    scratchpad = Path(commands[0][4])
-    scratchpad_source = scratchpad.read_text(encoding="utf-8")
-    assert "resolution(896, 496)" in scratchpad_source
-    assert 'workflow.set_prompt("non default")' in scratchpad_source
-    assert "workflow.set_seed(123)" in scratchpad_source
-    assert "workflow.set_steps(5)" in scratchpad_source
+    assert ok is False
+    assert message and "Astrid D-3" in message
 
 
 @pytest.mark.parametrize("route_key", ["qwen_image", "qwen_image_2512"])

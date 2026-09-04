@@ -2,7 +2,7 @@
 
 | Route | WGP | VibeComfy | Template |
 | --- | --- | --- | --- |
-| `z_image_turbo` | supported | supported | `image/z_image` |
+| `z_image_turbo` | supported | replaced_by_astrid_d3 (Worker fail-closed) | `image/z_image` (historical) |
 | `z_image_turbo_i2i` | supported | supported | `image/z_image_img2img` |
 | `qwen_image_2512` | supported | supported | `image/qwen_image_2512` |
 | `qwen_image` | supported | supported | `image/qwen_image_2512` |
@@ -13,15 +13,15 @@
 | `travel_orchestrator` | supported | wgp-only |  |
 | `join_clips_orchestrator` | supported | wgp-only |  |
 | `edit_video_orchestrator` | supported | wgp-only |  |
-| `travel_segment` | supported | unsupported |  |
-| `individual_travel_segment` | supported | unsupported |  |
-| `join_clips_segment` | supported | unsupported |  |
+| `travel_segment` | supported | wgp_only (Worker fail-closed) |  |
+| `individual_travel_segment` | supported | wgp_only (Worker fail-closed) |  |
+| `join_clips_segment` | supported | wgp_only (Worker fail-closed) |  |
 | `travel_stitch` | supported | wgp-only |  |
 | `join_final_stitch` | supported | wgp-only |  |
 | `wan_2_2_t2i` | supported | supported | `video/wanvideo_wrapper_22_14b_t2i` |
 | `wan_2_2_i2v` | supported | supported | `video/wanvideo_wrapper_22_14b_i2v_kijai` |
-| `image-upscale` | supported | supported | `image/basic_image_upscale` |
-| `image_upscale` | supported | supported | `image/basic_image_upscale` |
+| `image-upscale` | supported | replaced_by_astrid_d4 (Worker fail-closed) | `image/basic_image_upscale` (historical) |
+| `image_upscale` | supported | replaced_by_astrid_d4 (Worker fail-closed) | `image/basic_image_upscale` (historical) |
 | `video_enhance` | supported | supported | `video/basic_video_enhance` |
 | `animate_character` | supported | supported | `video/wan22_animate_native_first_stage` |
 | `flux_klein_edit` | supported | supported | `edit/flux2_klein_4b_image_edit_distilled` |

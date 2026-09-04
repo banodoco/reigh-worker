@@ -45,6 +45,7 @@ def test_known_drift_cases_now_resolve_to_wgp_output():
         "qwen_image_hires",
         "wan_2_2_i2v",
         "animate_character",
+        "z_image_turbo",
         "image-upscale",
         "image_upscale",
         "video_enhance",

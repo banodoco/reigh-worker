@@ -1658,11 +1658,7 @@ class TaskRegistry:
             }
             return orchestrator_handlers[task_type]()
 
-        # Default fallthrough to queue
-        if context["task_queue"]:
-             return TaskRegistry._handle_direct_queue_task(task_type, context)
-        
-        raise ValueError(f"Unknown task type {task_type} and no queue available")
+        raise ValueError(f"Unknown task type {task_type}")
 
     @staticmethod
     def _handle_join_clips_segment_task(context: Dict[str, Any]) -> Tuple[bool, Optional[str]]:

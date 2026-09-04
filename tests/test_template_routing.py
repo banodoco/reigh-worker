@@ -73,17 +73,34 @@ def routing():
         sys.modules.pop(spec.name, None)
 
 
-def test_supported_direct_routes_resolve_to_vibecomfy_templates(routing) -> None:
-    z_image = routing.resolve_task_route(
-        task_id="task-z",
-        task_type="z_image_turbo",
-        params={"prompt": "a small bright studio", "resolution": "1024x1024"},
-        backend="vibecomfy",
-    )
-    assert z_image.route_key == "z_image_turbo"
-    assert z_image.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
-    assert z_image.template_id == "image/z_image"
-    assert z_image.should_use_vibecomfy is True
+def test_astrid_replacements_remove_worker_vibe_routes_but_preserve_wgp(routing) -> None:
+    replacements = {
+        "z_image_turbo": ("replaced_by_astrid_d3", "image/z_image"),
+        "image-upscale": ("replaced_by_astrid_d4", "image/basic_image_upscale"),
+        "image_upscale": ("replaced_by_astrid_d4", "image/basic_image_upscale"),
+    }
+    for task_type, (disposition, template_id) in replacements.items():
+        vibe = routing.resolve_task_route(
+            task_id=f"{task_type}-vibe",
+            task_type=task_type,
+            params={"prompt": "replacement check"},
+            backend="vibecomfy",
+        )
+        assert vibe.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+        assert vibe.should_use_vibecomfy is False
+        assert vibe.template_id == template_id
+        assert vibe.fail_closed_reason
+        assert disposition in routing.route_support_report_fields(task_type)["disposition"]
+        assert "Astrid" in vibe.fail_closed_reason
+
+        wgp = routing.resolve_task_route(
+            task_id=f"{task_type}-wgp",
+            task_type=task_type,
+            params={"prompt": "WGP preservation check"},
+            backend="wgp",
+        )
+        assert wgp.support_state == routing.RouteSupportState.VIBECOMFY_SUPPORTED
+        assert wgp.fail_closed_reason is None
 
 
 @pytest.mark.parametrize(
@@ -111,8 +128,6 @@ def test_direct_route_aliases_match_canonical_selector_keys(
         ("qwen_image_style", "edit/qwen_image_edit"),
         ("image_inpaint", "edit/qwen_image_edit"),
         ("annotated_image_edit", "edit/qwen_image_edit"),
-        ("image-upscale", "image/basic_image_upscale"),
-        ("image_upscale", "image/basic_image_upscale"),
         ("z_image_turbo_i2i", "image/z_image_img2img"),
         ("wan_2_2_t2i", "video/wanvideo_wrapper_22_14b_t2i"),
         ("wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"),
@@ -301,7 +316,7 @@ def test_sprint12_route_docs_cover_selector_maps_section3a_and_app_snapshots(rou
     app_fixtures = json.loads(SELECTED_ROUTE_FIXTURES_PATH.read_text(encoding="utf-8"))
 
     assert "`z_image_turbo` | `dual_supported`" in inventory
-    assert "| `z_image_turbo` | supported | supported | `image/z_image`" in support
+    assert "| `z_image_turbo` | supported | replaced_by_astrid_d3 (Worker fail-closed) | `image/z_image` (historical) |" in support
     assert "| `animate_character` | `video/wan22_animate_native_first_stage`" in support
 
     for route_key in routing.SPRINT_2_SELECTOR_MAP:
@@ -872,7 +887,9 @@ def test_python_route_contract_matches_edge_fixtures(routing) -> None:
         ) == expected, fixture["name"]
 
 
-def test_reigh_backend_vibecomfy_is_parsed_strictly(routing, monkeypatch) -> None:
+def test_reigh_backend_vibecomfy_is_parsed_and_replaced_route_fails_closed(
+    routing, monkeypatch
+) -> None:
     monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
     resolved = routing.resolve_task_route(
         task_id="task-env",
@@ -880,13 +897,16 @@ def test_reigh_backend_vibecomfy_is_parsed_strictly(routing, monkeypatch) -> Non
         params={"prompt": "env-selected"},
     )
     assert resolved.backend == routing.WorkerBackend.VIBECOMFY
-    assert resolved.should_use_vibecomfy is True
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason and "Astrid D-3" in resolved.fail_closed_reason
 
     with pytest.raises(ValueError, match="Unsupported REIGH_BACKEND"):
         routing.parse_worker_backend("comfy")
 
 
-def test_z_image_non_default_resolution_remains_vibecomfy_supported(routing) -> None:
+def test_z_image_non_default_resolution_remains_fail_closed_after_astrid_replacement(
+    routing,
+) -> None:
     resolved = routing.resolve_task_route(
         task_id="z-image-non-default",
         task_type="z_image_turbo",
@@ -894,8 +914,8 @@ def test_z_image_non_default_resolution_remains_vibecomfy_supported(routing) -> 
         backend="vibecomfy",
     )
 
-    assert resolved.should_use_vibecomfy is True
-    assert resolved.fail_closed_reason is None
+    assert resolved.should_use_vibecomfy is False
+    assert resolved.fail_closed_reason and "Astrid D-3" in resolved.fail_closed_reason
 
 
 def test_module_has_no_wgp_heavy_or_vibecomfy_imports() -> None:

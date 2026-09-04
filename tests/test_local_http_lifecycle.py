@@ -1,44 +1,14 @@
-from types import SimpleNamespace
+from __future__ import annotations
 
-from source.runtime.worker.server import _is_local_worker_mode
+from pathlib import Path
 
-
-def _clear_local_worker_mode_env(monkeypatch):
-    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
-    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
-    monkeypatch.delenv("WORKER_DB_CLIENT_AUTH_MODE", raising=False)
+from source.runtime.worker import local_http, server
 
 
-def test_is_local_worker_mode_true_with_pat_only(monkeypatch):
-    _clear_local_worker_mode_env(monkeypatch)
-
-    assert _is_local_worker_mode(SimpleNamespace(), access_token="pat-token") is True
-
-
-def test_is_local_worker_mode_false_when_service_role_key_set(monkeypatch):
-    _clear_local_worker_mode_env(monkeypatch)
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-
-    assert _is_local_worker_mode(SimpleNamespace(), access_token="pat-token") is False
-
-
-def test_is_local_worker_mode_false_when_service_key_alias_set(monkeypatch):
-    _clear_local_worker_mode_env(monkeypatch)
-    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service")
-
-    assert _is_local_worker_mode(SimpleNamespace(), access_token="pat-token") is False
-
-
-def test_is_local_worker_mode_false_with_anon_key_only(monkeypatch):
-    _clear_local_worker_mode_env(monkeypatch)
-    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
-
-    assert _is_local_worker_mode(SimpleNamespace(supabase_anon_key="anon"), access_token=None) is False
-
-
-def test_is_local_worker_mode_false_when_auth_mode_service(monkeypatch):
-    _clear_local_worker_mode_env(monkeypatch)
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "service")
-
-    assert _is_local_worker_mode(SimpleNamespace(), access_token="pat-token") is False
+def test_supported_worker_keeps_local_http_materialization_boundary() -> None:
+    server_source = server.__file__
+    assert server_source is not None
+    source_text = Path(server_source).read_text(encoding="utf-8")
+    assert "start_local_http_server" in source_text
+    assert callable(local_http.start_local_http_server)
+    assert not hasattr(server, "_is_local_worker_mode")

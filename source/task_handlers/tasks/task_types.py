@@ -42,8 +42,6 @@ WGP_TASK_TYPES: FrozenSet[str] = frozenset({
     "qwen_image", "qwen_image_2512",
     # Specialized handlers that enqueue WGP tasks
     "inpaint_frames",
-    # Generic generation
-    "generate_video",
     # Z image models
     "z_image_turbo", "z_image_turbo_i2i",
 })
@@ -68,8 +66,6 @@ DIRECT_QUEUE_TASK_TYPES: FrozenSet[str] = frozenset({
     # VibeComfy direct app-active generation/editing tasks
     "wan_2_2_i2v", "animate_character", "video_enhance",
     "image-upscale", "image_upscale", "flux_klein_edit",
-    # Generic generation
-    "generate_video",
     # Qwen image tasks
     "qwen_image_edit", "qwen_image_hires", "qwen_image_style",
     "image_inpaint", "annotated_image_edit",
@@ -86,8 +82,6 @@ DIRECT_QUEUE_TASK_TYPES: FrozenSet[str] = frozenset({
 # This maps task types to their canonical WGP model identifiers.
 
 TASK_TYPE_TO_MODEL: Dict[str, str] = {
-    # Generic/default generation
-    "generate_video": "t2v",
     # VACE models
     "vace": "vace_14B_cocktail_2_2",
     "vace_21": "vace_14B",

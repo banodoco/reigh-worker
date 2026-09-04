@@ -2,7 +2,7 @@
 
 | Route | State |
 | --- | --- |
-| `z_image_turbo` | `dual_supported` |
+| `z_image_turbo` | `dual_supported` (Worker Vibe retired; Astrid D-3 replacement) |
 | `z_image_turbo` | selector |
 | `z_image_turbo_i2i` | selector |
 | `qwen_image_2512` | selector |
@@ -68,6 +68,7 @@
 | travel_orchestrator | `travel_orchestrator` |
 | travel_segment_wan22_vace_raw_video_source | `travel_segment__model-wan2_2_vace__guidance-vace_raw__continuity-video_source__profile-default` |
 | travel_segment_ltx_first_last | `travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default` |
-| vibecomfy z-image direct route | `z_image_turbo` |
+| Astrid replacement for z-image Vibe route (D-3 pip_embedded) | `z_image_turbo` |
+| Astrid replacement for image-upscale Vibe routes (D-4 checkout_server) | `image-upscale`, `image_upscale` |
 | wgp join child dimensional route | `join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default` |
-| legacy unknown route defaults | `legacy_custom_task` |
+| legacy unknown route defaults | retired (`legacy_custom_task` direct queue fallthrough removed in E-4) |

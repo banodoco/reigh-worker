@@ -1,27 +1,14 @@
 from __future__ import annotations
 
-import argparse
 import ast
 import inspect
-from argparse import Namespace
 import signal
 
 import pytest
 
-from source.core.db import task_claim
 from source.runtime import supervisor
 from source.runtime import worker_protocol
 from source.runtime.worker import idle_release, server
-
-
-class _Response:
-    def __init__(self, status_code: int, payload: dict | None = None, text: str = "") -> None:
-        self.status_code = status_code
-        self._payload = payload or {}
-        self.text = text
-
-    def json(self) -> dict:
-        return self._payload
 
 
 class _FakeClock:
@@ -170,132 +157,6 @@ def test_record_claim_resets_idle_window() -> None:
     assert tracker.last_successful_empty_poll_at is None
 
 
-def test_is_service_mode_branches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "service")
-    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
-    assert idle_release.is_service_mode("personal-token") is True
-
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
-    assert idle_release.is_service_mode("service-role") is True
-
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-    assert idle_release.is_service_mode("personal-token") is False
-
-    monkeypatch.delenv("WORKER_DB_CLIENT_AUTH_MODE", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
-    assert idle_release.is_service_mode("personal-token") is False
-
-
-def test_config_from_cli(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("WORKER_DB_CLIENT_AUTH_MODE", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
-
-    cli_args = Namespace(idle_release_minutes=7.0, idle_onboarding_grace_seconds=42.0)
-    cfg = idle_release.config_from_cli(cli_args, client_key="personal-token")
-    assert cfg.idle_minutes == 7.0
-    assert cfg.grace_seconds == 42.0
-    assert cfg.is_service_mode is False
-
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-    cfg2 = idle_release.config_from_cli(cli_args, client_key="service-role")
-    assert cfg2.is_service_mode is True
-
-
-def test_add_cli_args_defaults() -> None:
-    parser = argparse.ArgumentParser()
-    idle_release.add_cli_args(parser)
-    ns = parser.parse_args([])
-    assert ns.idle_release_minutes == 15.0
-    assert ns.idle_onboarding_grace_seconds == 60.0
-
-
-def test_resolve_worker_db_client_key_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
-    cli_args = Namespace(supabase_anon_key="anon-key")
-
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "service")
-    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
-    with pytest.raises(ValueError, match="SERVICE_ROLE_KEY is required"):
-        server._resolve_worker_db_client_key(cli_args, access_token="worker-token")
-
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "worker")
-    with pytest.raises(ValueError, match="requires --reigh-access-token"):
-        server._resolve_worker_db_client_key(cli_args, access_token=None)
-
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-    assert server._resolve_worker_db_client_key(cli_args, access_token="worker-token") == "service-role"
-
-    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    assert server._resolve_worker_db_client_key(cli_args, access_token="worker-token") == "worker-token"
-
-    assert server._resolve_worker_db_client_key(cli_args, access_token=None) == "anon-key"
-
-
-def test_initialize_db_runtime_uses_resolved_service_key_for_edge_auth(monkeypatch: pytest.MonkeyPatch) -> None:
-    cli_args = Namespace(supabase_url="https://supabase.example", supabase_anon_key=None)
-    captured = {}
-
-    monkeypatch.setenv("WORKER_DB_CLIENT_AUTH_MODE", "service")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-    monkeypatch.setattr(server, "create_client", lambda url, key: ("client", url, key))
-    monkeypatch.setattr(server.db_config, "validate_config", lambda runtime_config: [])
-
-    original_initialize = server.db_config.initialize_db_runtime
-
-    def fake_initialize_db_runtime(**kwargs):
-        captured.update(kwargs)
-        return original_initialize(**kwargs)
-
-    monkeypatch.setattr(server.db_config, "initialize_db_runtime", fake_initialize_db_runtime)
-
-    runtime, client_key = server._initialize_db_runtime(
-        cli_args,
-        access_token="pat-token",
-        debug_mode_enabled=False,
-    )
-
-    assert client_key == "service-role"
-    assert captured["supabase_access_token"] == "service-role"
-    assert runtime.supabase_access_token == "service-role"
-
-
-def test_poll_next_task_outcome_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(task_claim, "check_task_counts_supabase", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(task_claim._cfg, "SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setattr(task_claim._cfg, "SUPABASE_EDGE_CLAIM_TASK_URL", "https://edge/claim")
-
-    monkeypatch.setattr(task_claim._cfg, "SUPABASE_ACCESS_TOKEN", None)
-    assert task_claim.poll_next_task("worker-1", True, 5) == (task_claim.ClaimPollOutcome.ERROR, None)
-
-    monkeypatch.setattr(task_claim._cfg, "SUPABASE_ACCESS_TOKEN", "token")
-    monkeypatch.setattr(
-        task_claim.httpx,
-        "post",
-        lambda *_args, **_kwargs: _Response(200, {"task_id": "task-1", "task_type": "demo", "params": {}}),
-    )
-    outcome, task_info = task_claim.poll_next_task("worker-1", True, 5)
-    assert outcome is task_claim.ClaimPollOutcome.CLAIMED
-    assert task_info["task_id"] == "task-1"
-
-    monkeypatch.setattr(task_claim.httpx, "post", lambda *_args, **_kwargs: _Response(204))
-    assert task_claim.poll_next_task("worker-1", True, 5) == (task_claim.ClaimPollOutcome.EMPTY, None)
-
-    monkeypatch.setattr(task_claim.httpx, "post", lambda *_args, **_kwargs: _Response(500, text="boom"))
-    assert task_claim.poll_next_task("worker-1", True, 5) == (task_claim.ClaimPollOutcome.ERROR, None)
-
-    def _raise(*_args, **_kwargs):
-        raise OSError("network down")
-
-    monkeypatch.setattr(task_claim.httpx, "post", _raise)
-    assert task_claim.poll_next_task("worker-1", True, 5) == (task_claim.ClaimPollOutcome.ERROR, None)
-
-
 def test_worker_sigterm_handler_raises_keyboardinterrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     installed = {}
     real_signal = signal.signal
@@ -325,7 +186,6 @@ def test_worker_sigterm_handler_raises_keyboardinterrupt(monkeypatch: pytest.Mon
 
 def test_idle_release_exit_code_constant() -> None:
     assert worker_protocol.IDLE_RELEASE_EXIT_CODE == 75
-    assert server.IDLE_RELEASE_EXIT_CODE is worker_protocol.IDLE_RELEASE_EXIT_CODE
     assert supervisor.IDLE_RELEASE_EXIT_CODE is worker_protocol.IDLE_RELEASE_EXIT_CODE
 
 
@@ -339,31 +199,6 @@ def _has_top_level_idle_assign(source_text: str) -> bool:
                         return True
     return False
 
-
-def test_idle_release_suppressed_when_queue_has_active_work() -> None:
-    """Idle release must not fire while the task queue is still processing."""
-    clock = _FakeClock()
-    tracker = idle_release.IdleReleaseTracker(
-        idle_release.IdleReleaseConfig(idle_minutes=1.0, grace_seconds=0.0, is_service_mode=False),
-        clock=clock,
-    )
-    tracker.mark_onboarded()
-    tracker.record_empty_poll()
-    clock.advance(120)
-    # Tracker says release, but queue is busy — server.py should reset the timer.
-    assert tracker.should_release() is True
-    # Simulate what server.py does: check queue, then reset.
-    queue_active = True  # pretend queue.has_active_work() returned True
-    if queue_active:
-        tracker.record_claim()  # reset idle timer
-    assert tracker.should_release() is False
-    assert tracker.last_successful_empty_poll_at is None
-    # After work finishes, idle timer restarts from scratch.
-    tracker.record_empty_poll()
-    clock.advance(30)
-    assert tracker.should_release() is False  # only 30s, need 60s
-    clock.advance(40)
-    assert tracker.should_release() is True  # now past 60s
 
 
 def test_no_literal_idle_release_exit_code_in_server_or_supervisor() -> None:
