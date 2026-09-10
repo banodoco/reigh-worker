@@ -11,6 +11,7 @@ DEFAULT_IMAGE_RESOLUTION = "1024x1024"
 from source.models.model_handlers.qwen_handler import QwenHandler
 from source.media.prompt_expansion import expand_qwen_prompt
 from source.task_handlers.queue.task_queue import GenerationTask
+from source.task_handlers.tasks.template_routing import RETIRED_ASTRID_DIRECT_ROUTE_KEYS
 from source.utils.orchestrator_utils import extract_orchestrator_parameters
 
 
@@ -27,6 +28,11 @@ def db_task_to_generation_task(db_task_params: dict, task_id: str, task_type: st
     """
     Convert a database task row to a GenerationTask object for the queue system.
     """
+    if task_type in RETIRED_ASTRID_DIRECT_ROUTE_KEYS:
+        raise ValueError(
+            f"Task {task_id}: direct route {task_type!r} was retired after its "
+            "typed Astrid replacement; Worker will not execute it through WGP"
+        )
     prompt = db_task_params.get("prompt", "")
 
     # For img2img tasks, empty prompt is acceptable (will use minimal changes)
@@ -154,8 +160,6 @@ def db_task_to_generation_task(db_task_params: dict, task_id: str, task_type: st
     if task_type == "qwen_image_edit":
         qwen_handler.handle_qwen_image_edit(db_task_params, generation_params)
         model = qwen_handler.get_edit_model_name(db_task_params)
-    elif task_type == "qwen_image_hires":
-        qwen_handler.handle_qwen_image_hires(db_task_params, generation_params)
     elif task_type == "image_inpaint":
         qwen_handler.handle_image_inpaint(db_task_params, generation_params)
         model = qwen_handler.get_edit_model_name(db_task_params)

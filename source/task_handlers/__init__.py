@@ -10,7 +10,7 @@ Subpackages:
 Top-level handlers:
 - edit_video_orchestrator: Video editing workflow coordination
 - magic_edit: AI-powered image editing via Replicate API
-- inpaint_frames: Frame-level video inpainting using VACE
+- frame-range video inpainting is not a supported Worker entrypoint
 - create_visualization: Debug visualization generation
 - extract_frame / rife_interpolate: Specialized single-purpose handlers
 """

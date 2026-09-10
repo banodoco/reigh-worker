@@ -11,6 +11,7 @@ import pytest
 from source.task_handlers.tasks.task_types import TASK_TYPE_CATALOG
 from source.task_handlers.tasks.template_routing import (
     DIRECT_ROUTE_ALIASES,
+    RETIRED_ASTRID_DIRECT_ROUTE_KEYS,
     RouteSupportState,
     SPRINT_2_SELECTOR_MAP,
     WorkerBackend,
@@ -136,23 +137,22 @@ def test_route_contract_is_explicit_and_fail_closed() -> None:
         parse_worker_backend("implicit-fallback")
 
 
-def test_replaced_vibe_aliases_are_explicitly_disposed() -> None:
-    assert DIRECT_ROUTE_ALIASES["z_image"] == "z_image_turbo"
-    assert SPRINT_2_SELECTOR_MAP["z_image_turbo"].disposition == "replaced_by_astrid_d3"
-    assert SPRINT_2_SELECTOR_MAP["image-upscale"].disposition == "replaced_by_astrid_d4"
-    assert SPRINT_2_SELECTOR_MAP["image_upscale"].disposition == "replaced_by_astrid_d4"
+def test_retired_direct_families_are_explicitly_disposed() -> None:
+    assert set(DIRECT_ROUTE_ALIASES) == {"optimised_t2i", "wan_2_2_t2i"}
+    assert not set(RETIRED_ASTRID_DIRECT_ROUTE_KEYS) & set(SPRINT_2_SELECTOR_MAP)
 
-    for route_key in ("z_image", "z_image_turbo", "image-upscale", "image_upscale"):
+    for route_key in sorted(RETIRED_ASTRID_DIRECT_ROUTE_KEYS):
         resolved = resolve_task_route(
             task_id=f"e6-{route_key}",
             task_type=route_key,
             backend=WorkerBackend.VIBECOMFY,
         )
+        assert resolved.route_key in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
         assert resolved.fail_closed_reason, route_key
         assert not resolved.should_use_vibecomfy
 
 
-def test_preserved_wgp_progress_artifacts_and_video_enhance() -> None:
+def test_preserved_wgp_progress_artifacts_and_retired_direct_families() -> None:
     server_module = import_module("source.runtime.worker.server")
     assert callable(server_module.launch_generic_pack_host)
     assert "REIGH_BACKEND" not in _server_source()
@@ -169,7 +169,8 @@ def test_preserved_wgp_progress_artifacts_and_video_enhance() -> None:
     assert "uni3c_start_percent" in registry_source
     assert "uni3c_end_percent" in registry_source
     assert "uni3c_start_percent" in orchestration_source.read_text(encoding="utf-8")
-    assert "video_enhance" in TASK_TYPE_CATALOG
+    assert "video_enhance" not in TASK_TYPE_CATALOG
+    assert "video_enhance" in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
 
     for preserved in (
         ROOT / "docs" / "sprint-12-route-inventory.md",

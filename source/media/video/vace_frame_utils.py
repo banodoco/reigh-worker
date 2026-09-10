@@ -4,7 +4,7 @@ VACE Frame Utilities - Shared logic for frame-based VACE generation tasks
 This module provides shared functionality for tasks that use VACE to generate
 video frames with guide and mask videos. Used by:
 - join_clips: Bridge two video clips with smooth transition
-- inpaint_frames: Regenerate a range of frames within a single video
+- frame-range regeneration is owned by a separate, non-supported legacy path
 
 Key Features:
 - Guide video creation with context frames + gray gap
@@ -55,7 +55,7 @@ def create_guide_and_mask_for_generation(
     """
     Create guide and mask videos for VACE generation.
 
-    This shared function is used by both join_clips and inpaint_frames to create
+    This shared function is used by join_clips to create
     the guide video (context + gray gap + context) and mask video (black=keep, white=generate).
 
     Args:
@@ -364,56 +364,6 @@ def create_guide_and_mask_for_generation(
         raise RuntimeError(f"Failed to create mask video: {e}") from e
 
     return created_guide_video, created_mask_video, total_frames
-
-
-def validate_frame_range(
-    total_frame_count: int,
-    start_frame: int,
-    end_frame: int,
-    context_frame_count: int,
-    task_id: str = "unknown",
-) -> Tuple[bool, str]:
-    """
-    Validate that a frame range has sufficient context frames on both sides.
-
-    Used by inpaint_frames to ensure the requested range can be processed.
-
-    Args:
-        total_frame_count: Total frames in the source video
-        start_frame: Start frame index (inclusive)
-        end_frame: End frame index (exclusive)
-        context_frame_count: Required context frames on each side
-        task_id: Task ID for logging
-
-    Returns:
-        Tuple of (is_valid: bool, error_message: str or None)
-    """
-    generation_logger.debug_anomaly("VACE_UTILS", f"Task {task_id}: Validating frame range")
-    generation_logger.debug_anomaly("VACE_UTILS", f"  Total frames: {total_frame_count}")
-    generation_logger.debug_anomaly("VACE_UTILS", f"  Range: [{start_frame}, {end_frame})")
-    generation_logger.debug_anomaly("VACE_UTILS", f"  Context required: {context_frame_count} frames on each side")
-
-    # Check if range is valid
-    if start_frame < 0:
-        return False, f"start_frame ({start_frame}) must be non-negative"
-
-    if end_frame > total_frame_count:
-        return False, f"end_frame ({end_frame}) exceeds total frame count ({total_frame_count})"
-
-    if start_frame >= end_frame:
-        return False, f"start_frame ({start_frame}) must be less than end_frame ({end_frame})"
-
-    # Check if there's enough context before
-    if start_frame < context_frame_count:
-        return False, f"Need {context_frame_count} context frames before start_frame ({start_frame}), but only {start_frame} available"
-
-    # Check if there's enough context after
-    frames_after = total_frame_count - end_frame
-    if frames_after < context_frame_count:
-        return False, f"Need {context_frame_count} context frames after end_frame ({end_frame}), but only {frames_after} available"
-
-    generation_logger.debug_anomaly("VACE_UTILS", f"Task {task_id}: Frame range validation passed")
-    return True, None
 
 
 def prepare_vace_generation_params(

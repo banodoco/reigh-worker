@@ -11,6 +11,7 @@ from source.task_handlers.tasks.task_types import (
     is_direct_queue_task,
     is_wgp_task,
 )
+from source.task_handlers.tasks.template_routing import RETIRED_ASTRID_DIRECT_ROUTE_KEYS
 
 
 def test_derived_sets_match_catalog_flags():
@@ -38,28 +39,44 @@ def test_direct_queue_tasks_always_have_wgp_output_routing():
     assert not missing, f"Direct queue tasks missing output routing metadata: {missing}"
 
 
-def test_known_drift_cases_now_resolve_to_wgp_output():
-    for task_type in (
-        "qwen_image",
-        "qwen_image_2512",
-        "qwen_image_hires",
-        "wan_2_2_i2v",
-        "animate_character",
-        "z_image_turbo",
-        "image-upscale",
-        "image_upscale",
-        "video_enhance",
-        "flux_klein_edit",
-    ):
-        assert is_direct_queue_task(task_type)
-        assert is_wgp_task(task_type)
-    assert is_wgp_task("inpaint_frames")
+def test_retired_direct_families_have_no_worker_catalog_owner():
+    for task_type in RETIRED_ASTRID_DIRECT_ROUTE_KEYS:
+        assert task_type not in TASK_TYPE_CATALOG
+        assert not is_wgp_task(task_type)
+        assert not is_direct_queue_task(task_type)
+
+    assert is_direct_queue_task("wan_2_2_i2v")
+    assert is_wgp_task("wan_2_2_i2v")
+    assert "qwen_image_hires" not in TASK_TYPE_CATALOG
+    assert "inpaint_frames" not in TASK_TYPE_CATALOG
+    assert not is_wgp_task("qwen_image_hires")
+    assert not is_direct_queue_task("qwen_image_hires")
+    assert not is_wgp_task("inpaint_frames")
     assert not is_direct_queue_task("inpaint_frames")
 
 
-def test_qwen_image_catalog_models_remain_distinct():
-    assert get_default_model("qwen_image") == "qwen_image_20B"
-    assert get_default_model("qwen_image_2512") == "qwen_image_2512_20B"
+def test_legacy_catalog_only_task_types_are_removed():
+    for task_type in (
+        "flux",
+        "hunyuan",
+        "i2v",
+        "i2v_22",
+        "ltx2",
+        "ltxv",
+        "t2v",
+        "t2v_22",
+        "vace",
+        "vace_21",
+        "vace_22",
+    ):
+        assert task_type not in TASK_TYPE_CATALOG
+        assert not is_wgp_task(task_type)
+        assert not is_direct_queue_task(task_type)
+
+
+def test_retired_direct_families_use_unknown_task_fallback_model():
+    assert get_default_model("qwen_image") == "t2v"
+    assert get_default_model("qwen_image_2512") == "t2v"
 
 
 def test_default_model_is_projected_from_catalog():
@@ -69,8 +86,8 @@ def test_default_model_is_projected_from_catalog():
 
 
 def test_catalog_behavior_helpers_match_metadata_contracts():
-    assert allows_empty_prompt("qwen_image_edit") is True
-    assert allows_empty_prompt("z_image_turbo_i2i") is True
+    assert allows_empty_prompt("qwen_image_edit") is False
+    assert allows_empty_prompt("z_image_turbo_i2i") is False
     assert allows_empty_prompt("t2v") is False
 
     assert forced_video_length_for_task("wan_2_2_t2i") == 1
