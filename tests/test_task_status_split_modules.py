@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from dataclasses import replace
 from types import SimpleNamespace
 
 sys.modules.setdefault(
@@ -95,7 +96,7 @@ def test_update_status_via_edge_success(monkeypatch):
     assert captured["function_name"] == "update-task-status"
 
 
-def test_requeue_retry_falls_back_to_direct_db(monkeypatch):
+def test_requeue_retry_fails_closed_without_edge_request(monkeypatch):
     runtime = _runtime()
     monkeypatch.setattr(retry_mod, "resolve_runtime_config", lambda *_args, **_kwargs: runtime)
     monkeypatch.setattr(
@@ -104,20 +105,58 @@ def test_requeue_retry_falls_back_to_direct_db(monkeypatch):
         lambda _runtime: SimpleNamespace(url=None, headers={}),
     )
 
-    called = {}
+    class _NoDirectWrites:
+        def table(self, *_args, **_kwargs):
+            raise AssertionError("retry must not write the task table directly")
+
+    runtime = replace(runtime, supabase_client=_NoDirectWrites())
+    assert retry_mod.requeue_task_for_retry("task-2", "temporary", 1, "network") is False
+
+
+def test_requeue_retry_fails_closed_when_edge_request_fails(monkeypatch):
+    runtime = _runtime()
+    monkeypatch.setattr(retry_mod, "resolve_runtime_config", lambda *_args, **_kwargs: runtime)
     monkeypatch.setattr(
         retry_mod,
-        "requeue_task_direct_db",
-        lambda task_id, attempts, details, runtime_config=None: called.update(
-            {"task_id": task_id, "attempts": attempts, "details": details}
-        )
-        or True,
+        "resolve_update_status_request",
+        lambda _runtime: SimpleNamespace(url="https://edge.example/update", headers={}),
     )
 
-    ok = retry_mod.requeue_task_for_retry("task-2", "temporary", 1, "network")
-    assert ok is True
-    assert called["task_id"] == "task-2"
-    assert called["attempts"] == 2
+    calls = []
+
+    def _failed_edge(**kwargs):
+        calls.append(kwargs)
+        return _Resp(503), "edge unavailable"
+
+    monkeypatch.setattr(retry_mod, "call_edge_function_with_retry", _failed_edge)
+
+    class _NoDirectWrites:
+        def table(self, *_args, **_kwargs):
+            raise AssertionError("retry must not write the task table directly")
+
+    runtime = replace(runtime, supabase_client=_NoDirectWrites())
+    assert retry_mod.requeue_task_for_retry("task-2", "temporary", 1, "network") is False
+    assert calls and calls[0]["payload"]["attempts"] == 2
+
+
+def test_requeue_retry_uses_edge_request_when_available(monkeypatch):
+    runtime = _runtime()
+    monkeypatch.setattr(retry_mod, "resolve_runtime_config", lambda *_args, **_kwargs: runtime)
+    monkeypatch.setattr(
+        retry_mod,
+        "resolve_update_status_request",
+        lambda _runtime: SimpleNamespace(url="https://edge.example/update", headers={}),
+    )
+
+    calls = []
+
+    def _successful_edge(**kwargs):
+        calls.append(kwargs)
+        return _Resp(200), None
+
+    monkeypatch.setattr(retry_mod, "call_edge_function_with_retry", _successful_edge)
+    assert retry_mod.requeue_task_for_retry("task-2", "temporary", 1, "network") is True
+    assert calls[0]["function_name"] == "update-task-status"
 
 
 def test_complete_local_file_base64_path(monkeypatch, tmp_path: Path):
