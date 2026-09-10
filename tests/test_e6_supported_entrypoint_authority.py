@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import os
+import runpy
 import subprocess
 import sys
 from importlib import import_module
@@ -95,6 +96,8 @@ def test_supported_entrypoint_cold_import_does_not_bootstrap_legacy_modules() ->
             "-c",
             """
 import sys
+import runpy
+runpy.run_path('run_worker.py', run_name='supported_worker_probe')
 import source.runtime.entrypoints.worker
 import source.runtime.worker.server
 forbidden_prefixes = (
