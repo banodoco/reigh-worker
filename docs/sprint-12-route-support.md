@@ -1,5 +1,7 @@
 # Sprint 12 Route Support
 
+> **Post-cutover authority boundary (2026-09-10).** This table is an execution-capability catalog, not a task-admission authority. Supported producers admit typed work through Astrid Runtime, which owns task/run identity, CAS input references, idempotency, receipts, and settlement. The Worker claims admitted work through the Runtime edge contract and executes it through the neutral launcher/`GenericPackHost`. It must not create, complete, retry, or recover tasks by writing a Supabase task table directly. Legacy Vibe routes marked fail-closed or replaced remain historical compatibility entries; retained Stage1 routes are not browser producer paths.
+
 | Route | WGP | VibeComfy | Template |
 | --- | --- | --- | --- |
 | `z_image_turbo` | supported | replaced_by_astrid_d3 (Worker fail-closed) | `image/z_image` (historical) |

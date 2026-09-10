@@ -1,5 +1,7 @@
 # Sprint 12 Route Inventory
 
+> **Post-cutover authority boundary (2026-09-10).** Inventory state describes route resolution and execution capability only. Admission is Runtime-owned: a producer supplies the typed family, project, ordered CAS/input references, and idempotency key to Runtime; Worker execution and settlement remain behind the Runtime contract. No inventory row authorizes direct legacy task insertion, browser-side route derivation, or direct task-lifecycle fallback. `BLOCKED` and fail-closed rows remain explicit non-claims until their required canonical evidence exists.
+
 | Route | State |
 | --- | --- |
 | `z_image_turbo` | `dual_supported` (Worker Vibe retired; Astrid D-3 replacement) |
