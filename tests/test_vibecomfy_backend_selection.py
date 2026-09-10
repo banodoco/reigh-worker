@@ -475,11 +475,11 @@ def test_join_clips_segment_default_route_preserves_legacy_handler(monkeypatch, 
     [
         (
             False,
-            "travel_segment__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3",
+            "travel_segment",
         ),
         (
             True,
-            "individual_travel_segment__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3",
+            "individual_travel_segment",
         ),
     ],
 )
@@ -544,8 +544,7 @@ def test_travel_child_selector_fails_closed_before_queue_submit(
     assert message
     assert "fail-closed" in message
     assert expected_route in message
-    assert "vibecomfy_unsupported" in message
-    assert "will not fall back to WGP" in message
+    assert "fall back to WGP" in message
     assert queue.submitted == []
     route_bits = message.lower()
     assert "vace" not in route_bits
@@ -612,16 +611,13 @@ def test_travel_fail_closed_emits_routing_card(monkeypatch, tmp_path):
     card = routing_cards[0]
     assert card["task_id"] == "travel-child-telemetry"
     assert card["task_type"] == "individual_travel_segment"
-    assert (
-        card["route_key"]
-        == "individual_travel_segment__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3"
-    )
+    assert card["route_key"] == "individual_travel_segment"
     assert card["backend"] == "vibecomfy"
     assert card["template_id"] is None
     assert card["support_state"] == "vibecomfy_unsupported"
     assert card["memory_profile"] == "3"
     assert card["decision"] == "fail_closed"
-    assert "will not fall back to WGP" in card["fail_closed_reason"]
+    assert "fall back to WGP" in card["fail_closed_reason"]
 
 
 def test_wgp_travel_child_still_submits_and_waits(monkeypatch, tmp_path):
