@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import ast
+import os
+import subprocess
+import sys
 from importlib import import_module
 from pathlib import Path
 
@@ -83,6 +86,37 @@ def test_supported_entrypoint_imports_without_legacy_authority() -> None:
             for name in imports
             if any(name == prefix or name.startswith(prefix + ".") for prefix in FORBIDDEN_IMPORT_PREFIXES)
         }, path
+
+
+def test_supported_entrypoint_cold_import_does_not_bootstrap_legacy_modules() -> None:
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import sys
+import source.runtime.entrypoints.worker
+import source.runtime.worker.server
+forbidden_prefixes = (
+    'source.core.db',
+    'source.models.wgp',
+    'source.models.lora',
+    'source.media.video',
+    'source.task_handlers.worker.heartbeat_utils',
+    'source.task_handlers.worker.fatal_error_handler',
+)
+for name in sys.modules:
+    if name.startswith(forbidden_prefixes):
+        raise SystemExit(f'forbidden cold-start import: {name}')
+""",
+        ],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stderr or probe.stdout
 
 
 def test_supported_server_has_no_claimant_settlement_or_queue_lifecycle() -> None:
