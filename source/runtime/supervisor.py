@@ -1059,8 +1059,7 @@ def launch_generic_pack_host(
             owned_pgid = child.pid
         except BaseException:
             _invalidate_profile()
-            if child is not None and owned_pgid is not None:
-                _cleanup_host()
+            _cleanup_host()
             raise
 
         try:

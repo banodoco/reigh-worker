@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,38 @@ from source.runtime.supervisor import (
     _read_owned_vibecomfy_session,
     _stop_owned_vibecomfy_session,
 )
+
+
+def test_host_spawn_failure_cleans_owned_session(tmp_path, monkeypatch):
+    config = supervisor.HostLaunchConfig(
+        host_python=Path(sys.executable),
+        source_checkout=tmp_path,
+        pack_root=tmp_path,
+        runtime_endpoint="http://127.0.0.1:9000",
+        credential_file=tmp_path / "credential",
+        support_root=tmp_path,
+        runtime_instance_id="test-runtime",
+        ready_file=tmp_path / "ready.json",
+        state_file=tmp_path / "state.json",
+        boot_manifest_path=tmp_path / "boot.json",
+        boot_manifest_hash="sha256:" + "a" * 64,
+    )
+    owned = object()
+    stopped = []
+    profile = tmp_path / "worker-readiness-profile.json"
+    profile.write_text("{}")
+    monkeypatch.setattr(supervisor, "_start_owned_vibecomfy_session", lambda *_: ({}, owned))
+    monkeypatch.setattr(supervisor, "_prepare_worker_readiness", lambda *a, **kw: (profile, "hash"))
+    monkeypatch.setattr(supervisor, "_stop_owned_vibecomfy_session", stopped.append)
+
+    def fail_spawn(*args, **kwargs):
+        raise OSError("host spawn failed")
+
+    monkeypatch.setattr(supervisor.subprocess, "Popen", fail_spawn)
+    with pytest.raises(OSError, match="host spawn failed"):
+        supervisor.launch_generic_pack_host(config, environ={}, enforce_readiness=True)
+    assert stopped == [owned]
+    assert not profile.exists()
 
 
 def _registry(tmp_path: Path) -> Path:
