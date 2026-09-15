@@ -87,124 +87,56 @@ class ChildRouteContractConsistency:
 
 DIRECT_ROUTE_ALIASES: Mapping[str, str] = MappingProxyType(
     {
-        "z_image": "z_image_turbo",
-        "z_image_turbo": "z_image_turbo",
-        "z_image_turbo_i2i": "z_image_turbo_i2i",
-        "qwen_image": "qwen_image",
-        "qwen_image_2512": "qwen_image_2512",
         "optimised_t2i": "wan_2_2_t2i",
         "wan_2_2_t2i": "wan_2_2_t2i",
-        "qwen_image_edit": "qwen_image_edit",
-        "qwen_image_style": "qwen_image_style",
-        "image_inpaint": "image_inpaint",
-        "annotated_image_edit": "annotated_image_edit",
     }
+)
+
+# These direct Worker authorities were replaced by typed Astrid admissions.
+# Keep the tombstone list explicit so a stale task or route contract cannot
+# fall through the WGP backend after the selector entries are removed.
+RETIRED_ASTRID_DIRECT_ROUTE_KEYS = frozenset(
+    {
+        "z_image",
+        "z_image_turbo",
+        "z_image_turbo_i2i",
+        "qwen_image",
+        "qwen_image_2512",
+        "qwen_image_edit",
+        "qwen_image_style",
+        "image_inpaint",
+        "annotated_image_edit",
+        "image-upscale",
+        "image_upscale",
+        "video_enhance",
+        "animate_character",
+        "flux_klein_edit",
+    }
+)
+
+# The dimensional Worker/Vibe/WGP route families were replaced by the typed
+# Astrid travel admission. Keep their identity explicit so stale route
+# contracts fail closed even though their selector entries are deleted.
+RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS = frozenset(
+    {
+        "travel_orchestrator",
+        "join_clips_orchestrator",
+        "edit_video_orchestrator",
+        "travel_segment",
+        "individual_travel_segment",
+        "join_clips_segment",
+        "travel_stitch",
+        "join_final_stitch",
+    }
+)
+RETIRED_ASTRID_DIMENSIONAL_ROUTE_PREFIXES = (
+    "travel_segment__",
+    "individual_travel_segment__",
+    "join_clips_segment__",
 )
 
 SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
     {
-        "z_image_turbo": RouteSelectorEntry(
-            route_key="z_image_turbo",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="image/z_image",
-            default_resolution="1024x1024",
-            disposition="replaced_by_astrid_d3",
-            blocking_reason=(
-                "Astrid D-3 owns the accepted image/z_image Vibe capability "
-                "via the pip_embedded profile"
-            ),
-        ),
-        "z_image_turbo_i2i": RouteSelectorEntry(
-            route_key="z_image_turbo_i2i",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="image/z_image_img2img",
-            default_resolution="1024x1024",
-        ),
-        "qwen_image_2512": RouteSelectorEntry(
-            route_key="qwen_image_2512",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="image/qwen_image_2512",
-        ),
-        "qwen_image": RouteSelectorEntry(
-            route_key="qwen_image",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="image/qwen_image_2512",
-        ),
-        "qwen_image_edit": RouteSelectorEntry(
-            route_key="qwen_image_edit",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="edit/qwen_image_edit",
-        ),
-        "qwen_image_style": RouteSelectorEntry(
-            route_key="qwen_image_style",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="edit/qwen_image_edit",
-        ),
-        "image_inpaint": RouteSelectorEntry(
-            route_key="image_inpaint",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="edit/qwen_image_edit",
-        ),
-        "annotated_image_edit": RouteSelectorEntry(
-            route_key="annotated_image_edit",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="edit/qwen_image_edit",
-        ),
-        "travel_orchestrator": RouteSelectorEntry(
-            route_key="travel_orchestrator",
-            support_state=RouteSupportState.WGP_ONLY,
-            template_id=None,
-        ),
-        "join_clips_orchestrator": RouteSelectorEntry(
-            route_key="join_clips_orchestrator",
-            support_state=RouteSupportState.WGP_ONLY,
-            template_id=None,
-        ),
-        "edit_video_orchestrator": RouteSelectorEntry(
-            route_key="edit_video_orchestrator",
-            support_state=RouteSupportState.WGP_ONLY,
-            template_id=None,
-        ),
-        "travel_segment": RouteSelectorEntry(
-            route_key="travel_segment",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            template_id=None,
-            disposition="wgp_only",
-            blocking_reason=(
-                "Native WGP owns travel_segment; Worker VibeComfy is explicitly "
-                "unsupported and fail-closed"
-            ),
-        ),
-        "individual_travel_segment": RouteSelectorEntry(
-            route_key="individual_travel_segment",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            template_id=None,
-            disposition="wgp_only",
-            blocking_reason=(
-                "Native WGP owns individual_travel_segment; Worker VibeComfy is "
-                "explicitly unsupported and fail-closed"
-            ),
-        ),
-        "join_clips_segment": RouteSelectorEntry(
-            route_key="join_clips_segment",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            template_id=None,
-            disposition="wgp_only",
-            blocking_reason=(
-                "Native WGP owns join_clips_segment; Worker VibeComfy is explicitly "
-                "unsupported and fail-closed"
-            ),
-        ),
-        "travel_stitch": RouteSelectorEntry(
-            route_key="travel_stitch",
-            support_state=RouteSupportState.WGP_ONLY,
-            template_id=None,
-        ),
-        "join_final_stitch": RouteSelectorEntry(
-            route_key="join_final_stitch",
-            support_state=RouteSupportState.WGP_ONLY,
-            template_id=None,
-        ),
         "wan_2_2_t2i": RouteSelectorEntry(
             route_key="wan_2_2_t2i",
             support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
@@ -217,194 +149,11 @@ SPRINT_2_SELECTOR_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
             template_id="video/wanvideo_wrapper_22_14b_i2v_kijai",
             default_resolution="832x480",
         ),
-        "image-upscale": RouteSelectorEntry(
-            route_key="image-upscale",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="image/basic_image_upscale",
-            disposition="replaced_by_astrid_d4",
-            blocking_reason=(
-                "Astrid D-4 owns the accepted image-upscale Vibe capability "
-                "via the checkout_server profile"
-            ),
-        ),
-        "image_upscale": RouteSelectorEntry(
-            route_key="image_upscale",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="image/basic_image_upscale",
-            disposition="replaced_by_astrid_d4",
-            blocking_reason=(
-                "Astrid D-4 owns the accepted image-upscale Vibe capability "
-                "via the checkout_server profile"
-            ),
-        ),
-        "video_enhance": RouteSelectorEntry(
-            route_key="video_enhance",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/basic_video_enhance",
-        ),
-        "animate_character": RouteSelectorEntry(
-            route_key="animate_character",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wan22_animate_native_first_stage",
-            default_resolution="832x480",
-        ),
-        "flux_klein_edit": RouteSelectorEntry(
-            route_key="flux_klein_edit",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="edit/flux2_klein_4b_image_edit_distilled",
-        ),
     }
 )
 
 
-SECTION3A_ROUTE_SUPPORT_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType(
-    {
-        "travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_i2v__guidance-none__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_i2v_kijai",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_flow__continuity-video_source__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_canny__continuity-video_source__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_depth__continuity-video_source__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace_raw__continuity-video_source__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "individual_travel_segment__model-wan22_vace__guidance-vace__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="individual_travel_segment__model-wan22_vace__guidance-vace__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="individual_travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "individual_travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="individual_travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="individual_travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default": RouteSelectorEntry(
-            route_key="join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/wanvideo_wrapper_22_14b_vace_cocktail",
-            disposition="NEW",
-        ),
-        "travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            disposition="NEW",
-            blocking_reason="Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion.",
-        ),
-        "travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_runexx_first_last_frame",
-            disposition="NEW",
-        ),
-        "travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_runexx_first_last_frame",
-            disposition="NEW",
-        ),
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_runexx_first_last_raw_video_guide",
-            disposition="NEW",
-        ),
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_first_last_frame_travel_iclora_control",
-            disposition="NEW",
-        ),
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_first_last_frame_travel_iclora_control",
-            disposition="NEW",
-        ),
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_first_last_frame_travel_iclora_control",
-            disposition="NEW",
-        ),
-        "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default": RouteSelectorEntry(
-            route_key="travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
-            support_state=RouteSupportState.VIBECOMFY_SUPPORTED,
-            template_id="video/ltx2_3_first_last_frame_travel_iclora_control",
-            disposition="NEW",
-        ),
-    }
-)
+SECTION3A_ROUTE_SUPPORT_MAP: Mapping[str, RouteSelectorEntry] = MappingProxyType({})
 
 
 def parse_worker_backend(value: str | None = None) -> WorkerBackend:
@@ -955,13 +704,6 @@ def _selector_entry_for_route_key(route_key: str) -> RouteSelectorEntry | None:
     if selector_entry is not None:
         return selector_entry
 
-    if _is_dimensional_travel_route_key(route_key):
-        return RouteSelectorEntry(
-            route_key=route_key,
-            support_state=RouteSupportState.VIBECOMFY_UNSUPPORTED,
-            template_id=None,
-        )
-
     return None
 
 
@@ -986,16 +728,6 @@ def _parse_support_state(value: Any) -> RouteSupportState | None:
         return RouteSupportState(value)
     except ValueError:
         return None
-
-
-def _is_dimensional_travel_route_key(route_key: str) -> bool:
-    return route_key.startswith(
-        (
-            "travel_segment__",
-            "individual_travel_segment__",
-            "join_clips_segment__",
-        )
-    )
 
 
 def _direct_route_key(task_type: str) -> str:
@@ -1027,6 +759,12 @@ def _fail_closed_reason(
     selector_entry: RouteSelectorEntry | None,
     params: Mapping[str, Any],
 ) -> str | None:
+    if _is_retired_astrid_route(route_key):
+        return (
+            f"Route {route_key!r} was retired after its typed Astrid replacement; "
+            "Worker will not execute or fall back to WGP"
+        )
+
     if backend == WorkerBackend.WGP:
         return None
 
@@ -1058,6 +796,14 @@ def _fail_closed_reason(
         return unsupported_feature_reason
 
     return None
+
+
+def _is_retired_astrid_route(route_key: str) -> bool:
+    return (
+        route_key in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
+        or route_key in RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS
+        or any(route_key.startswith(prefix) for prefix in RETIRED_ASTRID_DIMENSIONAL_ROUTE_PREFIXES)
+    )
 
 
 def _vibecomfy_unsupported_feature_reason(route_key: str, params: Mapping[str, Any]) -> str | None:
@@ -1233,6 +979,9 @@ def _extract_memory_profile(params: Mapping[str, Any]) -> str | None:
 
 __all__ = [
     "DIRECT_ROUTE_ALIASES",
+    "RETIRED_ASTRID_DIRECT_ROUTE_KEYS",
+    "RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS",
+    "RETIRED_ASTRID_DIMENSIONAL_ROUTE_PREFIXES",
     "ChildRouteContractConsistency",
     "ParentChildRoutePreflight",
     "ResolvedTask",

@@ -37,6 +37,14 @@ def execute_resolved_direct_task(
     WGP GenerationTask, submit it to the queue, and poll for completion.
     """
 
+    if resolved.fail_closed_reason:
+        _log_routing_card(
+            resolved,
+            decision="fail_closed",
+            fail_closed_reason=resolved.fail_closed_reason,
+        )
+        return False, _fail_closed_message(resolved)
+
     if resolved.backend == WorkerBackend.WGP:
         _log_routing_card(resolved, decision="wgp_queue")
         return _execute_wgp_direct_task(
@@ -46,14 +54,6 @@ def execute_resolved_direct_task(
             max_wait_time=max_wait_time,
             wait_interval=wait_interval,
         )
-
-    if resolved.fail_closed_reason:
-        _log_routing_card(
-            resolved,
-            decision="fail_closed",
-            fail_closed_reason=resolved.fail_closed_reason,
-        )
-        return False, _fail_closed_message(resolved)
 
     if resolved.support_state != RouteSupportState.VIBECOMFY_SUPPORTED:
         _log_routing_card(resolved, decision="fail_closed")

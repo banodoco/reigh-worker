@@ -195,22 +195,27 @@ def test_wgp_default_direct_route_preserves_builder_and_queue(monkeypatch, tmp_p
     queue = _Queue()
 
     ok, result = task_registry.TaskRegistry._handle_direct_queue_task(
-        "z_image_turbo",
+        "wan_2_2_t2i",
         _context(queue, tmp_path),
     )
 
     assert ok is True
     assert result == "/tmp/task-1.png"
-    assert built and built[0][2] == "z_image_turbo"
+    assert built and built[0][2] == "wan_2_2_t2i"
     assert len(queue.submitted) == 1
 
 
-@pytest.mark.parametrize("task_type", ["z_image_turbo", "image-upscale", "image_upscale"])
+@pytest.mark.parametrize("task_type", [
+    "z_image_turbo", "image-upscale", "image_upscale", "z_image_turbo_i2i",
+    "qwen_image", "qwen_image_2512", "qwen_image_edit", "qwen_image_style",
+    "image_inpaint", "annotated_image_edit",
+])
+@pytest.mark.parametrize("backend", ["wgp", "vibecomfy"])
 def test_astrid_replacement_routes_fail_closed_without_worker_vibe_adapter(
-    monkeypatch, tmp_path, task_type: str
+    monkeypatch, tmp_path, task_type: str, backend: str
 ):
     task_registry = _import_task_registry(monkeypatch)
-    monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
+    monkeypatch.setenv("REIGH_BACKEND", backend)
 
     def _unexpected_adapter_load():
         raise AssertionError("Astrid-replaced route must not load Worker Vibe adapter")
@@ -225,11 +230,11 @@ def test_astrid_replacement_routes_fail_closed_without_worker_vibe_adapter(
     ok, result = task_registry.TaskRegistry._handle_direct_queue_task(task_type, context)
 
     assert ok is False
-    assert result and "explicit VibeComfy backend will not fall back to WGP" in result
+    assert result and "Worker will not execute or fall back to WGP" in result
     assert "Astrid" in result
 
 
-def test_astrid_replacement_routes_preserve_wgp_queue(monkeypatch, tmp_path):
+def test_astrid_replacement_routes_reject_wgp_queue(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.delenv("REIGH_BACKEND", raising=False)
     built = []
@@ -245,21 +250,18 @@ def test_astrid_replacement_routes_preserve_wgp_queue(monkeypatch, tmp_path):
 
     for task_type in ("z_image_turbo", "image-upscale", "image_upscale"):
         ok, _result = task_registry.TaskRegistry._handle_direct_queue_task(task_type, context)
-        assert ok is True
+        assert ok is False
+        assert "retired" in _result
 
-    assert built == ["z_image_turbo", "image-upscale", "image_upscale"]
-    assert len(queue.submitted) == 3
+    assert built == []
+    assert queue.submitted == []
+
+
 @pytest.mark.parametrize(
     "task_type",
     [
-        "z_image_turbo_i2i",
         "wan_2_2_t2i",
-        "qwen_image",
-        "qwen_image_2512",
-        "qwen_image_edit",
-        "qwen_image_style",
-        "image_inpaint",
-        "annotated_image_edit",
+        "wan_2_2_i2v",
     ],
 )
 def test_vibecomfy_supported_direct_routes_bypass_wgp_queue(
@@ -298,9 +300,9 @@ def test_vibecomfy_direct_dispatch_does_not_require_wgp_queue(monkeypatch, tmp_p
         raise AssertionError("WGP builder should not run")
 
     def _adapter(resolved, main_output_dir_base):
-        assert resolved.route_key == "qwen_image_2512"
+        assert resolved.route_key == "wan_2_2_i2v"
         assert main_output_dir_base == tmp_path
-        return True, "qwen.png"
+        return True, "wan.png"
 
     monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
     monkeypatch.setattr(
@@ -311,10 +313,10 @@ def test_vibecomfy_direct_dispatch_does_not_require_wgp_queue(monkeypatch, tmp_p
     context["task_queue"] = None
     context["task_params_dict"] = {"prompt": "direct dispatch", "resolution": "1536x864"}
 
-    ok, result = task_registry.TaskRegistry.dispatch("qwen_image_2512", context)
+    ok, result = task_registry.TaskRegistry.dispatch("wan_2_2_i2v", context)
 
     assert ok is True
-    assert result == "qwen.png"
+    assert result == "wan.png"
 
 
 def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
@@ -345,7 +347,7 @@ def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
     }
 
     ok, result = task_registry.TaskRegistry._handle_direct_queue_task(
-        "qwen_image",
+        "wan_2_2_t2i",
         context,
     )
 
@@ -358,28 +360,24 @@ def test_vibecomfy_direct_selection_emits_routing_card(monkeypatch, tmp_path):
     assert routing_cards
     card = routing_cards[0]
     assert card["task_id"] == "task-1"
-    assert card["task_type"] == "qwen_image"
-    assert card["route_key"] == "qwen_image"
+    assert card["task_type"] == "wan_2_2_t2i"
+    assert card["route_key"] == "wan_2_2_t2i"
     assert card["backend"] == "vibecomfy"
-    assert card["template_id"] == "image/qwen_image_2512"
+    assert card["template_id"] == "video/wanvideo_wrapper_22_14b_t2i"
     assert card["support_state"] == "vibecomfy_supported"
     assert card["memory_profile"] == "3"
     assert card["decision"] == "vibecomfy_adapter"
 
 
-def test_qwen_image_direct_route_uses_vibecomfy_without_wgp_fallback(monkeypatch, tmp_path):
+def test_qwen_image_direct_route_rejects_both_executors(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
 
     def _builder(*_args, **_kwargs):
         raise AssertionError("WGP builder should not run")
 
-    def _adapter(resolved, main_output_dir_base):
-        assert resolved.route_key == "qwen_image"
-        assert resolved.template_id == "image/qwen_image_2512"
-        assert resolved.should_use_vibecomfy is True
-        assert main_output_dir_base == tmp_path
-        return True, "qwen_image.png"
+    def _adapter(*_args, **_kwargs):
+        raise AssertionError("Retired route must not execute")
 
     monkeypatch.setattr(task_registry, "db_task_to_generation_task", _builder)
     monkeypatch.setattr(
@@ -397,11 +395,11 @@ def test_qwen_image_direct_route_uses_vibecomfy_without_wgp_fallback(monkeypatch
 
     ok, result = task_registry.TaskRegistry._handle_direct_queue_task("qwen_image", context)
 
-    assert ok is True
-    assert result == "qwen_image.png"
+    assert ok is False
+    assert "retired" in result
 
 
-def test_join_clips_segment_vace_route_uses_vibecomfy_executor(monkeypatch, tmp_path):
+def test_join_clips_segment_vace_route_is_retired(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
     captured = []
@@ -413,7 +411,7 @@ def test_join_clips_segment_vace_route_uses_vibecomfy_executor(monkeypatch, tmp_
         captured.append((resolved, context))
         return True, str(tmp_path / "join.mp4")
 
-    monkeypatch.setattr(task_registry, "handle_join_clips_task", _legacy_join)
+    monkeypatch.setattr(task_registry, "handle_join_clips_task", _legacy_join, raising=False)
     monkeypatch.setattr(task_registry, "execute_resolved_direct_task", _execute)
     context = _context(_Queue(fail_on_submit=True), tmp_path)
     context["project_id"] = "project-1"
@@ -430,21 +428,12 @@ def test_join_clips_segment_vace_route_uses_vibecomfy_executor(monkeypatch, tmp_
         "video_source": "https://example.test/source.mp4",
     }
 
-    ok, result = task_registry.TaskRegistry.dispatch("join_clips_segment", context)
-
-    assert ok is True
-    assert result == str(tmp_path / "join.mp4")
-    assert captured
-    resolved, passed_context = captured[0]
-    assert resolved.route_key == (
-        "join_clips_segment__model-wan22_vace__guidance-vace__"
-        "continuity-join_bridge__profile-default"
-    )
-    assert resolved.should_use_vibecomfy is True
-    assert passed_context is context
+    with pytest.raises(ValueError, match="retired"):
+        task_registry.TaskRegistry.dispatch("join_clips_segment", context)
+    assert captured == []
 
 
-def test_join_clips_segment_default_route_preserves_legacy_handler(monkeypatch, tmp_path):
+def test_join_clips_segment_default_route_rejects_legacy_handler(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.delenv("REIGH_BACKEND", raising=False)
     calls = []
@@ -456,18 +445,16 @@ def test_join_clips_segment_default_route_preserves_legacy_handler(monkeypatch, 
     def _execute(*_args, **_kwargs):
         raise AssertionError("direct executor should not run for default WGP join route")
 
-    monkeypatch.setattr(task_registry, "handle_join_clips_task", _legacy_join)
+    monkeypatch.setattr(task_registry, "handle_join_clips_task", _legacy_join, raising=False)
     monkeypatch.setattr(task_registry, "execute_resolved_direct_task", _execute)
     queue = _Queue()
     context = _context(queue, tmp_path)
     context["project_id"] = "project-1"
     context["task_params_dict"] = {"prompt": "legacy bridge"}
 
-    ok, result = task_registry.TaskRegistry.dispatch("join_clips_segment", context)
-
-    assert ok is True
-    assert result == "/tmp/join-legacy.mp4"
-    assert calls == [(context["task_params_dict"], tmp_path, "task-1", queue)]
+    with pytest.raises(ValueError, match="retired"):
+        task_registry.TaskRegistry.dispatch("join_clips_segment", context)
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -475,11 +462,11 @@ def test_join_clips_segment_default_route_preserves_legacy_handler(monkeypatch, 
     [
         (
             False,
-            "travel_segment__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3",
+            "travel_segment",
         ),
         (
             True,
-            "individual_travel_segment__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3",
+            "individual_travel_segment",
         ),
     ],
 )
@@ -544,8 +531,7 @@ def test_travel_child_selector_fails_closed_before_queue_submit(
     assert message
     assert "fail-closed" in message
     assert expected_route in message
-    assert "vibecomfy_unsupported" in message
-    assert "will not fall back to WGP" in message
+    assert "fall back to WGP" in message
     assert queue.submitted == []
     route_bits = message.lower()
     assert "vace" not in route_bits
@@ -612,16 +598,13 @@ def test_travel_fail_closed_emits_routing_card(monkeypatch, tmp_path):
     card = routing_cards[0]
     assert card["task_id"] == "travel-child-telemetry"
     assert card["task_type"] == "individual_travel_segment"
-    assert (
-        card["route_key"]
-        == "individual_travel_segment__model-ltx2_distilled__guidance-ltx_anchor__continuity-video_source__profile-3"
-    )
+    assert card["route_key"] == "individual_travel_segment"
     assert card["backend"] == "vibecomfy"
     assert card["template_id"] is None
     assert card["support_state"] == "vibecomfy_unsupported"
     assert card["memory_profile"] == "3"
     assert card["decision"] == "fail_closed"
-    assert "will not fall back to WGP" in card["fail_closed_reason"]
+    assert "fall back to WGP" in card["fail_closed_reason"]
 
 
 def test_wgp_travel_child_still_submits_and_waits(monkeypatch, tmp_path):
@@ -741,7 +724,7 @@ def test_travel_child_queue_payload_prefers_travel_guidance_over_structure_field
     assert parameters["continuity_case"] == "video_source"
 
 
-def test_vibecomfy_wan_vace_travel_payload_preserves_anchor_images(monkeypatch, tmp_path):
+def test_vibecomfy_wan_vace_travel_rejects_before_execution(monkeypatch, tmp_path):
     task_registry = _import_task_registry(monkeypatch)
     monkeypatch.setenv("REIGH_BACKEND", "vibecomfy")
     start_path = tmp_path / "start.png"
@@ -813,18 +796,9 @@ def test_vibecomfy_wan_vace_travel_payload_preserves_anchor_images(monkeypatch, 
         is_standalone=True,
     )
 
-    assert ok is True
-    assert result == str(tmp_path / "out.mp4")
-    assert captured
-    resolved = captured[0]
-    assert (
-        resolved.route_key
-        == "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default"
-    )
-    assert resolved.params["start_image"] == str(start_path)
-    assert resolved.params["start_image_url"] == str(start_path)
-    assert resolved.params["end_image"] == str(end_path)
-    assert resolved.params["end_image_url"] == str(end_path)
+    assert ok is False
+    assert "retired" in result
+    assert captured == []
 
 
 def test_travel_child_queue_payload_preserves_legacy_structure_contract_without_travel_guidance(monkeypatch, tmp_path):

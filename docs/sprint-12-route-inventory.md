@@ -1,5 +1,16 @@
 # Sprint 12 Route Inventory
 
+> **Post-cutover authority boundary (2026-09-10).** Current supported inventory is only `wan_2_2_i2v` and `wan_2_2_t2i`; every other row below is historical reconciliation data, not a supported producer route. Admission is Runtime-owned: a producer supplies the typed family, project, ordered CAS/input references, and idempotency key to Runtime; Worker execution and settlement remain behind the Runtime contract. No inventory row authorizes direct legacy task insertion, browser-side route derivation, or direct task-lifecycle fallback. `BLOCKED` and fail-closed rows remain explicit non-claims until their required canonical evidence exists.
+
+## Current post-cutover inventory
+
+| Route | State |
+| --- | --- |
+| `wan_2_2_i2v` | Runtime-admitted and Worker-supported |
+| `wan_2_2_t2i` | Runtime-admitted and Worker-supported |
+
+## Historical reconciliation inventory — not a support claim
+
 | Route | State |
 | --- | --- |
 | `z_image_turbo` | `dual_supported` (Worker Vibe retired; Astrid D-3 replacement) |

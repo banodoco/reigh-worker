@@ -429,39 +429,10 @@ def _vibecomfy_run_help_text(python_executable: str, cwd: str, pythonpath: str) 
 
 
 def _workflow_reference_for_resolved_task(resolved: ResolvedTask, run_workspace: Path) -> tuple[str, bool]:
-    if resolved.route_key == "z_image_turbo":
-        return str(_write_z_image_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key == "z_image_turbo_i2i":
-        return str(_write_z_image_img2img_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key in {"qwen_image", "qwen_image_2512"}:
-        return str(_write_qwen_image_2512_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key in {"image-upscale", "image_upscale"}:
-        return str(_write_image_upscale_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key in {
-        "qwen_image_edit",
-        "qwen_image_style",
-        "image_inpaint",
-        "annotated_image_edit",
-    }:
-        return str(_write_qwen_image_edit_scratchpad(resolved, run_workspace)), False
     if resolved.route_key == "wan_2_2_t2i":
         return str(_write_wan_2_2_t2i_scratchpad(resolved, run_workspace)), False
     if resolved.route_key == "wan_2_2_i2v":
         return str(_write_wan_2_2_i2v_scratchpad(resolved, run_workspace)), False
-    if _is_wan_i2v_first_last_route(resolved.route_key):
-        return str(_write_wan_2_2_i2v_first_last_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key == "animate_character":
-        return str(_write_animate_character_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key == "video_enhance":
-        return str(_write_video_enhance_scratchpad(resolved, run_workspace)), False
-    if resolved.route_key == "flux_klein_edit":
-        return str(_write_flux_klein_edit_scratchpad(resolved, run_workspace)), False
-    if _is_wan_vace_route(resolved.route_key):
-        return str(_write_wan_2_2_vace_scratchpad(resolved, run_workspace)), False
-    if _is_ltx_first_last_control_route(resolved.route_key):
-        return str(_write_ltx_first_last_control_scratchpad(resolved, run_workspace)), False
-    if _is_ltx_first_last_route(resolved.route_key):
-        return str(_write_ltx_first_last_scratchpad(resolved, run_workspace)), False
     return str(resolved.template_id), True
 
 
@@ -471,21 +442,7 @@ def _maybe_postprocess_vibecomfy_output(
     output_path: Path,
     run_workspace: Path,
 ) -> Path | None:
-    if _is_ltx_first_last_route(resolved.route_key) or _is_ltx_first_last_control_route(resolved.route_key):
-        width, height = _expected_dimensions(resolved.params)
-        if width is not None and height is not None:
-            target = run_workspace / "output" / f"{output_path.stem}-contract.mp4"
-            return _resize_video_to_contract(output_path, target, width=width, height=height)
-
-    if resolved.route_key != "video_enhance" or not _bool_param(resolved.params, "enable_interpolation"):
-        return None
-    interpolation = resolved.params.get("interpolation")
-    interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
-    exp = _rife_exp_from_interpolation_params(interpolation_params)
-    exp = max(1, min(exp, 2))
-    fps = int(float(resolved.params.get("fps") or 16))
-    target = run_workspace / "output" / f"video-enhance-rife-x{2 ** exp}.mp4"
-    return _rife_interpolate_video(output_path, target, fps=fps, exp=exp)
+    return None
 
 
 def _resize_video_to_contract(input_path: Path, output_path: Path, *, width: int, height: int) -> Path:
@@ -2089,7 +2046,6 @@ def _override_memory_profile(resolved: ResolvedTask) -> int | None:
             "wan_2_2_t2i",
             "wan_2_2_i2v",
             "wan_2_2_vace",
-            "animate_character",
         }:
             return 5
         return PROCESS_DEFAULT_PROFILE
@@ -2130,10 +2086,6 @@ def _expected_fps_for_resolved_task(resolved: ResolvedTask) -> float | None:
     fps = _float_param(resolved.params, "fps", "fps_helpers")
     if fps is None:
         return None
-    if resolved.route_key == "video_enhance" and _bool_param(resolved.params, "enable_interpolation"):
-        interpolation = resolved.params.get("interpolation")
-        interpolation_params = interpolation if isinstance(interpolation, Mapping) else {}
-        return fps * (2 ** _rife_exp_from_interpolation_params(interpolation_params))
     return fps
 
 

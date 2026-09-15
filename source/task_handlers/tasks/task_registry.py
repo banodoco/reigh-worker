@@ -38,7 +38,6 @@ from source.core.params.phase_config_parser import parse_phase_config
 from source.core.params.generation_policy import ContinuationPolicy, GenerationPolicy
 from source.core.params.structure_guidance import StructureGuidanceConfig
 from source.core.params.travel_guidance import TravelGuidanceConfig
-from source.task_handlers.contracts.dispatch import normalize_task_dispatch_payload
 from source.task_handlers.tasks.travel_segment_types import IndividualSegmentParams
 from source.core.params.contracts import validate_orchestrator_details
 
@@ -47,14 +46,7 @@ from source.core.params.contracts import validate_orchestrator_details
 from source.task_handlers.extract_frame import handle_extract_frame_task
 from source.task_handlers.rife_interpolate import handle_rife_interpolate_task
 from source.models.comfy.comfy_handler import handle_comfy_task
-from source.task_handlers.travel import orchestrator as travel_orchestrator
-from source.task_handlers.travel.stitch import handle_travel_stitch_task
 from source.task_handlers import magic_edit as me
-from source.task_handlers.join.generation import handle_join_clips_task
-from source.task_handlers.join.final_stitch import handle_join_final_stitch
-from source.task_handlers.join.orchestrator import handle_join_clips_orchestrator_task
-from source.task_handlers.edit_video_orchestrator import handle_edit_video_orchestrator_task
-from source.task_handlers.inpaint_frames import handle_inpaint_frames_task
 from source.task_handlers.create_visualization import handle_create_visualization_task
 from source.task_handlers.travel.segment_processor import TravelSegmentProcessor, TravelSegmentContext
 from source.task_handlers.travel.predecessor_resolver import (
@@ -78,6 +70,7 @@ from source.task_handlers.tasks.task_types import DIRECT_QUEUE_TASK_TYPES
 from source.task_handlers.tasks.dispatch_manifest import HANDLER_IMPORT_SPECS as _HANDLER_SPECS
 from source.task_handlers.tasks.task_execution import execute_resolved_direct_task
 from source.task_handlers.tasks.template_routing import (
+    RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS,
     WorkerBackend,
     resolve_task_route,
     routing_telemetry_fields,
@@ -1561,63 +1554,22 @@ class TaskRegistry:
         task_id = context["task_id"]
         params = context["task_params_dict"]
 
+        if task_type in RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS:
+            raise ValueError(
+                f"Task type {task_type!r} was retired after its typed Astrid replacement; "
+                "Worker will not execute it or fall back to WGP"
+            )
+
         # 1. Direct Queue Tasks
         if task_type in DIRECT_QUEUE_TASK_TYPES:
             return TaskRegistry._handle_direct_queue_task(task_type, context)
 
         # 2. Orchestrator & Specialized Handlers
         handlers = {
-            "travel_orchestrator": lambda: travel_orchestrator.handle_travel_orchestrator_task(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                orchestrator_task_id_str=task_id,
-                orchestrator_project_id=context["project_id"]),
-            "travel_segment": lambda: _load_handler_callable("travel_segment")(
-                task_params_dict=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                task_id=task_id,
-                colour_match_videos=context["colour_match_videos"],
-                mask_active_frames=context["mask_active_frames"],
-                task_queue=context["task_queue"],
-                is_standalone=False
-            ),
-            "individual_travel_segment": lambda: _load_handler_callable("individual_travel_segment")(
-                task_params_dict=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                task_id=task_id,
-                colour_match_videos=context["colour_match_videos"],
-                mask_active_frames=context["mask_active_frames"],
-                task_queue=context["task_queue"],
-                is_standalone=True
-            ),
-            "travel_stitch": lambda: handle_travel_stitch_task(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                stitch_task_id_str=task_id),
             "magic_edit": lambda: me.handle_magic_edit_task(
                 task_params_from_db=params,
                 main_output_dir_base=context["main_output_dir_base"],
                 task_id=task_id),
-            "join_clips_orchestrator": lambda: handle_join_clips_orchestrator_task(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                orchestrator_task_id_str=task_id,
-                orchestrator_project_id=context["project_id"]),
-            "edit_video_orchestrator": lambda: handle_edit_video_orchestrator_task(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                orchestrator_task_id_str=task_id,
-                orchestrator_project_id=context["project_id"]),
-            "join_clips_segment": lambda: TaskRegistry._handle_join_clips_segment_task(context),
-            "join_final_stitch": lambda: handle_join_final_stitch(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                task_id=task_id),
-            "inpaint_frames": lambda: handle_inpaint_frames_task(
-                task_params_from_db=params,
-                main_output_dir_base=context["main_output_dir_base"],
-                task_id=task_id,
-                task_queue=context["task_queue"]),
             "create_visualization": lambda: handle_create_visualization_task(
                 task_params_from_db=params,
                 main_output_dir_base=context["main_output_dir_base"],
@@ -1635,57 +1587,9 @@ class TaskRegistry:
         }
 
         if task_type in handlers:
-            if task_type not in ["travel_orchestrator", "join_clips_orchestrator", "edit_video_orchestrator"]:
-                return handlers[task_type]()
-
-            dispatch_params = normalize_task_dispatch_payload(params, task_id=task_id)
-            orchestrator_handlers = {
-                "travel_orchestrator": lambda: travel_orchestrator.handle_travel_orchestrator_task(
-                    task_params_from_db=dispatch_params,
-                    main_output_dir_base=context["main_output_dir_base"],
-                    orchestrator_task_id_str=task_id,
-                    orchestrator_project_id=context["project_id"]),
-                "join_clips_orchestrator": lambda: handle_join_clips_orchestrator_task(
-                    task_params_from_db=dispatch_params,
-                    main_output_dir_base=context["main_output_dir_base"],
-                    orchestrator_task_id_str=task_id,
-                    orchestrator_project_id=context["project_id"]),
-                "edit_video_orchestrator": lambda: handle_edit_video_orchestrator_task(
-                    task_params_from_db=dispatch_params,
-                    main_output_dir_base=context["main_output_dir_base"],
-                    orchestrator_task_id_str=task_id,
-                    orchestrator_project_id=context["project_id"]),
-            }
-            return orchestrator_handlers[task_type]()
+            return handlers[task_type]()
 
         raise ValueError(f"Unknown task type {task_type}")
-
-    @staticmethod
-    def _handle_join_clips_segment_task(context: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-        task_id = context["task_id"]
-        params = context["task_params_dict"]
-
-        resolved_route = resolve_task_route(
-            task_id=task_id,
-            task_type="join_clips_segment",
-            params=params,
-        )
-
-        if resolved_route.backend == WorkerBackend.VIBECOMFY:
-            return execute_resolved_direct_task(
-                resolved=resolved_route,
-                context=context,
-                build_wgp_generation_task=lambda: (_ for _ in ()).throw(
-                    AssertionError("VibeComfy join_clips_segment must not build a WGP task")
-                ),
-            )
-
-        return handle_join_clips_task(
-            task_params_from_db=params,
-            main_output_dir_base=context["main_output_dir_base"],
-            task_id=task_id,
-            task_queue=context["task_queue"],
-        )
 
     @staticmethod
     def _handle_direct_queue_task(task_type: str, context: Dict[str, Any]) -> Tuple[bool, Optional[str]]:

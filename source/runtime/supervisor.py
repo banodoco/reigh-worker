@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, replace
 from typing import Mapping, Sequence
 from urllib.parse import urlsplit
@@ -192,7 +193,14 @@ class HostLaunchConfig:
         if self.capability_matrix is not None:
             args.extend(("--capability-matrix", str(self.capability_matrix)))
         if self.readiness_profile_path is not None and self.readiness_profile_hash is not None:
-            args.extend(("--readiness-profile-path", str(self.readiness_profile_path), "--readiness-profile-hash", self.readiness_profile_hash))
+            args.extend(
+                (
+                    "--readiness-profile-path",
+                    str(self.readiness_profile_path),
+                    "--readiness-profile-hash",
+                    self.readiness_profile_hash,
+                )
+            )
         return args
 
 
@@ -365,7 +373,12 @@ def _read_runtime_discovery(config: HostLaunchConfig) -> RuntimeDiscovery:
     )
 
 
-def _prepare_worker_readiness(config: HostLaunchConfig, environ: Mapping[str, str]) -> tuple[Path, str]:
+def _prepare_worker_readiness(
+    config: HostLaunchConfig,
+    environ: Mapping[str, str],
+    *,
+    vibecomfy_session: dict[str, object] | None = None,
+) -> tuple[Path, str]:
     """Bind discovery, verify neutral facts, and publish one HC-03 profile."""
 
     from source.runtime.worker.preflight import (
@@ -436,6 +449,8 @@ def _prepare_worker_readiness(config: HostLaunchConfig, environ: Mapping[str, st
         },
         "worker_actor": discovery.worker_actor, "worker_scopes": list(discovery.worker_scopes),
     }
+    if vibecomfy_session is not None:
+        payload["vibecomfy_session"] = vibecomfy_session
     try:
         _atomic_write_json(profile_path, payload)
         profile_hash = "sha256:" + hashlib.sha256(profile_path.read_bytes()).hexdigest()
@@ -443,6 +458,503 @@ def _prepare_worker_readiness(config: HostLaunchConfig, environ: Mapping[str, st
         profile_path.unlink(missing_ok=True)
         raise LauncherConfigurationError("HC-03 readiness profile publication failed") from exc
     return profile_path, profile_hash
+
+
+def _process_parent_pid(pid: int) -> int | None:
+    """Return a process parent identity for the composite ownership proof."""
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "ppid=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+        value = result.stdout.strip()
+        return int(value) if result.returncode == 0 and value else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _read_owned_vibecomfy_session(
+    root: Path,
+    *,
+    expected_daemon_pid: int | None = None,
+    verify_parent: bool = True,
+    require_attestation: bool = True,
+) -> dict[str, object]:
+    """Read a registry produced by this Worker-owned session launch."""
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+        raise LauncherConfigurationError(
+            "Worker-owned VibeComfy session directory must be an existing non-symlink directory"
+        )
+    registry = {
+        name: root / name for name in (
+            "pid", "comfy_pid", "comfy_process_start_identity", "url",
+            "config.json", "source_revision", "source_content_digest",
+            "launch.json", "daemon.log",
+        )
+    }
+    required_registry = tuple(registry.values())
+    if not require_attestation:
+        required_registry = tuple(
+            path for name, path in registry.items() if name != "source_content_digest"
+        )
+    if any(not path.is_file() or path.is_symlink() for path in required_registry):
+        raise LauncherConfigurationError("VibeComfy session registry is incomplete")
+    try:
+        pid = int(registry["pid"].read_text(encoding="utf-8").strip())
+        if pid <= 0:
+            raise ValueError("pid must be positive")
+        if expected_daemon_pid is not None and pid != expected_daemon_pid:
+            raise ValueError("session daemon pid does not match the Worker-owned child")
+        os.kill(pid, 0)
+        comfy_pid = int(registry["comfy_pid"].read_text(encoding="utf-8").strip())
+        if comfy_pid <= 0:
+            raise ValueError("comfy_pid must be positive")
+        from source.runtime.worker.preflight import _process_birth_identity
+        comfy_process_birth_id = registry["comfy_process_start_identity"].read_text(encoding="utf-8").strip()
+        if _process_birth_identity(comfy_pid) != comfy_process_birth_id:
+            raise ValueError("Comfy child process birth identity is stale or mismatched")
+        url = registry["url"].read_text(encoding="utf-8").strip()
+        parsed = urlsplit(url)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port is None:
+            raise ValueError("VibeComfy session URL must be loopback HTTP")
+        listener = subprocess.run(
+            ["lsof", "-nP", "-a", "-p", str(comfy_pid), "-iTCP:" + str(parsed.port), "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+        listener_stderr = getattr(listener, "stderr", "") or ""
+        if listener.returncode == 1 and not listener.stdout.strip() and not listener_stderr.strip():
+            raise ValueError("VibeComfy listener is absent")
+        if listener.returncode != 0 or f":{parsed.port} (LISTEN)" not in listener.stdout:
+            raise ValueError("VibeComfy listener is not owned by the recorded Comfy child")
+        if verify_parent and _process_parent_pid(comfy_pid) != pid:
+            raise ValueError("VibeComfy Comfy child is not parented by the owned daemon")
+        source_revision = registry["source_revision"].read_text(encoding="utf-8").strip()
+        source_content_digest = ""
+        if registry["source_content_digest"].is_file():
+            source_content_digest = registry["source_content_digest"].read_text(encoding="utf-8").strip()
+        marker = json.loads(registry["launch.json"].read_text(encoding="utf-8"))
+        config_digest = "sha256:" + hashlib.sha256(registry["config.json"].read_bytes()).hexdigest()
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise LauncherConfigurationError("VibeComfy session registry is unreadable or stale") from exc
+    if not isinstance(marker, Mapping):
+        raise LauncherConfigurationError("VibeComfy launch marker is malformed")
+    launch_token = marker.get("launch_token")
+    process_birth_id = marker.get("process_start_identity")
+    if (
+        marker.get("pid") != pid
+        or marker.get("url") != url
+        or not isinstance(launch_token, str)
+        or not launch_token.strip()
+        or not isinstance(process_birth_id, str)
+        or not process_birth_id.strip()
+        or not source_revision
+        or (
+            require_attestation
+            and (
+                not source_content_digest.startswith("sha256:")
+                or len(source_content_digest) != len("sha256:") + 64
+            )
+        )
+    ):
+        raise LauncherConfigurationError("VibeComfy launch marker does not bind the registry")
+    from source.runtime.worker.preflight import _process_birth_identity
+    if _process_birth_identity(pid) != process_birth_id:
+        raise LauncherConfigurationError("VibeComfy daemon process birth identity is stale or mismatched")
+    return {
+        "session_dir": str(root),
+        "server_url": url,
+        "pid": pid,
+        "comfy_pid": comfy_pid,
+        "comfy_process_birth_id": comfy_process_birth_id,
+        "launch_token": launch_token,
+        "process_birth_id": process_birth_id,
+        "source_revision": source_revision,
+        "source_content_digest": source_content_digest,
+        "config_digest": config_digest,
+    }
+
+
+def _read_owned_vibecomfy_custody(
+    root: Path,
+    *,
+    expected_daemon_pid: int,
+    expected_server_url: str,
+) -> dict[str, object] | None:
+    """Recover launch custody without requiring readiness or liveness.
+
+    This is intentionally weaker than ``_read_owned_vibecomfy_session``.  It
+    is used only while unwinding a failed launch, when the daemon may already
+    have exited and Vibe may not yet have published all readiness files.
+    """
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+        return None
+    pid_path = root / "pid"
+    if not pid_path.is_file() or pid_path.is_symlink():
+        return None
+    try:
+        daemon_pid = int(pid_path.read_text(encoding="utf-8").strip())
+        if daemon_pid != expected_daemon_pid or daemon_pid <= 0:
+            return None
+        url = expected_server_url
+        url_path = root / "url"
+        if url_path.is_file() and not url_path.is_symlink():
+            candidate_url = url_path.read_text(encoding="utf-8").strip()
+            parsed = urlsplit(candidate_url)
+            if (
+                parsed.scheme == "http"
+                and parsed.hostname in {"127.0.0.1", "localhost"}
+                and parsed.port is not None
+            ):
+                url = candidate_url
+        comfy_pid_path = root / "comfy_pid"
+        birth_path = root / "comfy_process_start_identity"
+        comfy_pid = 0
+        comfy_birth = ""
+        if comfy_pid_path.is_file() and birth_path.is_file():
+            comfy_pid = int(comfy_pid_path.read_text(encoding="utf-8").strip())
+            comfy_birth = birth_path.read_text(encoding="utf-8").strip()
+            if comfy_pid <= 0 or not comfy_birth:
+                return None
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return {
+        "pid": daemon_pid,
+        "comfy_pid": comfy_pid,
+        "comfy_process_birth_id": comfy_birth,
+        "server_url": url,
+    }
+
+
+def _assert_owned_vibecomfy_port_available(port: int) -> None:
+    """Verify that the configured port is unused immediately before launch."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-nP", "-t", "-iTCP:" + str(port), "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LauncherConfigurationError(
+            "owned VibeComfy port availability could not be verified"
+        ) from exc
+    stderr = getattr(result, "stderr", "") or ""
+    if result.returncode == 1 and not result.stdout.strip() and not stderr.strip():
+        return
+    if result.returncode == 0 and result.stdout.strip():
+        raise LauncherConfigurationError(
+            "owned VibeComfy launch port is already in use"
+        )
+    raise LauncherConfigurationError(
+        "owned VibeComfy port availability could not be verified"
+    )
+
+
+def _owned_listener_pid(port: int) -> int | None:
+    """Return the sole listener PID, or fail closed on probe errors."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-nP", "-t", "-iTCP:" + str(port), "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LauncherConfigurationError(
+            "owned VibeComfy listener could not be observed"
+        ) from exc
+    stderr = getattr(result, "stderr", "") or ""
+    if result.returncode == 1 and not result.stdout.strip() and not stderr.strip():
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        raise LauncherConfigurationError(
+            "owned VibeComfy listener could not be observed"
+        )
+    pids = result.stdout.split()
+    if len(pids) != 1:
+        raise LauncherConfigurationError(
+            "owned VibeComfy listener ownership is ambiguous"
+        )
+    try:
+        return int(pids[0])
+    except ValueError as exc:
+        raise LauncherConfigurationError(
+            "owned VibeComfy listener PID is invalid"
+        ) from exc
+
+
+@dataclass(frozen=True)
+class _OwnedVibeComfySession:
+    root: Path
+    process: subprocess.Popen[bytes]
+    daemon_pid: int = 0
+    comfy_pid: int = 0
+    comfy_process_birth_id: str = ""
+    server_url: str = ""
+
+
+def _start_owned_vibecomfy_session(
+    config: HostLaunchConfig,
+    environ: Mapping[str, str],
+) -> tuple[dict[str, object] | None, _OwnedVibeComfySession | None]:
+    """Start VibeComfy under Worker custody before publishing readiness.
+
+    A configured session directory is a launch target, never an adoption
+    source.  Any pre-existing registry is rejected; only the daemon spawned by
+    this call may publish the HC-03 Vibe extension.
+    """
+    raw_root = environ.get("ASTRID_VIBECOMFY_SESSION_DIR", "").strip()
+    if not raw_root:
+        return None, None
+    root = Path(raw_root)
+    if not root.is_absolute() or root.is_symlink():
+        raise LauncherConfigurationError(
+            "ASTRID_VIBECOMFY_SESSION_DIR must be an absolute non-symlink path"
+        )
+    if root.parent.name != "sessions" or root.parent.parent.name != "out":
+        raise LauncherConfigurationError(
+            "ASTRID_VIBECOMFY_SESSION_DIR must use the VibeComfy out/sessions/<id> layout"
+        )
+    root.mkdir(parents=True, exist_ok=True)
+    registry_names = (
+        "pid", "comfy_pid", "comfy_process_start_identity", "url",
+        "config.json", "source_revision", "source_content_digest",
+        "launch.json", "daemon.log",
+    )
+    if any((root / name).exists() or (root / name).is_symlink() for name in registry_names):
+        raise LauncherConfigurationError(
+            "pre-existing VibeComfy session registry cannot be adopted; use a fresh owned session directory"
+        )
+    try:
+        config_values: dict[str, object] = {}
+        raw_config = environ.get("ASTRID_VIBECOMFY_SESSION_CONFIG", "").strip()
+        if raw_config:
+            parsed = json.loads(raw_config)
+            if not isinstance(parsed, dict):
+                raise ValueError("ASTRID_VIBECOMFY_SESSION_CONFIG must be an object")
+            config_values = dict(parsed)
+        comfyui_path = environ.get("COMFYUI_PATH", "").strip()
+        comfyui_root: Path | None = None
+        if comfyui_path:
+            candidate = Path(comfyui_path).expanduser()
+            if (
+                not candidate.is_absolute()
+                or candidate.is_symlink()
+                or not candidate.is_dir()
+            ):
+                raise ValueError("COMFYUI_PATH must be an absolute non-symlink directory")
+            comfyui_root = candidate.resolve(strict=True)
+            config_values["base_directory"] = str(comfyui_root)
+            extra_model_paths = comfyui_root / "extra_model_paths.yaml"
+            if extra_model_paths.is_file() and not extra_model_paths.is_symlink():
+                config_values["extra_model_paths_config"] = [
+                    str(extra_model_paths.resolve())
+                ]
+        port = int(environ.get("ASTRID_VIBECOMFY_PORT", "8188"))
+        if not 1 <= port <= 65535:
+            raise ValueError("ASTRID_VIBECOMFY_PORT is outside the valid range")
+        timeout = float(environ.get("VIBECOMFY_SESSION_READY_TIMEOUT_SEC", "300"))
+        if not timeout > 0:
+            raise ValueError("VIBECOMFY_SESSION_READY_TIMEOUT_SEC must be positive")
+        config_values.update(
+            {
+                "port": port,
+                "warm_policy": "auto",
+                "locality": "managed_local_server",
+                "runtime_root": str(root.parents[2]),
+                "cwd": str(root.parents[2]),
+                "server_log_path": str(root / "comfy.log"),
+                "ready_timeout_sec": timeout,
+            }
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise LauncherConfigurationError("owned VibeComfy session configuration is invalid") from exc
+
+    expected_server_url = f"http://127.0.0.1:{port}"
+    _assert_owned_vibecomfy_port_available(port)
+
+    interpreter = Path(
+        environ.get("REIGH_ENGINE_INTERPRETER", "").strip() or sys.executable
+    ).expanduser()
+    if not interpreter.is_absolute() or not interpreter.is_file() or not os.access(interpreter, os.X_OK):
+        raise LauncherConfigurationError("owned VibeComfy session interpreter is unavailable")
+    launch_token = uuid.uuid4().hex
+    command = [
+        str(interpreter),
+        "-m",
+        "vibecomfy.commands.session",
+        "--daemon",
+        "--id",
+        root.name,
+        "--require-source-attestation",
+        "--launch-token",
+        launch_token,
+        "--config",
+        json.dumps(config_values, sort_keys=True, separators=(",", ":")),
+    ]
+    child_env = {
+        key: value
+        for key, value in environ.items()
+        if key in {
+            "PATH", "LANG", "LC_ALL", "LC_CTYPE", "PYTHONPATH",
+            "CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES",
+        }
+    }
+    if comfyui_root is not None:
+        child_env["COMFYUI_PATH"] = str(comfyui_root)
+    child_env["PYTHONUNBUFFERED"] = "1"
+    log_path = root / "daemon.log"
+    try:
+        log_handle = log_path.open("ab", buffering=0)
+        process = subprocess.Popen(
+            command,
+            # VibeComfy resolves its registry as cwd/out/sessions/<id>.
+            # For <base>/out/sessions/<id>, cwd must therefore be <base>.
+            cwd=str(root.parents[2]),
+            env=child_env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=log_handle,
+            start_new_session=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LauncherConfigurationError("owned VibeComfy session could not be started") from exc
+    finally:
+        try:
+            log_handle.close()
+        except UnboundLocalError:
+            pass
+
+    deadline = time.monotonic() + max(1.0, min(timeout, 900.0))
+    try:
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise LauncherConfigurationError("owned VibeComfy session daemon exited before readiness")
+            try:
+                payload = _read_owned_vibecomfy_session(
+                    root,
+                    expected_daemon_pid=process.pid,
+                    verify_parent=True,
+                )
+                return payload, _OwnedVibeComfySession(
+                    root=root,
+                    process=process,
+                    daemon_pid=int(payload["pid"]),
+                    comfy_pid=int(payload["comfy_pid"]),
+                    comfy_process_birth_id=str(payload["comfy_process_birth_id"]),
+                    server_url=str(payload["server_url"]),
+                )
+            except LauncherConfigurationError:
+                time.sleep(0.1)
+        raise LauncherConfigurationError("owned VibeComfy session did not become ready")
+    except BaseException:
+        cleanup_session = _OwnedVibeComfySession(
+            root=root,
+            process=process,
+            daemon_pid=process.pid,
+            server_url=expected_server_url,
+        )
+        partial = _read_owned_vibecomfy_custody(
+            root,
+            expected_daemon_pid=process.pid,
+            expected_server_url=expected_server_url,
+        )
+        if partial is not None:
+            cleanup_session = _OwnedVibeComfySession(
+                root=root,
+                process=process,
+                daemon_pid=int(partial["pid"]),
+                comfy_pid=int(partial["comfy_pid"]),
+                comfy_process_birth_id=str(partial["comfy_process_birth_id"]),
+                server_url=str(partial["server_url"]),
+            )
+        _stop_owned_vibecomfy_session(cleanup_session)
+        raise
+
+
+def _stop_owned_vibecomfy_session(session: _OwnedVibeComfySession) -> None:
+    process = session.process
+    if process.poll() is None:
+        _signal_owned_group(process, signal.SIGTERM)
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            _signal_owned_group(process, signal.SIGKILL)
+            process.wait(timeout=15)
+
+    from source.runtime.worker.preflight import _process_birth_identity
+
+    child_pid = session.comfy_pid
+    child_birth_id = session.comfy_process_birth_id
+    parsed = urlsplit(session.server_url)
+    def child_state() -> str:
+        """Return owned, absent, or unknown without adopting a PID."""
+        if child_pid <= 0 or not child_birth_id:
+            return "unknown"
+        observed_birth_id = _process_birth_identity(child_pid)
+        if observed_birth_id is None:
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                return "absent"
+            except OSError:
+                return "unknown"
+            return "unknown"
+        if observed_birth_id != child_birth_id:
+            return "absent"
+        if os.name == "nt":
+            return "owned"
+        try:
+            return "owned" if os.getpgid(child_pid) == session.process.pid else "unknown"
+        except OSError:
+            return "unknown"
+
+    if child_state() == "owned":
+        try:
+            os.kill(child_pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + 15
+        while child_state() == "owned" and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if child_state() == "owned":
+            try:
+                os.kill(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            deadline = time.monotonic() + 15
+            while child_state() == "owned" and time.monotonic() < deadline:
+                time.sleep(0.1)
+
+    if parsed.port is not None:
+        listener_pid = _owned_listener_pid(parsed.port)
+        if listener_pid is None:
+            if child_state() != "absent":
+                raise LauncherConfigurationError(
+                    "owned VibeComfy child absence could not be verified"
+                )
+            return
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            listener_pid = _owned_listener_pid(parsed.port)
+            if listener_pid is None:
+                if child_state() != "absent":
+                    raise LauncherConfigurationError(
+                        "owned VibeComfy child absence could not be verified"
+                    )
+                return
+            time.sleep(0.1)
+        raise LauncherConfigurationError(
+            "owned VibeComfy listener remained after cleanup"
+        )
 
 
 def launch_generic_pack_host(
@@ -464,13 +976,25 @@ def launch_generic_pack_host(
         # Direct unit fixtures historically exercise process containment with a
         # non-Runtime endpoint.  Every supported loopback launch is gated.
         enforce_readiness = _loopback_endpoint(config.runtime_endpoint) or (config.support_root / "discovery.json").exists()
+    owned_vibecomfy: _OwnedVibeComfySession | None = None
     if enforce_readiness:
         try:
-            profile_path, profile_hash = _prepare_worker_readiness(config, env)
+            vibecomfy_session, owned_vibecomfy = _start_owned_vibecomfy_session(
+                config, env
+            )
+            profile_path, profile_hash = _prepare_worker_readiness(
+                config,
+                env,
+                vibecomfy_session=vibecomfy_session,
+            )
             config = replace(config, readiness_profile_path=profile_path, readiness_profile_hash=profile_hash)
         except LauncherConfigurationError:
+            if owned_vibecomfy is not None:
+                _stop_owned_vibecomfy_session(owned_vibecomfy)
             raise
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            if owned_vibecomfy is not None:
+                _stop_owned_vibecomfy_session(owned_vibecomfy)
             (config.support_root / "worker-readiness-profile.json").unlink(missing_ok=True)
             raise LauncherConfigurationError("Worker readiness preparation failed") from exc
     argv = config.argv()
@@ -497,11 +1021,15 @@ def launch_generic_pack_host(
     cleanup_complete = False
 
     def _cleanup_host() -> None:
-        nonlocal cleanup_complete
-        if cleanup_complete or child is None or owned_pgid is None:
+        nonlocal cleanup_complete, owned_vibecomfy
+        if cleanup_complete:
             return
         cleanup_complete = True
-        _terminate_and_wait(child, owned_pgid)
+        if child is not None and owned_pgid is not None:
+            _terminate_and_wait(child, owned_pgid)
+        if owned_vibecomfy is not None:
+            _stop_owned_vibecomfy_session(owned_vibecomfy)
+            owned_vibecomfy = None
 
     def _invalidate_profile() -> None:
         if config.readiness_profile_path is not None:
@@ -531,8 +1059,7 @@ def launch_generic_pack_host(
             owned_pgid = child.pid
         except BaseException:
             _invalidate_profile()
-            if child is not None and owned_pgid is not None:
-                _cleanup_host()
+            _cleanup_host()
             raise
 
         try:
@@ -571,6 +1098,7 @@ def launch_generic_pack_host(
 
             _atomic_write_json(config.state_file, {**state, "status": "ready", "ready": True})
             returncode = _normalize_returncode(child.wait())
+            _cleanup_host()
             _atomic_write_json(
                 config.state_file,
                 {
