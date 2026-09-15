@@ -24,26 +24,8 @@ class TaskTypeMeta:
 # Used for output file organization and routing.
 
 WGP_TASK_TYPES: FrozenSet[str] = frozenset({
-    # VACE models
-    "vace", "vace_21", "vace_22",
-    # Flux model
-    "flux",
-    # Text-to-video models
-    "t2v", "t2v_22", "wan_2_2_t2i",
-    # Image-to-video models
-    "i2v", "i2v_22",
-    # Other video models
-    "hunyuan", "ltxv", "ltx2",
     # VibeComfy direct app-active generation/editing tasks
-    "wan_2_2_i2v", "animate_character", "video_enhance",
-    "image-upscale", "image_upscale", "flux_klein_edit",
-    # Qwen image tasks
-    "qwen_image_edit", "qwen_image_style", "image_inpaint", "annotated_image_edit",
-    "qwen_image", "qwen_image_2512",
-    # Specialized handlers that enqueue WGP tasks
-    "inpaint_frames",
-    # Z image models
-    "z_image_turbo", "z_image_turbo_i2i",
+    "wan_2_2_i2v",
 })
 
 # =============================================================================
@@ -53,26 +35,8 @@ WGP_TASK_TYPES: FrozenSet[str] = frozenset({
 # orchestration/special handling. These bypass the task_registry handlers.
 
 DIRECT_QUEUE_TASK_TYPES: FrozenSet[str] = frozenset({
-    # VACE models
-    "vace", "vace_21", "vace_22",
-    # Flux model
-    "flux",
-    # Text-to-video models
-    "t2v", "t2v_22", "wan_2_2_t2i",
-    # Image-to-video models
-    "i2v", "i2v_22",
-    # Other video models
-    "hunyuan", "ltxv", "ltx2",
     # VibeComfy direct app-active generation/editing tasks
-    "wan_2_2_i2v", "animate_character", "video_enhance",
-    "image-upscale", "image_upscale", "flux_klein_edit",
-    # Qwen image tasks
-    "qwen_image_edit", "qwen_image_hires", "qwen_image_style",
-    "image_inpaint", "annotated_image_edit",
-    # Text-to-image tasks (no input image required)
-    "qwen_image", "qwen_image_2512", "z_image_turbo",
-    # Image-to-image tasks
-    "z_image_turbo_i2i",
+    "wan_2_2_i2v",
 })
 
 # =============================================================================
@@ -82,45 +46,9 @@ DIRECT_QUEUE_TASK_TYPES: FrozenSet[str] = frozenset({
 # This maps task types to their canonical WGP model identifiers.
 
 TASK_TYPE_TO_MODEL: Dict[str, str] = {
-    # VACE models
-    "vace": "vace_14B_cocktail_2_2",
-    "vace_21": "vace_14B",
-    "vace_22": "vace_14B_cocktail_2_2",
-    # Text-to-video / image models
     "wan_2_2_t2i": "t2v_2_2",
-    "t2v": "t2v",
-    "t2v_22": "t2v_2_2",
-    # Flux model
-    "flux": "flux",
-    # Image-to-video models
-    "i2v": "i2v_14B",
-    "i2v_22": "i2v_2_2",
-    # Other video models
-    "hunyuan": "hunyuan",
-    "ltxv": "ltxv_13B",
-    "ltx2": "ltx2_19B",
     # VibeComfy direct app-active generation/editing tasks
     "wan_2_2_i2v": "wanvideo_wrapper_22_14b_i2v_kijai",
-    "animate_character": "wan22_animate_native_first_stage",
-    "video_enhance": "basic_video_enhance",
-    "image-upscale": "basic_image_upscale",
-    "image_upscale": "basic_image_upscale",
-    "flux_klein_edit": "flux2_klein_4b_image_edit_distilled",
-    # Segment/inpaint handlers (use lightning baseline)
-    "join_clips_segment": "wan_2_2_vace_lightning_baseline_2_2_2",
-    "inpaint_frames": "wan_2_2_vace_lightning_baseline_2_2_2",
-    # Qwen image tasks
-    "qwen_image_edit": "qwen_image_edit_20B",
-    "qwen_image_hires": "qwen_image_edit_20B",
-    "qwen_image_style": "qwen_image_edit_20B",
-    "image_inpaint": "qwen_image_edit_20B",
-    "annotated_image_edit": "qwen_image_edit_20B",
-    # Text-to-image tasks
-    "qwen_image": "qwen_image_20B",
-    "qwen_image_2512": "qwen_image_2512_20B",
-    "z_image_turbo": "z_image",
-    # Image-to-image tasks
-    "z_image_turbo_i2i": "z_image_img2img",
 }
 
 
@@ -128,20 +56,8 @@ TASK_TYPE_CATALOG: Dict[str, TaskTypeMeta] = {
     task_type: TaskTypeMeta(
         default_model=default_model,
         is_direct_queue=task_type in DIRECT_QUEUE_TASK_TYPES,
-        is_wgp_output=task_type in (WGP_TASK_TYPES | frozenset({"qwen_image_hires"})),
-        allows_empty_prompt=task_type in {
-            "qwen_image_edit",
-            "qwen_image_hires",
-            "qwen_image_style",
-            "image_inpaint",
-            "annotated_image_edit",
-            "qwen_image",
-            "qwen_image_2512",
-            "z_image_turbo_i2i",
-            "image-upscale",
-            "image_upscale",
-            "video_enhance",
-        },
+        is_wgp_output=task_type in WGP_TASK_TYPES,
+        allows_empty_prompt=False,
         forced_video_length=1 if task_type == "wan_2_2_t2i" else None,
     )
     for task_type, default_model in TASK_TYPE_TO_MODEL.items()

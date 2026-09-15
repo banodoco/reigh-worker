@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import ast
+import os
+import runpy
+import subprocess
+import sys
 from importlib import import_module
 from pathlib import Path
 
@@ -11,6 +15,7 @@ import pytest
 from source.task_handlers.tasks.task_types import TASK_TYPE_CATALOG
 from source.task_handlers.tasks.template_routing import (
     DIRECT_ROUTE_ALIASES,
+    RETIRED_ASTRID_DIRECT_ROUTE_KEYS,
     RouteSupportState,
     SPRINT_2_SELECTOR_MAP,
     WorkerBackend,
@@ -84,6 +89,39 @@ def test_supported_entrypoint_imports_without_legacy_authority() -> None:
         }, path
 
 
+def test_supported_entrypoint_cold_import_does_not_bootstrap_legacy_modules() -> None:
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import sys
+import runpy
+runpy.run_path('run_worker.py', run_name='supported_worker_probe')
+import source.runtime.entrypoints.worker
+import source.runtime.worker.server
+forbidden_prefixes = (
+    'source.core.db',
+    'source.models.wgp',
+    'source.models.lora',
+    'source.media.video',
+    'source.task_handlers.worker.heartbeat_utils',
+    'source.task_handlers.worker.fatal_error_handler',
+)
+for name in sys.modules:
+    if name.startswith(forbidden_prefixes):
+        raise SystemExit(f'forbidden cold-start import: {name}')
+""",
+        ],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stderr or probe.stdout
+
+
 def test_supported_server_has_no_claimant_settlement_or_queue_lifecycle() -> None:
     source = _server_source()
     assert not any(symbol in source for symbol in FORBIDDEN_SERVER_SYMBOLS)
@@ -136,23 +174,22 @@ def test_route_contract_is_explicit_and_fail_closed() -> None:
         parse_worker_backend("implicit-fallback")
 
 
-def test_replaced_vibe_aliases_are_explicitly_disposed() -> None:
-    assert DIRECT_ROUTE_ALIASES["z_image"] == "z_image_turbo"
-    assert SPRINT_2_SELECTOR_MAP["z_image_turbo"].disposition == "replaced_by_astrid_d3"
-    assert SPRINT_2_SELECTOR_MAP["image-upscale"].disposition == "replaced_by_astrid_d4"
-    assert SPRINT_2_SELECTOR_MAP["image_upscale"].disposition == "replaced_by_astrid_d4"
+def test_retired_direct_families_are_explicitly_disposed() -> None:
+    assert set(DIRECT_ROUTE_ALIASES) == {"optimised_t2i", "wan_2_2_t2i"}
+    assert not set(RETIRED_ASTRID_DIRECT_ROUTE_KEYS) & set(SPRINT_2_SELECTOR_MAP)
 
-    for route_key in ("z_image", "z_image_turbo", "image-upscale", "image_upscale"):
+    for route_key in sorted(RETIRED_ASTRID_DIRECT_ROUTE_KEYS):
         resolved = resolve_task_route(
             task_id=f"e6-{route_key}",
             task_type=route_key,
             backend=WorkerBackend.VIBECOMFY,
         )
+        assert resolved.route_key in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
         assert resolved.fail_closed_reason, route_key
         assert not resolved.should_use_vibecomfy
 
 
-def test_preserved_wgp_progress_artifacts_and_video_enhance() -> None:
+def test_preserved_wgp_progress_artifacts_and_retired_direct_families() -> None:
     server_module = import_module("source.runtime.worker.server")
     assert callable(server_module.launch_generic_pack_host)
     assert "REIGH_BACKEND" not in _server_source()
@@ -169,7 +206,8 @@ def test_preserved_wgp_progress_artifacts_and_video_enhance() -> None:
     assert "uni3c_start_percent" in registry_source
     assert "uni3c_end_percent" in registry_source
     assert "uni3c_start_percent" in orchestration_source.read_text(encoding="utf-8")
-    assert "video_enhance" in TASK_TYPE_CATALOG
+    assert "video_enhance" not in TASK_TYPE_CATALOG
+    assert "video_enhance" in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
 
     for preserved in (
         ROOT / "docs" / "sprint-12-route-inventory.md",

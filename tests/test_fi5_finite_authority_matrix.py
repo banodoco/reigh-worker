@@ -6,9 +6,15 @@ import ast
 from importlib import import_module
 from pathlib import Path
 
+import pytest
+
 from source.task_handlers.tasks.task_types import TASK_TYPE_CATALOG
+from source.task_handlers.tasks.task_execution import execute_resolved_direct_task
 from source.task_handlers.tasks.template_routing import (
     DIRECT_ROUTE_ALIASES,
+    RETIRED_ASTRID_DIRECT_ROUTE_KEYS,
+    RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS,
+    RETIRED_ASTRID_DIMENSIONAL_ROUTE_PREFIXES,
     SECTION3A_ROUTE_SUPPORT_MAP,
     SPRINT_2_SELECTOR_MAP,
     RouteSupportState,
@@ -97,7 +103,9 @@ def _owner_candidates(route_key: str) -> set[str]:
 def test_finite_supported_routes_have_exactly_one_owner() -> None:
     selector_routes = set(SPRINT_2_SELECTOR_MAP) | set(SECTION3A_ROUTE_SUPPORT_MAP)
     catalog_only_routes = set(TASK_TYPE_CATALOG) - selector_routes
-    finite_routes = selector_routes | catalog_only_routes
+    finite_routes = (
+        selector_routes | catalog_only_routes
+    ) - set(RETIRED_ASTRID_DIRECT_ROUTE_KEYS)
 
     assert finite_routes
     for route_key in sorted(finite_routes):
@@ -110,22 +118,35 @@ def test_finite_supported_routes_have_exactly_one_owner() -> None:
 
 def test_replacements_and_unsupported_routes_are_explicit() -> None:
     entries = dict(_selector_entries())
-    for route_key, disposition in (
-        ("z_image_turbo", "replaced_by_astrid_d3"),
-        ("image-upscale", "replaced_by_astrid_d4"),
-        ("image_upscale", "replaced_by_astrid_d4"),
-    ):
-        entry = entries[route_key]
-        assert entry.disposition == disposition
+    assert not set(RETIRED_ASTRID_DIRECT_ROUTE_KEYS) & set(entries)
+    assert not SECTION3A_ROUTE_SUPPORT_MAP
+    for route_key in sorted(RETIRED_ASTRID_DIRECT_ROUTE_KEYS):
+        for backend in (WorkerBackend.VIBECOMFY, WorkerBackend.WGP):
+            resolved = resolve_task_route(
+                task_id=f"fi5-{route_key}-{backend.value}",
+                task_type=route_key,
+                params={"prompt": "finite matrix"},
+                backend=backend,
+            )
+            assert resolved.route_key in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
+            assert resolved.support_state is RouteSupportState.VIBECOMFY_UNSUPPORTED
+            assert resolved.should_use_vibecomfy is False
+            assert resolved.fail_closed_reason
+            assert "retired after its typed Astrid replacement" in resolved.fail_closed_reason
+
+    for route_key in sorted(RETIRED_ASTRID_DIMENSIONAL_ROUTE_KEYS) + [
+        f"{RETIRED_ASTRID_DIMENSIONAL_ROUTE_PREFIXES[0]}model-ltx2__guidance-none"
+    ]:
         resolved = resolve_task_route(
-            task_id=f"fi5-{route_key}",
+            task_id=f"fi5-dimensional-{route_key}",
             task_type=route_key,
             params={"prompt": "finite matrix"},
-            backend=WorkerBackend.VIBECOMFY,
+            backend=WorkerBackend.WGP,
         )
+        assert resolved.support_state is RouteSupportState.VIBECOMFY_UNSUPPORTED
         assert resolved.should_use_vibecomfy is False
         assert resolved.fail_closed_reason
-        assert "Astrid" in resolved.fail_closed_reason
+        assert "retired after its typed Astrid replacement" in resolved.fail_closed_reason
 
     for route_key, entry in entries.items():
         if entry.support_state is RouteSupportState.VIBECOMFY_UNSUPPORTED:
@@ -142,6 +163,51 @@ def test_replacements_and_unsupported_routes_are_explicit() -> None:
     assert unknown.support_state is RouteSupportState.VIBECOMFY_UNSUPPORTED
     assert unknown.fail_closed_reason
     assert unknown.should_use_vibecomfy is False
+
+
+@pytest.mark.parametrize("backend", [WorkerBackend.WGP, WorkerBackend.VIBECOMFY])
+@pytest.mark.parametrize(
+    "route_key",
+    [
+        "travel_orchestrator",
+        "travel_segment__model-ltx2__guidance-none",
+        "join_clips_segment__model-wan22_vace__guidance-vace",
+    ],
+)
+def test_dimensional_tombstones_stop_execution_before_either_backend(backend, route_key) -> None:
+    resolved = resolve_task_route(
+        task_id=f"fi5-execution-{backend.value}-{route_key}",
+        task_type=route_key,
+        params={"prompt": "execution boundary"},
+        backend=backend,
+    )
+    calls = {"wgp_builder": 0, "queue_submit": 0, "vibe_handler": 0}
+
+    def build_wgp_generation_task():
+        calls["wgp_builder"] += 1
+        return object()
+
+    def vibe_handler(*_args):
+        calls["vibe_handler"] += 1
+        return True, "should-not-run"
+
+    class Queue:
+        def submit_task(self, _task):
+            calls["queue_submit"] += 1
+
+        def get_task_status(self, _task_id):
+            raise AssertionError("retired dimensional task reached queue polling")
+
+    ok, output = execute_resolved_direct_task(
+        resolved=resolved,
+        context={"task_queue": Queue(), "main_output_dir_base": ROOT},
+        build_wgp_generation_task=build_wgp_generation_task,
+        vibecomfy_handler=vibe_handler,
+    )
+
+    assert ok is False
+    assert output is not None
+    assert calls == {"wgp_builder": 0, "queue_submit": 0, "vibe_handler": 0}
 
 
 def test_supported_entrypoint_has_no_second_authority() -> None:
@@ -170,7 +236,8 @@ def test_preserved_authority_consumers_and_substrate_remain_present() -> None:
         assert "uni3c_start_percent" in source
         assert "uni3c_end_percent" in source
 
-    assert "video_enhance" in TASK_TYPE_CATALOG
+    assert "video_enhance" not in TASK_TYPE_CATALOG
+    assert "video_enhance" in RETIRED_ASTRID_DIRECT_ROUTE_KEYS
     for relative_path in (
         "docs/sprint-12-route-inventory.md",
         "docs/sprint-12-route-support.md",

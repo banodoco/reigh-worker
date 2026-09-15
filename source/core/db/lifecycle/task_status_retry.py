@@ -12,44 +12,13 @@ from source.core.db.lifecycle.task_status_runtime import (
 call_edge_function_with_retry = _task_status._call_edge_function_with_retry
 
 
-def requeue_task_direct_db(
-    task_id: str,
-    attempts: int,
-    details: str,
-    *,
-    runtime_config=None,
-) -> bool:
-    """Requeue a task using the direct DB client contract."""
-    runtime = resolve_runtime_config(runtime_config)
-    client = getattr(runtime, "supabase_client", None)
-    table_name = getattr(runtime, "pg_table_name", _task_status._cfg.PG_TABLE_NAME)
-    if not client:
-        return False
-
-    result = (
-        client.table(table_name)
-        .update(
-            {
-                "status": STATUS_QUEUED,
-                "worker_id": None,
-                "attempts": attempts,
-                "error_details": details,
-                "generation_started_at": None,
-            }
-        )
-        .eq("id", task_id)
-        .execute()
-    )
-    return bool(getattr(result, "data", None))
-
-
 def requeue_task_for_retry(
     task_id: str,
     error_message: str,
     current_attempts: int,
     error_category: str | None = None,
 ) -> bool:
-    """Requeue through the edge function and fall back to direct DB when needed."""
+    """Requeue through the edge function and fail closed when unavailable."""
     runtime = resolve_runtime_config(None)
     new_attempts = current_attempts + 1
     details = f"Retry {new_attempts}"
@@ -60,12 +29,7 @@ def requeue_task_for_retry(
 
     request = resolve_update_status_request(runtime)
     if not getattr(request, "url", None):
-        return requeue_task_direct_db(
-            task_id,
-            new_attempts,
-            details,
-            runtime_config=runtime,
-        )
+        return False
 
     response, edge_error = call_edge_function_with_retry(
         edge_url=request.url,
@@ -84,18 +48,12 @@ def requeue_task_for_retry(
     )
     if response and response.status_code == 200 and not edge_error:
         return True
-    return requeue_task_direct_db(
-        task_id,
-        new_attempts,
-        details,
-        runtime_config=runtime,
-    )
+    return False
 
 
 __all__ = [
     "call_edge_function_with_retry",
     "resolve_runtime_config",
     "resolve_update_status_request",
-    "requeue_task_direct_db",
     "requeue_task_for_retry",
 ]
