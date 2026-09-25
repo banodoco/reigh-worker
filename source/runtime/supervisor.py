@@ -13,18 +13,26 @@ import hashlib
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass, replace
-from typing import Mapping, Sequence
+from types import SimpleNamespace
+from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
 
 GENERIC_HOST_MODULE = "astrid.core.execution.generic_host"
 GENERIC_HOST_EXECUTOR_ID = "astrid-pack-host"
+PREPARATION_VERSION = "runtime.local-worker-preparation/v2"
+ACTIVATION_VERSION = "runtime.local-worker-activation/v1"
+RECEIPT_VERSION = "runtime.local-worker-receipt/v2"
+CONTROL_VERSION = "reigh.local-worker-control/v1"
+ACTIVATION_ACCEPTED_VERSION = "astrid.local-worker-activation-accepted/v1"
+_CONTROL_FRAME_LIMIT = 64 * 1024
 
 # Ambient process settings only. Host bindings that affect identity are
 # validated and passed as argv values rather than inherited from the process.
@@ -44,6 +52,9 @@ HOST_ENV_ALLOWLIST = frozenset(
         "NVIDIA_VISIBLE_DEVICES",
         "ASTRID_HOST_READINESS_PROFILE_PATH",
         "ASTRID_HOST_READINESS_PROFILE_HASH",
+        # This is a selector input only.  It is forwarded so the host cannot
+        # silently lose the requested route, but it is never placement proof.
+        "ASTRID_EXECUTION_TARGET_JSON",
     }
 )
 
@@ -63,6 +74,7 @@ class RuntimeDiscovery:
     runtime_instance_id: str
     coordinator_epoch: str
     active_realm: str
+    realm_root: Path
     protocol_version: str
     schema_version: str
     worker_credential_file: Path
@@ -78,17 +90,53 @@ def _required_env(name: str, environ: Mapping[str, str]) -> str:
     return value
 
 
+def _reject_unissued_execution_target(environ: Mapping[str, str]) -> None:
+    """Fail closed when a targeted route has no trusted placement producer.
+
+    ``ASTRID_EXECUTION_TARGET_JSON`` is an operator/request selector.  The
+    selected Plan-A route must also receive Runtime-authenticated actual
+    placement, account/pod/profile, and incarnation evidence.  The current
+    Worker has no producer for that evidence, so allowing the selector to
+    reach GenericPackHost would turn configuration into an authority claim.
+    """
+
+    raw = environ.get("ASTRID_EXECUTION_TARGET_JSON", "").strip()
+    if not raw:
+        return
+    try:
+        selector = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise LauncherConfigurationError(
+            "ASTRID_EXECUTION_TARGET_JSON is not valid JSON; trusted placement issuer is unavailable"
+        ) from exc
+    if not isinstance(selector, Mapping):
+        raise LauncherConfigurationError(
+            "ASTRID_EXECUTION_TARGET_JSON must be an object; trusted placement issuer is unavailable"
+        )
+    raise LauncherConfigurationError(
+        "targeted Plan-A execution is unavailable: Worker has no credential-backed "
+        "placement issuer for actual account/pod/profile/incarnation evidence"
+    )
+
+
 def _resolved_path(
     name: str,
     environ: Mapping[str, str],
     *,
     directory: bool = False,
     executable: bool = False,
+    must_exist: bool = True,
 ) -> Path:
     raw = _required_env(name, environ)
     candidate = Path(raw)
     if not candidate.is_absolute():
         raise LauncherConfigurationError(f"{name} must be an absolute path")
+    if not must_exist:
+        try:
+            parent = candidate.parent.resolve(strict=True)
+        except OSError as exc:
+            raise LauncherConfigurationError(f"{name} parent directory is unavailable") from exc
+        return parent / candidate.name
     try:
         resolved = candidate.resolve(strict=True)
     except OSError as exc:
@@ -135,14 +183,21 @@ class HostLaunchConfig:
     readiness_profile_hash: str | None = None
 
     @classmethod
-    def from_environment(cls, environ: Mapping[str, str] | None = None) -> "HostLaunchConfig":
+    def from_environment(
+        cls,
+        environ: Mapping[str, str] | None = None,
+        *,
+        parked_credential: bool = False,
+    ) -> "HostLaunchConfig":
         env = os.environ if environ is None else environ
         source_checkout = _resolved_path("ASTRID_HOST_SOURCE_CHECKOUT", env, directory=True)
         pack_root = _resolved_path("ASTRID_HOST_PACK_ROOT", env, directory=True)
         if not pack_root.is_relative_to(source_checkout):
             raise LauncherConfigurationError("ASTRID_HOST_PACK_ROOT must be inside ASTRID_HOST_SOURCE_CHECKOUT")
         support_root = _resolved_path("ASTRID_HOST_SUPPORT_ROOT", env, directory=True)
-        credential_file = _resolved_path("ASTRID_HOST_CREDENTIAL_FILE", env)
+        credential_file = _resolved_path(
+            "ASTRID_HOST_CREDENTIAL_FILE", env, must_exist=not parked_credential
+        )
         boot_manifest_path = _resolved_path("ASTRID_HOST_BOOT_MANIFEST_PATH", env)
         capability_matrix = None
         if env.get("ASTRID_HOST_CAPABILITY_MATRIX", "").strip():
@@ -162,7 +217,14 @@ class HostLaunchConfig:
             capability_matrix=capability_matrix,
         )
 
-    def argv(self) -> list[str]:
+    def argv(
+        self,
+        *,
+        activation_fd: int | None = None,
+        operation_id: str | None = None,
+        channel_id: str | None = None,
+        activation_timeout_seconds: float = 120.0,
+    ) -> list[str]:
         args = [
             str(self.host_python),
             "-m",
@@ -199,6 +261,24 @@ class HostLaunchConfig:
                     str(self.readiness_profile_path),
                     "--readiness-profile-hash",
                     self.readiness_profile_hash,
+                )
+            )
+        activation_values = (activation_fd, operation_id, channel_id)
+        if any(value is not None for value in activation_values):
+            if activation_fd is None or not operation_id or not channel_id:
+                raise LauncherConfigurationError(
+                    "parked host activation fd, operation, and channel must be supplied together"
+                )
+            args.extend(
+                (
+                    "--activation-fd",
+                    str(activation_fd),
+                    "--activation-operation-id",
+                    operation_id,
+                    "--activation-channel-id",
+                    channel_id,
+                    "--activation-timeout-seconds",
+                    str(float(activation_timeout_seconds)),
                 )
             )
         return args
@@ -301,7 +381,11 @@ def _safe_record_path(path: Path, *, support_root: Path, label: str) -> Path:
     return resolved
 
 
-def _read_runtime_discovery(config: HostLaunchConfig) -> RuntimeDiscovery:
+def _read_runtime_discovery(
+    config: HostLaunchConfig,
+    *,
+    require_worker_credential: bool = True,
+) -> RuntimeDiscovery:
     from source.runtime.worker.preflight import _process_birth_identity
 
     support_root = config.support_root.resolve(strict=True)
@@ -318,7 +402,7 @@ def _read_runtime_discovery(config: HostLaunchConfig) -> RuntimeDiscovery:
         raise LauncherConfigurationError("Runtime discovery.json is malformed") from exc
     allowed = {
         "version", "endpoint", "pid", "process_birth_id", "active_realm", "runtime_instance_id",
-        "protocol_version", "schema_version", "coordinator_epoch", "credential_file",
+        "realm_root", "protocol_version", "schema_version", "coordinator_epoch", "credential_file",
         "worker_credential_file", "worker_actor", "worker_scopes",
     }
     if not isinstance(record, dict) or set(record) != allowed:
@@ -331,9 +415,17 @@ def _read_runtime_discovery(config: HostLaunchConfig) -> RuntimeDiscovery:
     if parsed.path not in {"", "/"} or parsed.query or parsed.fragment or parsed.username or parsed.password:
         raise LauncherConfigurationError("Runtime discovery endpoint is not canonical")
     if any(not isinstance(record.get(name), str) or not record[name].strip() for name in (
-        "process_birth_id", "active_realm", "runtime_instance_id", "protocol_version", "schema_version", "coordinator_epoch",
+        "process_birth_id", "active_realm", "realm_root", "runtime_instance_id",
+        "protocol_version", "schema_version", "coordinator_epoch",
     )):
         raise LauncherConfigurationError("Runtime discovery identity is incomplete")
+    realm_root = Path(record["realm_root"])
+    if not realm_root.is_absolute() or realm_root.is_symlink() or not realm_root.is_dir():
+        raise LauncherConfigurationError("Runtime discovery realm root is invalid")
+    try:
+        realm_root = realm_root.resolve(strict=True)
+    except OSError as exc:
+        raise LauncherConfigurationError("Runtime discovery realm root is unavailable") from exc
     if record["protocol_version"] != "workspace.v1" or record["coordinator_epoch"] != record["runtime_instance_id"]:
         raise LauncherConfigurationError("Runtime discovery protocol or coordinator identity is invalid")
     pid = record.get("pid")
@@ -351,15 +443,47 @@ def _read_runtime_discovery(config: HostLaunchConfig) -> RuntimeDiscovery:
     worker_raw = record.get("worker_credential_file")
     if not isinstance(worker_raw, str) or not Path(worker_raw).is_absolute():
         raise LauncherConfigurationError("Runtime worker credential reference is invalid")
-    worker_path = _safe_record_path(Path(worker_raw), support_root=support_root, label="Runtime worker credential")
-    if worker_path.stat().st_mode & 0o777 != 0o600:
-        raise LauncherConfigurationError("Runtime worker credential must be owner-only")
+    worker_candidate = Path(worker_raw)
+    if require_worker_credential:
+        worker_path = _safe_record_path(
+            worker_candidate,
+            support_root=support_root,
+            label="Runtime worker credential",
+        )
+        if worker_path.stat().st_mode & 0o777 != 0o600:
+            raise LauncherConfigurationError("Runtime worker credential must be owner-only")
+    else:
+        try:
+            worker_parent = worker_candidate.parent.resolve(strict=True)
+        except OSError as exc:
+            raise LauncherConfigurationError(
+                "Runtime worker credential parent is unavailable"
+            ) from exc
+        worker_path = worker_parent / worker_candidate.name
+        if not worker_path.is_relative_to(support_root):
+            raise LauncherConfigurationError(
+                "Runtime worker credential reference must remain beneath the support root"
+            )
+        if worker_candidate.exists() or worker_candidate.is_symlink():
+            worker_path = _safe_record_path(
+                worker_candidate,
+                support_root=support_root,
+                label="Runtime worker credential",
+            )
+            if worker_path.stat().st_mode & 0o777 != 0o600:
+                raise LauncherConfigurationError(
+                    "Runtime worker credential must be owner-only"
+                )
     if config.runtime_endpoint.rstrip("/") != endpoint.rstrip("/"):
         raise LauncherConfigurationError("configured Runtime endpoint conflicts with discovery")
     if config.runtime_instance_id != record["runtime_instance_id"]:
         raise LauncherConfigurationError("configured Runtime instance conflicts with discovery")
     try:
-        configured_credential = config.credential_file.resolve(strict=True)
+        configured_credential = (
+            config.credential_file.resolve(strict=True)
+            if require_worker_credential
+            else config.credential_file.parent.resolve(strict=True) / config.credential_file.name
+        )
     except OSError as exc:
         raise LauncherConfigurationError("configured Runtime credential is unavailable") from exc
     if configured_credential != worker_path:
@@ -367,7 +491,8 @@ def _read_runtime_discovery(config: HostLaunchConfig) -> RuntimeDiscovery:
     return RuntimeDiscovery(
         endpoint=endpoint.rstrip("/"), port=port, pid=pid, process_birth_id=record["process_birth_id"],
         runtime_instance_id=record["runtime_instance_id"], coordinator_epoch=record["coordinator_epoch"],
-        active_realm=record["active_realm"], protocol_version=record["protocol_version"], schema_version=record["schema_version"],
+        active_realm=record["active_realm"], realm_root=realm_root,
+        protocol_version=record["protocol_version"], schema_version=record["schema_version"],
         worker_credential_file=worker_path, worker_actor=worker_actor, worker_scopes=tuple(worker_scopes),
         snapshot_digest="sha256:" + hashlib.sha256(raw).hexdigest(),
     )
@@ -700,7 +825,6 @@ class _OwnedVibeComfySession:
     comfy_process_birth_id: str = ""
     server_url: str = ""
 
-
 def _start_owned_vibecomfy_session(
     config: HostLaunchConfig,
     environ: Mapping[str, str],
@@ -957,6 +1081,669 @@ def _stop_owned_vibecomfy_session(session: _OwnedVibeComfySession) -> None:
         )
 
 
+@dataclass
+class PreparedHostHandle:
+    """Worker-owned engine, parked host, and inherited activation endpoint."""
+
+    profile: object
+    operation_id: str
+    channel_id: str
+    host: subprocess.Popen[bytes]
+    host_birth_id: str
+    activation: socket.socket
+    engine: _OwnedVibeComfySession
+    engine_report: dict[str, object]
+    readiness_profile: Path | None = None
+    activated: bool = False
+    activation_grant: dict[str, object] | None = None
+    closed: bool = False
+
+
+class LocalWorkerPreparerAdapter:
+    """Concrete Worker-side implementation of Runtime's private preparer ABI.
+
+    Runtime remains the issuer and independent observer.  This object owns only
+    process preparation and the one inherited Worker-to-host activation socket.
+    A transport proxy may invoke these methods in the Worker process; no grant,
+    credential, or placement assertion is accepted from ambient environment.
+    """
+
+    def __init__(
+        self,
+        config: HostLaunchConfig,
+        *,
+        environ: Mapping[str, str] | None = None,
+        activation_timeout_seconds: float = 120.0,
+    ):
+        self.config = config
+        self.environ = dict(os.environ if environ is None else environ)
+        self.activation_timeout_seconds = float(activation_timeout_seconds)
+        self._active: PreparedHostHandle | None = None
+
+    @staticmethod
+    def _birth(pid: int) -> str:
+        from source.runtime.worker.preflight import _process_birth_identity
+
+        birth = _process_birth_identity(pid)
+        if not birth:
+            raise LauncherConfigurationError("prepared process birth identity is unavailable")
+        return birth
+
+    @staticmethod
+    def _profile_value(profile: object, name: str) -> object:
+        try:
+            return getattr(profile, name)
+        except AttributeError as exc:
+            raise LauncherConfigurationError(
+                f"local Worker profile is missing {name}"
+            ) from exc
+
+    def _validate_profile(self, profile: object) -> RuntimeDiscovery:
+        discovery = _read_runtime_discovery(
+            self.config, require_worker_credential=False
+        )
+        if str(self._profile_value(profile, "workspace_uuid")) != discovery.active_realm:
+            raise LauncherConfigurationError("local Worker profile workspace identity is invalid")
+        if Path(self._profile_value(profile, "realm_root")).resolve() != discovery.realm_root:
+            raise LauncherConfigurationError("local Worker profile realm root is invalid")
+        if Path(self._profile_value(profile, "support_root")).resolve() != self.config.support_root.resolve():
+            raise LauncherConfigurationError("local Worker profile support root is invalid")
+        if Path(self._profile_value(profile, "host_executable")).resolve() != self.config.host_python.resolve():
+            raise LauncherConfigurationError("local Worker profile host executable is invalid")
+        worker_executable = Path(self._profile_value(profile, "worker_executable"))
+        if worker_executable.resolve() != Path(sys.executable).resolve():
+            raise LauncherConfigurationError("local Worker profile worker executable is invalid")
+        return discovery
+
+    def _assert_live(self, handle: PreparedHostHandle, *, parked: bool = False) -> None:
+        if handle.closed or handle.host.poll() is not None:
+            raise LauncherConfigurationError("prepared GenericPackHost is not alive")
+        if self._birth(handle.host.pid) != handle.host_birth_id:
+            raise LauncherConfigurationError("prepared GenericPackHost identity changed")
+        if os.name != "nt":
+            try:
+                if os.getpgid(handle.host.pid) != handle.host.pid or os.getsid(handle.host.pid) != handle.host.pid:
+                    raise LauncherConfigurationError(
+                        "prepared GenericPackHost lost process-group or session custody"
+                    )
+            except OSError as exc:
+                raise LauncherConfigurationError(
+                    "prepared GenericPackHost custody is unavailable"
+                ) from exc
+        current = _read_owned_vibecomfy_session(
+            handle.engine.root,
+            expected_daemon_pid=handle.engine.daemon_pid,
+            verify_parent=True,
+        )
+        for key in (
+            "pid", "process_birth_id", "comfy_pid", "comfy_process_birth_id",
+            "server_url", "config_digest",
+        ):
+            if current.get(key) != handle.engine_report.get(key):
+                raise LauncherConfigurationError("prepared VibeComfy identity changed")
+        if parked and self.config.ready_file.exists():
+            raise LauncherConfigurationError("parked GenericPackHost published readiness before activation")
+
+    def prepare(
+        self,
+        profile: object,
+        *,
+        operation_id: str,
+        channel_id: str,
+    ) -> PreparedHostHandle:
+        if not operation_id or not channel_id:
+            raise LauncherConfigurationError("prepared operation and channel identities are required")
+        if self._active is not None:
+            self.abort(self._active)
+        self._validate_profile(profile)
+        engine_report, engine = _start_owned_vibecomfy_session(
+            self.config, self.environ
+        )
+        if engine_report is None or engine is None:
+            raise LauncherConfigurationError("prepared local Worker requires an owned VibeComfy session")
+        expected_config_digest = str(self._profile_value(profile, "session_config_digest"))
+        if engine_report.get("config_digest") != expected_config_digest:
+            _stop_owned_vibecomfy_session(engine)
+            raise LauncherConfigurationError("prepared VibeComfy session configuration is invalid")
+        parent_control, host_control = socket.socketpair()
+        self.config.ready_file.unlink(missing_ok=True)
+        child: subprocess.Popen[bytes] | None = None
+        try:
+            argv = self.config.argv(
+                activation_fd=host_control.fileno(),
+                operation_id=operation_id,
+                channel_id=channel_id,
+                activation_timeout_seconds=self.activation_timeout_seconds,
+            )
+            child = subprocess.Popen(
+                argv,
+                cwd=str(self.config.source_checkout),
+                env=_host_environment(self.environ, self.config),
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+                pass_fds=(host_control.fileno(),),
+            )
+            host_control.close()
+            birth = self._birth(child.pid)
+            handle = PreparedHostHandle(
+                profile=profile,
+                operation_id=operation_id,
+                channel_id=channel_id,
+                host=child,
+                host_birth_id=birth,
+                activation=parent_control,
+                engine=engine,
+                engine_report=dict(engine_report),
+            )
+            self._assert_live(handle, parked=True)
+            self._active = handle
+            return handle
+        except BaseException:
+            host_control.close()
+            parent_control.close()
+            if child is not None:
+                try:
+                    _terminate_and_wait(child, child.pid)
+                except BaseException:
+                    pass
+            _stop_owned_vibecomfy_session(engine)
+            raise
+
+    def report(self, handle: object) -> Mapping[str, Any]:
+        if not isinstance(handle, PreparedHostHandle) or handle is not self._active:
+            raise LauncherConfigurationError("prepared host handle is not owned by this Worker")
+        self._assert_live(handle, parked=not handle.activated)
+        worker_birth = self._birth(os.getpid())
+        return {
+            "version": PREPARATION_VERSION,
+            "operation_id": handle.operation_id,
+            "channel_id": handle.channel_id,
+            "processes": {
+                "worker": {"pid": os.getpid(), "birth_id": worker_birth},
+                "host": {"pid": handle.host.pid, "birth_id": handle.host_birth_id},
+                "engine": {
+                    "pid": handle.engine.daemon_pid,
+                    "birth_id": str(handle.engine_report["process_birth_id"]),
+                },
+                "engine_listener": {
+                    "pid": handle.engine.comfy_pid,
+                    "birth_id": handle.engine.comfy_process_birth_id,
+                },
+            },
+            "engine_binding": {
+                "supervisor_pid": handle.engine.daemon_pid,
+                "listener_pid": handle.engine.comfy_pid,
+                "listener_parent_pid": handle.engine.daemon_pid,
+                "socket_owner_pid": handle.engine.comfy_pid,
+            },
+            "session_config_digest": str(handle.engine_report["config_digest"]),
+        }
+
+    def activate(self, handle: object, grant: Mapping[str, Any]) -> None:
+        if not isinstance(handle, PreparedHostHandle) or handle is not self._active:
+            raise LauncherConfigurationError("prepared host handle is not owned by this Worker")
+        if handle.activated:
+            raise LauncherConfigurationError("prepared host has already consumed an activation grant")
+        self._assert_live(handle, parked=True)
+        required = {
+            "version", "operation_id", "channel_id", "credential_file",
+            "executor_incarnation", "evidence_digest",
+        }
+        if not isinstance(grant, Mapping) or set(grant) != required:
+            raise LauncherConfigurationError("Runtime activation grant has an invalid shape")
+        if (
+            grant.get("version") != ACTIVATION_VERSION
+            or grant.get("operation_id") != handle.operation_id
+            or grant.get("channel_id") != handle.channel_id
+        ):
+            raise LauncherConfigurationError("Runtime activation grant is stale or on the wrong channel")
+        credential = Path(str(grant.get("credential_file", "")))
+        if credential != self.config.credential_file or credential.is_symlink() or not credential.is_file():
+            raise LauncherConfigurationError("Runtime activation credential reference is invalid")
+        if credential.stat().st_mode & 0o777 != 0o600:
+            raise LauncherConfigurationError("Runtime activation credential is not owner-only")
+        incarnation = grant.get("executor_incarnation")
+        digest = grant.get("evidence_digest")
+        if not isinstance(incarnation, str) or not incarnation or len(incarnation) > 256:
+            raise LauncherConfigurationError("Runtime activation incarnation is invalid")
+        if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+            raise LauncherConfigurationError("Runtime activation evidence digest is invalid")
+        wire = {
+            **dict(grant),
+            "host": {"pid": handle.host.pid, "birth_id": handle.host_birth_id},
+        }
+        handle.activation.settimeout(self.activation_timeout_seconds)
+        handle.activation.sendall(
+            json.dumps(wire, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+        )
+        frame = bytearray()
+        while b"\n" not in frame:
+            chunk = handle.activation.recv(min(4096, _CONTROL_FRAME_LIMIT + 1 - len(frame)))
+            if not chunk:
+                raise LauncherConfigurationError("parked GenericPackHost rejected activation")
+            frame.extend(chunk)
+            if len(frame) > _CONTROL_FRAME_LIMIT:
+                raise LauncherConfigurationError("parked GenericPackHost activation response is too large")
+        try:
+            accepted = json.loads(bytes(frame).split(b"\n", 1)[0].decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise LauncherConfigurationError("parked GenericPackHost activation response is malformed") from exc
+        expected_ack = {
+            "version": ACTIVATION_ACCEPTED_VERSION,
+            "operation_id": handle.operation_id,
+            "channel_id": handle.channel_id,
+            "executor_incarnation": incarnation,
+            "evidence_digest": digest,
+            "host": wire["host"],
+        }
+        if accepted != expected_ack:
+            raise LauncherConfigurationError("parked GenericPackHost activation response is invalid")
+        handle.activation.close()
+        handle.activated = True
+        handle.activation_grant = dict(grant)
+
+    def abort(self, handle: object) -> None:
+        if not isinstance(handle, PreparedHostHandle) or handle is not self._active:
+            return
+        error: BaseException | None = None
+        try:
+            if handle.activation.fileno() >= 0:
+                handle.activation.close()
+            if handle.host.poll() is None:
+                if self._birth(handle.host.pid) != handle.host_birth_id:
+                    raise LauncherConfigurationError(
+                        "prepared host replacement prevents safe cleanup"
+                    )
+                _terminate_and_wait(handle.host, handle.host.pid)
+            _stop_owned_vibecomfy_session(handle.engine)
+        except BaseException as exc:
+            error = exc
+        finally:
+            self.config.ready_file.unlink(missing_ok=True)
+            if handle.readiness_profile is not None:
+                handle.readiness_profile.unlink(missing_ok=True)
+            handle.closed = True
+            self._active = None
+        if error is not None:
+            raise error
+
+    def reconnect(self, receipt: Mapping[str, Any]) -> object | None:
+        handle = self._active
+        if handle is None or handle.closed or not handle.activated:
+            return None
+        try:
+            report = self.report(handle)
+        except LauncherConfigurationError:
+            self.abort(handle)
+            raise
+        if receipt.get("version") != RECEIPT_VERSION:
+            return None
+        processes = (
+            receipt.get("worker"),
+            receipt.get("host"),
+            receipt.get("engine"),
+            receipt.get("engine_listener"),
+        )
+        names = ("worker", "host", "engine", "engine_listener")
+        for name, process in zip(names, processes):
+            expected = report["processes"][name]
+            if not isinstance(process, Mapping) or any(process.get(key) != expected[key] for key in ("pid", "birth_id")):
+                return None
+        grant = handle.activation_grant or {}
+        if (
+            receipt.get("session_config_digest") != report["session_config_digest"]
+            or receipt.get("evidence_digest") != grant.get("evidence_digest")
+            or receipt.get("executor_incarnation") != grant.get("executor_incarnation")
+        ):
+            return None
+        return handle
+
+
+@dataclass
+class PreparedWorkerHandle:
+    """Runtime-side custody of the pinned Worker and its private control fd."""
+
+    worker: subprocess.Popen[bytes]
+    worker_birth_id: str
+    control: socket.socket
+    report_value: dict[str, Any]
+    activated: bool = False
+    closed: bool = False
+
+
+def _send_private_frame(channel: socket.socket, payload: Mapping[str, Any]) -> None:
+    encoded = json.dumps(
+        dict(payload), sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    if len(encoded) > _CONTROL_FRAME_LIMIT:
+        raise LauncherConfigurationError("local Worker control frame is too large")
+    channel.sendall(encoded + b"\n")
+
+
+def _receive_private_frame(channel: socket.socket) -> dict[str, Any]:
+    frame = bytearray()
+    while b"\n" not in frame:
+        chunk = channel.recv(min(4096, _CONTROL_FRAME_LIMIT + 1 - len(frame)))
+        if not chunk:
+            raise LauncherConfigurationError("local Worker control channel closed")
+        frame.extend(chunk)
+        if len(frame) > _CONTROL_FRAME_LIMIT:
+            raise LauncherConfigurationError("local Worker control frame is too large")
+    encoded, remainder = bytes(frame).split(b"\n", 1)
+    if remainder:
+        raise LauncherConfigurationError("local Worker control channel carried multiple frames")
+    try:
+        value = json.loads(encoded.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise LauncherConfigurationError("local Worker control frame is malformed") from exc
+    if not isinstance(value, dict):
+        raise LauncherConfigurationError("local Worker control frame must be an object")
+    return value
+
+
+_PROFILE_FIELDS = (
+    "profile_id", "workspace_uuid", "realm_root", "support_root", "machine_id",
+    "worker_executable", "host_executable", "engine_executable",
+    "engine_listener_executable", "worker_artifact_digest", "host_artifact_digest",
+    "engine_artifact_digest", "engine_listener_artifact_digest",
+    "session_config_digest", "profile_revision", "profile_digest", "release_digest",
+)
+
+
+def _private_profile_payload(profile: object) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for name in _PROFILE_FIELDS:
+        try:
+            value = getattr(profile, name)
+        except AttributeError as exc:
+            raise LauncherConfigurationError(f"local Worker profile is missing {name}") from exc
+        result[name] = str(value) if isinstance(value, Path) else value
+    return result
+
+
+def _private_config_payload(config: HostLaunchConfig) -> dict[str, Any]:
+    return {
+        "host_python": str(config.host_python),
+        "source_checkout": str(config.source_checkout),
+        "pack_root": str(config.pack_root),
+        "runtime_endpoint": config.runtime_endpoint,
+        "credential_file": str(config.credential_file),
+        "support_root": str(config.support_root),
+        "runtime_instance_id": config.runtime_instance_id,
+        "ready_file": str(config.ready_file),
+        "state_file": str(config.state_file),
+        "boot_manifest_path": str(config.boot_manifest_path),
+        "boot_manifest_hash": config.boot_manifest_hash,
+        "capability_matrix": str(config.capability_matrix) if config.capability_matrix else None,
+        "readiness_profile_path": str(config.readiness_profile_path) if config.readiness_profile_path else None,
+        "readiness_profile_hash": config.readiness_profile_hash,
+    }
+
+
+def _config_from_private_payload(value: Mapping[str, Any]) -> HostLaunchConfig:
+    expected = {
+        "host_python", "source_checkout", "pack_root", "runtime_endpoint",
+        "credential_file", "support_root", "runtime_instance_id", "ready_file",
+        "state_file", "boot_manifest_path", "boot_manifest_hash", "capability_matrix",
+        "readiness_profile_path", "readiness_profile_hash",
+    }
+    if set(value) != expected:
+        raise LauncherConfigurationError("private host configuration has an invalid shape")
+    path_fields = {
+        "host_python", "source_checkout", "pack_root", "credential_file", "support_root",
+        "ready_file", "state_file", "boot_manifest_path", "capability_matrix",
+        "readiness_profile_path",
+    }
+    converted = {
+        name: (Path(item) if name in path_fields and item is not None else item)
+        for name, item in value.items()
+    }
+    return HostLaunchConfig(**converted)
+
+
+class LocalWorkerProcessPreparer:
+    """Runtime-facing preparer that launches the pinned Worker over socketpair."""
+
+    def __init__(
+        self,
+        config: HostLaunchConfig,
+        *,
+        environ: Mapping[str, str] | None = None,
+        timeout_seconds: float = 900.0,
+    ):
+        self.config = config
+        self.environ = dict(os.environ if environ is None else environ)
+        self.timeout_seconds = float(timeout_seconds)
+        self._active: PreparedWorkerHandle | None = None
+
+    @staticmethod
+    def _birth(pid: int) -> str:
+        from source.runtime.worker.preflight import _process_birth_identity
+
+        value = _process_birth_identity(pid)
+        if not value:
+            raise LauncherConfigurationError("prepared Worker birth identity is unavailable")
+        return value
+
+    def _rpc(self, handle: PreparedWorkerHandle, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if handle.closed or handle.worker.poll() is not None:
+            raise LauncherConfigurationError("prepared Worker is not alive")
+        if self._birth(handle.worker.pid) != handle.worker_birth_id:
+            raise LauncherConfigurationError("prepared Worker identity changed")
+        _send_private_frame(handle.control, payload)
+        response = _receive_private_frame(handle.control)
+        if response.get("version") != CONTROL_VERSION:
+            raise LauncherConfigurationError("prepared Worker control version is invalid")
+        if response.get("status") != "ok":
+            raise LauncherConfigurationError(
+                str(response.get("error") or "prepared Worker rejected the operation")
+            )
+        return response
+
+    def prepare(self, profile: object, *, operation_id: str, channel_id: str) -> PreparedWorkerHandle:
+        if self._active is not None:
+            self.abort(self._active)
+        parent, child = socket.socketpair()
+        worker: subprocess.Popen[bytes] | None = None
+        try:
+            executable = Path(getattr(profile, "worker_executable"))
+            worker_root = Path(__file__).resolve().parents[2]
+            child_env = dict(self.environ)
+            child_env["PYTHONPATH"] = str(worker_root)
+            worker = subprocess.Popen(
+                [
+                    str(executable), "-m", "source.runtime.supervisor",
+                    "--prepared-control-fd", str(child.fileno()),
+                ],
+                cwd=str(worker_root),
+                env=child_env,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+                pass_fds=(child.fileno(),),
+            )
+            child.close()
+            parent.settimeout(self.timeout_seconds)
+            handle = PreparedWorkerHandle(
+                worker=worker,
+                worker_birth_id=self._birth(worker.pid),
+                control=parent,
+                report_value={},
+            )
+            response = self._rpc(
+                handle,
+                {
+                    "version": CONTROL_VERSION,
+                    "command": "prepare",
+                    "operation_id": operation_id,
+                    "channel_id": channel_id,
+                    "profile": _private_profile_payload(profile),
+                    "config": _private_config_payload(self.config),
+                },
+            )
+            report = response.get("report")
+            if not isinstance(report, dict):
+                raise LauncherConfigurationError("prepared Worker returned no process report")
+            handle.report_value = report
+            self._active = handle
+            return handle
+        except BaseException:
+            child.close()
+            parent.close()
+            if worker is not None and worker.poll() is None:
+                try:
+                    # Closing the inherited control socket is the normal abort
+                    # signal. Give the Worker time to clean its separately
+                    # sessioned host and engine before terminating the Worker.
+                    worker.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    _terminate_and_wait(worker, worker.pid)
+            raise
+
+    def report(self, handle: object) -> Mapping[str, Any]:
+        if not isinstance(handle, PreparedWorkerHandle) or handle is not self._active:
+            raise LauncherConfigurationError("prepared Worker handle is not active")
+        response = self._rpc(
+            handle, {"version": CONTROL_VERSION, "command": "report"}
+        )
+        report = response.get("report")
+        if not isinstance(report, dict):
+            raise LauncherConfigurationError("prepared Worker returned no process report")
+        handle.report_value = report
+        return report
+
+    def activate(self, handle: object, grant: Mapping[str, Any]) -> None:
+        if not isinstance(handle, PreparedWorkerHandle) or handle is not self._active:
+            raise LauncherConfigurationError("prepared Worker handle is not active")
+        self._rpc(
+            handle,
+            {"version": CONTROL_VERSION, "command": "activate", "grant": dict(grant)},
+        )
+        handle.activated = True
+
+    def abort(self, handle: object) -> None:
+        if not isinstance(handle, PreparedWorkerHandle) or handle is not self._active:
+            return
+        failure: BaseException | None = None
+        try:
+            self._rpc(handle, {"version": CONTROL_VERSION, "command": "abort"})
+            handle.worker.wait(timeout=5)
+        except BaseException as exc:
+            failure = exc
+        finally:
+            handle.control.close()
+            if handle.worker.poll() is None:
+                try:
+                    handle.worker.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    _terminate_and_wait(handle.worker, handle.worker.pid)
+            handle.closed = True
+            self._active = None
+        if failure is not None:
+            raise failure
+
+    def reconnect(self, receipt: Mapping[str, Any]) -> object | None:
+        handle = self._active
+        if handle is None or handle.closed or not handle.activated:
+            return None
+        response = self._rpc(
+            handle,
+            {"version": CONTROL_VERSION, "command": "reconnect", "receipt": dict(receipt)},
+        )
+        return handle if response.get("reconnected") is True else None
+
+
+def _serve_prepared_worker(descriptor: int) -> int:
+    """Run the private Worker side of ``LocalWorkerProcessPreparer``."""
+
+    control = socket.socket(fileno=descriptor)
+    control.settimeout(None)
+    adapter: LocalWorkerPreparerAdapter | None = None
+    handle: PreparedHostHandle | None = None
+    try:
+        while True:
+            try:
+                request = _receive_private_frame(control)
+                if request.get("version") != CONTROL_VERSION:
+                    raise LauncherConfigurationError("private Worker control version is invalid")
+                command = request.get("command")
+                if command == "prepare":
+                    if adapter is not None:
+                        raise LauncherConfigurationError("private Worker is already prepared")
+                    profile_value = request.get("profile")
+                    config_value = request.get("config")
+                    if not isinstance(profile_value, Mapping) or set(profile_value) != set(_PROFILE_FIELDS):
+                        raise LauncherConfigurationError("private Worker profile has an invalid shape")
+                    if not isinstance(config_value, Mapping):
+                        raise LauncherConfigurationError("private Worker configuration is invalid")
+                    profile = SimpleNamespace(
+                        **{
+                            name: Path(value)
+                            if name.endswith("_root") or name.endswith("_executable")
+                            else value
+                            for name, value in profile_value.items()
+                        }
+                    )
+                    adapter = LocalWorkerPreparerAdapter(
+                        _config_from_private_payload(config_value), environ=os.environ
+                    )
+                    handle = adapter.prepare(
+                        profile,
+                        operation_id=str(request.get("operation_id") or ""),
+                        channel_id=str(request.get("channel_id") or ""),
+                    )
+                    response: dict[str, Any] = {
+                        "version": CONTROL_VERSION,
+                        "status": "ok",
+                        "report": dict(adapter.report(handle)),
+                    }
+                elif command == "report" and adapter is not None and handle is not None:
+                    response = {
+                        "version": CONTROL_VERSION,
+                        "status": "ok",
+                        "report": dict(adapter.report(handle)),
+                    }
+                elif command == "activate" and adapter is not None and handle is not None:
+                    grant = request.get("grant")
+                    if not isinstance(grant, Mapping):
+                        raise LauncherConfigurationError("private Worker activation grant is invalid")
+                    adapter.activate(handle, grant)
+                    response = {"version": CONTROL_VERSION, "status": "ok"}
+                elif command == "reconnect" and adapter is not None and handle is not None:
+                    receipt = request.get("receipt")
+                    if not isinstance(receipt, Mapping):
+                        raise LauncherConfigurationError("private Worker reconnect receipt is invalid")
+                    response = {
+                        "version": CONTROL_VERSION,
+                        "status": "ok",
+                        "reconnected": adapter.reconnect(receipt) is handle,
+                    }
+                elif command == "abort" and adapter is not None and handle is not None:
+                    adapter.abort(handle)
+                    _send_private_frame(
+                        control, {"version": CONTROL_VERSION, "status": "ok"}
+                    )
+                    return 0
+                else:
+                    raise LauncherConfigurationError("private Worker command is invalid")
+                _send_private_frame(control, response)
+            except LauncherConfigurationError as exc:
+                _send_private_frame(
+                    control,
+                    {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
+                )
+    except (BrokenPipeError, ConnectionError, OSError):
+        if adapter is not None and handle is not None:
+            try:
+                adapter.abort(handle)
+            except BaseException:
+                return 78
+        return 78
+    finally:
+        control.close()
+
+
 def launch_generic_pack_host(
     config: HostLaunchConfig,
     *,
@@ -972,6 +1759,7 @@ def launch_generic_pack_host(
     """
 
     env = os.environ if environ is None else environ
+    _reject_unissued_execution_target(env)
     if enforce_readiness is None:
         # Direct unit fixtures historically exercise process containment with a
         # non-Runtime endpoint.  Every supported loopback launch is gated.
@@ -1122,7 +1910,17 @@ def launch_generic_pack_host(
 def main(argv: Sequence[str] | None = None) -> int:
     # Task/route arguments cannot select a host interpreter, source path,
     # engine, template, or backend.
-    del argv
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments:
+        if len(arguments) == 2 and arguments[0] == "--prepared-control-fd":
+            try:
+                descriptor = int(arguments[1])
+            except ValueError:
+                print("Worker launcher configuration error: invalid private control fd", file=sys.stderr)
+                return 78
+            return _serve_prepared_worker(descriptor)
+        print("Worker launcher configuration error: unsupported private arguments", file=sys.stderr)
+        return 78
     try:
         config = HostLaunchConfig.from_environment()
         return launch_generic_pack_host(
@@ -1140,7 +1938,11 @@ __all__ = [
     "GENERIC_HOST_MODULE",
     "HOST_ENV_ALLOWLIST",
     "HostLaunchConfig",
+    "LocalWorkerPreparerAdapter",
+    "LocalWorkerProcessPreparer",
     "LauncherConfigurationError",
+    "PreparedHostHandle",
+    "PreparedWorkerHandle",
     "RuntimeDiscovery",
     "launch_generic_pack_host",
     "main",

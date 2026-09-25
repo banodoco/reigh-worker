@@ -86,9 +86,12 @@ def _facts_fixture(tmp_path: Path, config: supervisor.HostLaunchConfig, monkeypa
 
 
 def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack-host") -> None:
+    realm_root = config.support_root.parent / "realm"
+    realm_root.mkdir(exist_ok=True)
     record = {
         "version": 1, "endpoint": config.runtime_endpoint, "pid": os.getpid(),
         "process_birth_id": "fixture-birth", "active_realm": "realm-1", "runtime_instance_id": config.runtime_instance_id,
+        "realm_root": str(realm_root.resolve()),
         "protocol_version": "workspace.v1", "schema_version": "workspace-schema-v1", "coordinator_epoch": config.runtime_instance_id,
         "credential_file": str(config.support_root / "credentials" / "owner.token"),
         "worker_credential_file": str(config.credential_file), "worker_actor": actor,
@@ -168,6 +171,30 @@ def test_composed_startup_fails_closed_before_spawn(tmp_path, monkeypatch, mutat
         supervisor.launch_generic_pack_host(config, environ={"PATH": "/bin"})
     assert spawned is False
     assert not (config.support_root / "worker-readiness-profile.json").exists()
+
+
+def test_targeted_route_fails_closed_without_credential_backed_placement_issuer(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    spawned = False
+
+    def _no_spawn(*args, **kwargs):
+        nonlocal spawned
+        spawned = True
+        raise AssertionError("targeted route spawned without placement evidence")
+
+    monkeypatch.setattr(supervisor.subprocess, "Popen", _no_spawn)
+    env = {
+        "PATH": "/bin",
+        "ASTRID_EXECUTION_TARGET_JSON": json.dumps(
+            {"kind": "runpod", "pod_id": "pod-1", "provider_account_ref": "account-1"}
+        ),
+    }
+    with pytest.raises(
+        supervisor.LauncherConfigurationError,
+        match="credential-backed placement issuer",
+    ):
+        supervisor.launch_generic_pack_host(config, environ=env, enforce_readiness=False)
+    assert spawned is False
 
 
 def test_profile_publication_failure_fails_closed(tmp_path, monkeypatch):
