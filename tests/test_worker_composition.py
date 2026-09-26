@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -43,6 +44,38 @@ def _config(tmp_path: Path) -> supervisor.HostLaunchConfig:
         ready_file=(support / "host-ready.json").resolve(), state_file=(support / "worker-state.json").resolve(),
         boot_manifest_path=manifest.resolve(), boot_manifest_hash="sha256:test",
     )
+
+
+def test_installed_host_launch_uses_package_interpreter_without_checkout_path(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    installed = replace(config, launch_mode="installed", source_checkout=None)
+
+    argv = installed.argv()
+    child_env = supervisor._host_environment(
+        {"PATH": "/usr/bin", "PYTHONPATH": "/attacker/checkout"}, installed
+    )
+
+    assert "--source-checkout" not in argv
+    assert "PYTHONPATH" not in child_env
+    assert supervisor._host_working_directory(installed) == installed.support_root
+    assert supervisor._host_artifact_root(installed) == installed.pack_root.parent
+    assert supervisor._config_from_private_payload(
+        supervisor._private_config_payload(installed)
+    ) == installed
+
+
+def test_installed_private_host_config_rejects_source_checkout(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    payload = supervisor._private_config_payload(config)
+    payload["launch_mode"] = "installed"
+
+    with pytest.raises(
+        supervisor.LauncherConfigurationError,
+        match="forbids source_checkout",
+    ):
+        supervisor._config_from_private_payload(payload)
 
 
 def _facts_fixture(tmp_path: Path, config: supervisor.HostLaunchConfig, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
@@ -94,7 +127,8 @@ def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack
         "realm_root": str(realm_root.resolve()),
         "protocol_version": "workspace.v1", "schema_version": "workspace-schema-v1", "coordinator_epoch": config.runtime_instance_id,
         "credential_file": str(config.support_root / "credentials" / "owner.token"),
-        "worker_credential_file": str(config.credential_file), "worker_actor": actor,
+        "worker_credential_file": str(config.credential_file), "worker_credential_pending": True,
+        "worker_actor": actor,
         "worker_scopes": ["handshake", "worker:register", "worker:execute", "tasks:read", "objects:read", "objects:write"],
     }
     path = config.support_root / "discovery.json"
@@ -139,7 +173,7 @@ def test_composed_startup_publishes_secret_free_profile_before_one_spawn(tmp_pat
     assert config.state_file.exists()
 
 
-@pytest.mark.parametrize("mutation", ["missing", "malformed", "swapped", "actor", "credential"])
+@pytest.mark.parametrize("mutation", ["missing", "malformed", "swapped", "actor", "credential", "pending-type"])
 def test_composed_startup_fails_closed_before_spawn(tmp_path, monkeypatch, mutation):
     config = _config(tmp_path)
     _facts_fixture(tmp_path, config, monkeypatch)
@@ -156,6 +190,8 @@ def test_composed_startup_fails_closed_before_spawn(tmp_path, monkeypatch, mutat
             record["runtime_instance_id"] = "runtime-2"
         elif mutation == "actor":
             record["worker_actor"] = "owner"
+        elif mutation == "pending-type":
+            record["worker_credential_pending"] = "yes"
         else:
             record["worker_credential_file"] = str(config.support_root / "credentials" / "other.token")
         discovery_path.write_text(json.dumps(record), encoding="utf-8")
@@ -171,6 +207,25 @@ def test_composed_startup_fails_closed_before_spawn(tmp_path, monkeypatch, mutat
         supervisor.launch_generic_pack_host(config, environ={"PATH": "/bin"})
     assert spawned is False
     assert not (config.support_root / "worker-readiness-profile.json").exists()
+
+
+def test_pending_runtime_credential_is_allowed_only_for_parked_preparation(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    _discovery(config)
+    config.credential_file.unlink()
+    monkeypatch.setattr(preflight, "_process_birth_identity", lambda pid: "fixture-birth")
+
+    parsed = supervisor._read_runtime_discovery(
+        config, require_worker_credential=False
+    )
+    assert parsed.worker_credential_file == config.credential_file
+    assert parsed.worker_credential_pending is True
+
+    record = json.loads((config.support_root / "discovery.json").read_text())
+    record["worker_credential_pending"] = False
+    (config.support_root / "discovery.json").write_text(json.dumps(record))
+    with pytest.raises(supervisor.LauncherConfigurationError, match="pending handoff"):
+        supervisor._read_runtime_discovery(config, require_worker_credential=False)
 
 
 def test_targeted_route_fails_closed_without_credential_backed_placement_issuer(tmp_path, monkeypatch):

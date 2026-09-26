@@ -2,6 +2,11 @@
 
 GPU worker for [Reigh](https://github.com/banodoco/Reigh), for running locally or in the cloud via [Reigh Worker Orchestrator](https://github.com/banodoco/Reigh-Worker-Orchestrator/) — processes video generation tasks using [Wan2GP](https://github.com/deepbeepmeep/Wan2GP).
 
+This README documents the production GPU/provider artifact. Its CUDA, model,
+RunPod, and VibeComfy commands are not the Astrid Plan A CPU qualification.
+The no-GPU closeout uses the fake-engine worker composition under the installed
+Runtime boundary and does not install CUDA/provider extras.
+
 ## Quick Start
 
 ```bash
@@ -30,6 +35,25 @@ The Reigh app now generates two command tabs:
 - `Run`: the normal day-to-day launch path, which still runs `uv sync` before starting
 
 Both commands always `cd` into the configured repo path first so copy-pasting from a fresh terminal in your home directory still works.
+
+## Local Runtime supervised worker
+
+When Worker participates in the Astrid local stack, Runtime owns the workspace
+realm, worker registration, lease/fence state, and lifecycle. Start the selected
+host through the canonical Runtime launcher after the installed Astrid/Runtime
+pair has passed `doctor`:
+
+```bash
+astrid-local start-worker --profile astrid \
+  --data-root "$ASTRID_LOCAL_DATA_ROOT" \
+  --expected-workspace-uuid <workspace-uuid> --json
+```
+
+The installed closeout mode uses Python 3.10.21 for Worker and does not require
+an Astrid or Runtime checkout on `PYTHONPATH`. An editable Worker source profile
+is a development-only path and must be labelled as such. Direct `run_worker.py`
+and the `uv sync --extra cuda124` command above remain production GPU setup and
+do not establish Runtime ownership.
 
 ## Packaging Notes
 

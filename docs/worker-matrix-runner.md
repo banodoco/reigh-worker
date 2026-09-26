@@ -2,6 +2,12 @@
 
 `scripts/run_worker_matrix.py` runs a curated set of worker-facing smoke cases and writes artifacts for each case under `artifacts/worker-matrix/`.
 
+This runner is a Worker-level matrix. It does not prove Runtime workspace
+ownership, registration, lease fencing, or the Astrid gateway lifecycle. The
+Astrid Plan A no-GPU qualification uses the composed Runtime/Astrid/Worker
+controller with the installed artifacts and Python 3.10.21 Worker environment.
+Keep `PYTHONPATH` unset for that installed qualification.
+
 ## What It Covers
 
 - Real `worker.py -> process_single_task()` execution with real task routing and parameter conversion
@@ -62,6 +68,10 @@ python scripts/run_worker_matrix.py --manifest path/to/custom.json --output-dir 
 ```
 
 ## Real Mode (GPU Generation)
+
+The `--real` path is production-only and requires CUDA and model weights. It is
+excluded from the CPU closeout; do not add CUDA/provider or RunPod extras to the
+closeout Worker environment.
 
 Pass `--real` to use the real `HeadlessTaskQueue` and GPU pipeline instead of the fake queue. This runs the full generation path — model loading, inference, output writing — without touching the production database.
 

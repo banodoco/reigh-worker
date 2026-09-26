@@ -29,7 +29,7 @@ GENERIC_HOST_MODULE = "astrid.core.execution.generic_host"
 GENERIC_HOST_EXECUTOR_ID = "astrid-pack-host"
 PREPARATION_VERSION = "runtime.local-worker-preparation/v2"
 ACTIVATION_VERSION = "runtime.local-worker-activation/v1"
-RECEIPT_VERSION = "runtime.local-worker-receipt/v2"
+RECEIPT_VERSION = "runtime.local-worker-receipt/v3"
 CONTROL_VERSION = "reigh.local-worker-control/v1"
 ACTIVATION_ACCEPTED_VERSION = "astrid.local-worker-activation-accepted/v1"
 _CONTROL_FRAME_LIMIT = 64 * 1024
@@ -78,6 +78,7 @@ class RuntimeDiscovery:
     protocol_version: str
     schema_version: str
     worker_credential_file: Path
+    worker_credential_pending: bool
     worker_actor: str
     worker_scopes: tuple[str, ...]
     snapshot_digest: str
@@ -168,7 +169,7 @@ class HostLaunchConfig:
     """The complete trusted binding for one GenericPackHost."""
 
     host_python: Path
-    source_checkout: Path
+    source_checkout: Path | None
     pack_root: Path
     runtime_endpoint: str
     credential_file: Path
@@ -178,6 +179,7 @@ class HostLaunchConfig:
     state_file: Path
     boot_manifest_path: Path
     boot_manifest_hash: str
+    launch_mode: str = "editable"
     capability_matrix: Path | None = None
     readiness_profile_path: Path | None = None
     readiness_profile_hash: str | None = None
@@ -190,9 +192,22 @@ class HostLaunchConfig:
         parked_credential: bool = False,
     ) -> "HostLaunchConfig":
         env = os.environ if environ is None else environ
-        source_checkout = _resolved_path("ASTRID_HOST_SOURCE_CHECKOUT", env, directory=True)
+        launch_mode = str(env.get("ASTRID_HOST_LAUNCH_MODE", "editable")).strip()
+        if launch_mode not in {"editable", "installed"}:
+            raise LauncherConfigurationError(
+                "ASTRID_HOST_LAUNCH_MODE must be 'editable' or 'installed'"
+            )
+        source_checkout = (
+            _resolved_path("ASTRID_HOST_SOURCE_CHECKOUT", env, directory=True)
+            if launch_mode == "editable"
+            else None
+        )
+        if launch_mode == "installed" and env.get("ASTRID_HOST_SOURCE_CHECKOUT", "").strip():
+            raise LauncherConfigurationError(
+                "installed host launch must not select ASTRID_HOST_SOURCE_CHECKOUT"
+            )
         pack_root = _resolved_path("ASTRID_HOST_PACK_ROOT", env, directory=True)
-        if not pack_root.is_relative_to(source_checkout):
+        if source_checkout is not None and not pack_root.is_relative_to(source_checkout):
             raise LauncherConfigurationError("ASTRID_HOST_PACK_ROOT must be inside ASTRID_HOST_SOURCE_CHECKOUT")
         support_root = _resolved_path("ASTRID_HOST_SUPPORT_ROOT", env, directory=True)
         credential_file = _resolved_path(
@@ -214,6 +229,7 @@ class HostLaunchConfig:
             state_file=Path(_absolute_value("ASTRID_HOST_STATE_FILE", env)),
             boot_manifest_path=boot_manifest_path,
             boot_manifest_hash=_required_env("ASTRID_HOST_BOOT_MANIFEST_HASH", env),
+            launch_mode=launch_mode,
             capability_matrix=capability_matrix,
         )
 
@@ -242,8 +258,6 @@ class HostLaunchConfig:
             str(self.ready_file),
             "--support-root",
             str(self.support_root),
-            "--source-checkout",
-            str(self.source_checkout),
             "--runtime-instance-id",
             self.runtime_instance_id,
             "--register",
@@ -252,6 +266,12 @@ class HostLaunchConfig:
             "--boot-manifest-hash",
             self.boot_manifest_hash,
         ]
+        if self.launch_mode == "editable":
+            if self.source_checkout is None:
+                raise LauncherConfigurationError(
+                    "editable host launch requires a source checkout"
+                )
+            args.extend(("--source-checkout", str(self.source_checkout)))
         if self.capability_matrix is not None:
             args.extend(("--capability-matrix", str(self.capability_matrix)))
         if self.readiness_profile_path is not None and self.readiness_profile_hash is not None:
@@ -286,14 +306,35 @@ class HostLaunchConfig:
 
 def _host_environment(environ: Mapping[str, str], config: HostLaunchConfig) -> dict[str, str]:
     child_env = {key: value for key, value in environ.items() if key in HOST_ENV_ALLOWLIST}
-    # Ambient PYTHONPATH could select another checkout. The configured source
-    # checkout is the sole code root admitted to this host.
-    child_env["PYTHONPATH"] = str(config.source_checkout)
+    # Ambient PYTHONPATH is never inherited. Editable mode admits exactly its
+    # configured checkout; installed mode relies only on the host interpreter.
+    child_env.pop("PYTHONPATH", None)
+    if config.launch_mode == "editable":
+        if config.source_checkout is None:
+            raise LauncherConfigurationError(
+                "editable host launch requires a source checkout"
+            )
+        child_env["PYTHONPATH"] = str(config.source_checkout)
     child_env["PYTHONUNBUFFERED"] = "1"
     if config.readiness_profile_path is not None and config.readiness_profile_hash is not None:
         child_env["ASTRID_HOST_READINESS_PROFILE_PATH"] = str(config.readiness_profile_path)
         child_env["ASTRID_HOST_READINESS_PROFILE_HASH"] = config.readiness_profile_hash
     return child_env
+
+
+def _host_working_directory(config: HostLaunchConfig) -> Path:
+    if config.launch_mode == "installed":
+        return config.support_root
+    if config.launch_mode != "editable" or config.source_checkout is None:
+        raise LauncherConfigurationError("host launch mode is invalid")
+    return config.source_checkout
+
+
+def _host_artifact_root(config: HostLaunchConfig) -> Path:
+    """Return the verified code root used only for local readiness facts."""
+    if config.launch_mode == "installed":
+        return config.pack_root.parent
+    return _host_working_directory(config)
 
 
 def _atomic_write_json(path: Path, value: Mapping[str, object]) -> None:
@@ -403,7 +444,7 @@ def _read_runtime_discovery(
     allowed = {
         "version", "endpoint", "pid", "process_birth_id", "active_realm", "runtime_instance_id",
         "realm_root", "protocol_version", "schema_version", "coordinator_epoch", "credential_file",
-        "worker_credential_file", "worker_actor", "worker_scopes",
+        "worker_credential_file", "worker_credential_pending", "worker_actor", "worker_scopes",
     }
     if not isinstance(record, dict) or set(record) != allowed:
         raise LauncherConfigurationError("Runtime discovery.json schema is invalid")
@@ -441,6 +482,9 @@ def _read_runtime_discovery(
     if worker_actor != "astrid-pack-host" or not isinstance(worker_scopes, list) or set(worker_scopes) != expected_scopes or len(worker_scopes) != len(expected_scopes):
         raise LauncherConfigurationError("Runtime worker credential scope is invalid")
     worker_raw = record.get("worker_credential_file")
+    credential_pending = record.get("worker_credential_pending")
+    if not isinstance(credential_pending, bool):
+        raise LauncherConfigurationError("Runtime worker credential pending state is invalid")
     if not isinstance(worker_raw, str) or not Path(worker_raw).is_absolute():
         raise LauncherConfigurationError("Runtime worker credential reference is invalid")
     worker_candidate = Path(worker_raw)
@@ -474,6 +518,10 @@ def _read_runtime_discovery(
                 raise LauncherConfigurationError(
                     "Runtime worker credential must be owner-only"
                 )
+        elif not credential_pending:
+            raise LauncherConfigurationError(
+                "Runtime worker credential is missing without a pending handoff"
+            )
     if config.runtime_endpoint.rstrip("/") != endpoint.rstrip("/"):
         raise LauncherConfigurationError("configured Runtime endpoint conflicts with discovery")
     if config.runtime_instance_id != record["runtime_instance_id"]:
@@ -493,7 +541,8 @@ def _read_runtime_discovery(
         runtime_instance_id=record["runtime_instance_id"], coordinator_epoch=record["coordinator_epoch"],
         active_realm=record["active_realm"], realm_root=realm_root,
         protocol_version=record["protocol_version"], schema_version=record["schema_version"],
-        worker_credential_file=worker_path, worker_actor=worker_actor, worker_scopes=tuple(worker_scopes),
+        worker_credential_file=worker_path, worker_credential_pending=credential_pending,
+        worker_actor=worker_actor, worker_scopes=tuple(worker_scopes),
         snapshot_digest="sha256:" + hashlib.sha256(raw).hexdigest(),
     )
 
@@ -545,7 +594,7 @@ def _prepare_worker_readiness(
         )
     }
     result = run_neutral_worker_preflight(
-        repo_root=config.source_checkout,
+        repo_root=_host_artifact_root(config),
         main_output_dir=Path(fact_inputs.get("REIGH_OUTPUT_ROOT") or (config.support_root / "outputs")),
         fact_inputs=fact_inputs,
         runtime_binding=binding,
@@ -566,7 +615,9 @@ def _prepare_worker_readiness(
             "credential_reference": str(binding.credential_path), "discovery_digest": discovery.snapshot_digest,
         },
         "launch": {
-            "host_interpreter": str(config.host_python), "source_checkout": str(config.source_checkout),
+            "host_interpreter": str(config.host_python),
+            "launch_mode": config.launch_mode,
+            "source_checkout": str(config.source_checkout) if config.source_checkout is not None else None,
             "engine_interpreter": fact_inputs.get("REIGH_ENGINE_INTERPRETER"),
             "output_root": fact_inputs.get("REIGH_OUTPUT_ROOT"), "pack_root": str(config.pack_root), "support_root": str(config.support_root),
             "ready_file": str(config.ready_file), "state_file": str(config.state_file),
@@ -1217,7 +1268,7 @@ class LocalWorkerPreparerAdapter:
             )
             child = subprocess.Popen(
                 argv,
-                cwd=str(self.config.source_checkout),
+                cwd=str(_host_working_directory(self.config)),
                 env=_host_environment(self.environ, self.config),
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
@@ -1465,7 +1516,8 @@ def _private_profile_payload(profile: object) -> dict[str, Any]:
 def _private_config_payload(config: HostLaunchConfig) -> dict[str, Any]:
     return {
         "host_python": str(config.host_python),
-        "source_checkout": str(config.source_checkout),
+        "launch_mode": config.launch_mode,
+        "source_checkout": str(config.source_checkout) if config.source_checkout is not None else None,
         "pack_root": str(config.pack_root),
         "runtime_endpoint": config.runtime_endpoint,
         "credential_file": str(config.credential_file),
@@ -1483,13 +1535,20 @@ def _private_config_payload(config: HostLaunchConfig) -> dict[str, Any]:
 
 def _config_from_private_payload(value: Mapping[str, Any]) -> HostLaunchConfig:
     expected = {
-        "host_python", "source_checkout", "pack_root", "runtime_endpoint",
+        "host_python", "launch_mode", "source_checkout", "pack_root", "runtime_endpoint",
         "credential_file", "support_root", "runtime_instance_id", "ready_file",
         "state_file", "boot_manifest_path", "boot_manifest_hash", "capability_matrix",
         "readiness_profile_path", "readiness_profile_hash",
     }
     if set(value) != expected:
         raise LauncherConfigurationError("private host configuration has an invalid shape")
+    launch_mode = value.get("launch_mode")
+    if launch_mode not in {"editable", "installed"}:
+        raise LauncherConfigurationError("private host launch mode is invalid")
+    if launch_mode == "editable" and value.get("source_checkout") is None:
+        raise LauncherConfigurationError("editable private host configuration requires source_checkout")
+    if launch_mode == "installed" and value.get("source_checkout") is not None:
+        raise LauncherConfigurationError("installed private host configuration forbids source_checkout")
     path_fields = {
         "host_python", "source_checkout", "pack_root", "credential_file", "support_root",
         "ready_file", "state_file", "boot_manifest_path", "capability_matrix",
@@ -1550,13 +1609,17 @@ class LocalWorkerProcessPreparer:
             executable = Path(getattr(profile, "worker_executable"))
             worker_root = Path(__file__).resolve().parents[2]
             child_env = dict(self.environ)
-            child_env["PYTHONPATH"] = str(worker_root)
+            child_env.pop("PYTHONPATH", None)
+            worker_cwd = self.config.support_root
+            if self.config.launch_mode == "editable":
+                child_env["PYTHONPATH"] = str(worker_root)
+                worker_cwd = worker_root
             worker = subprocess.Popen(
                 [
                     str(executable), "-m", "source.runtime.supervisor",
                     "--prepared-control-fd", str(child.fileno()),
                 ],
-                cwd=str(worker_root),
+                cwd=str(worker_cwd),
                 env=child_env,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
@@ -1827,7 +1890,7 @@ def launch_generic_pack_host(
         try:
             child = subprocess.Popen(
                 argv,
-                cwd=str(config.source_checkout),
+                cwd=str(_host_working_directory(config)),
                 env=child_env,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,

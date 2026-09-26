@@ -323,6 +323,22 @@ def test_reconnect_rejects_stale_incarnation_and_replacement_cleans_old_host(tmp
         thread.join(timeout=2)
 
 
+def test_reconnect_accepts_v3_and_rejects_older_receipt(tmp_path, monkeypatch):
+    adapter, profile, _engine, _stopped, _terminated, threads = _install_fakes(tmp_path, monkeypatch)
+    handle = adapter.prepare(profile, operation_id="operation-1", channel_id="channel-1")
+    grant = _grant(handle, adapter.config)
+    adapter.activate(handle, grant)
+    current = _receipt(adapter, handle, grant)
+    assert current["version"] == "runtime.local-worker-receipt/v3"
+    assert adapter.reconnect(current) is handle
+    stale = dict(current)
+    stale["version"] = "runtime.local-worker-receipt/v2"
+    assert adapter.reconnect(stale) is None
+    adapter.abort(handle)
+    for thread in threads:
+        thread.join(timeout=2)
+
+
 def test_inherited_worker_control_dispatches_full_preparer_lifecycle(tmp_path, monkeypatch):
     config = _config(tmp_path)
     profile = _profile(config)
