@@ -118,7 +118,12 @@ def _facts_fixture(tmp_path: Path, config: supervisor.HostLaunchConfig, monkeypa
     return values
 
 
-def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack-host") -> None:
+def _discovery(
+    config: supervisor.HostLaunchConfig,
+    *,
+    actor: str = "astrid-pack-host",
+    operator_metadata: bool = False,
+) -> None:
     realm_root = config.support_root.parent / "realm"
     realm_root.mkdir(exist_ok=True)
     record = {
@@ -131,9 +136,30 @@ def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack
         "worker_actor": actor,
         "worker_scopes": ["handshake", "worker:register", "worker:execute", "tasks:read", "objects:read", "objects:write"],
     }
+    if operator_metadata:
+        record.update({"capability_digest": "", "advertised_at": 1.0})
     path = config.support_root / "discovery.json"
     path.write_text(json.dumps(record), encoding="utf-8")
     path.chmod(0o600)
+
+
+@pytest.mark.parametrize("operator_metadata", [False, True])
+def test_runtime_discovery_accepts_daemon_and_operator_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operator_metadata: bool,
+) -> None:
+    config = _config(tmp_path)
+    _discovery(config, operator_metadata=operator_metadata)
+    monkeypatch.setattr(preflight, "_process_birth_identity", lambda pid: "fixture-birth")
+
+    parsed = supervisor._read_runtime_discovery(
+        config,
+        require_worker_credential=False,
+    )
+
+    assert parsed.runtime_instance_id == config.runtime_instance_id
+    assert parsed.worker_credential_pending is True
 
 
 def test_composed_startup_publishes_secret_free_profile_before_one_spawn(tmp_path, monkeypatch):
@@ -173,7 +199,14 @@ def test_composed_startup_publishes_secret_free_profile_before_one_spawn(tmp_pat
     assert config.state_file.exists()
 
 
-@pytest.mark.parametrize("mutation", ["missing", "malformed", "swapped", "actor", "credential", "pending-type"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing", "malformed", "swapped", "actor", "credential", "pending-type",
+        "partial-operator-metadata", "invalid-capability-digest", "invalid-advertised-at",
+        "unexpected-field",
+    ],
+)
 def test_composed_startup_fails_closed_before_spawn(tmp_path, monkeypatch, mutation):
     config = _config(tmp_path)
     _facts_fixture(tmp_path, config, monkeypatch)
@@ -192,6 +225,14 @@ def test_composed_startup_fails_closed_before_spawn(tmp_path, monkeypatch, mutat
             record["worker_actor"] = "owner"
         elif mutation == "pending-type":
             record["worker_credential_pending"] = "yes"
+        elif mutation == "partial-operator-metadata":
+            record["capability_digest"] = ""
+        elif mutation == "invalid-capability-digest":
+            record.update({"capability_digest": "caps-v1", "advertised_at": 1.0})
+        elif mutation == "invalid-advertised-at":
+            record.update({"capability_digest": "", "advertised_at": float("nan")})
+        elif mutation == "unexpected-field":
+            record["unexpected"] = True
         else:
             record["worker_credential_file"] = str(config.support_root / "credentials" / "other.token")
         discovery_path.write_text(json.dumps(record), encoding="utf-8")

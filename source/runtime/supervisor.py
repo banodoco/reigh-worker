@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import math
 import os
 from pathlib import Path
 import signal
@@ -441,13 +442,34 @@ def _read_runtime_discovery(
         record = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LauncherConfigurationError("Runtime discovery.json is malformed") from exc
-    allowed = {
+    daemon_fields = {
         "version", "endpoint", "pid", "process_birth_id", "active_realm", "runtime_instance_id",
         "realm_root", "protocol_version", "schema_version", "coordinator_epoch", "credential_file",
         "worker_credential_file", "worker_credential_pending", "worker_actor", "worker_scopes",
     }
-    if not isinstance(record, dict) or set(record) != allowed:
+    operator_fields = daemon_fields | {"capability_digest", "advertised_at"}
+    observed_fields = frozenset(record) if isinstance(record, dict) else frozenset()
+    if observed_fields not in {frozenset(daemon_fields), frozenset(operator_fields)}:
         raise LauncherConfigurationError("Runtime discovery.json schema is invalid")
+    if observed_fields == operator_fields:
+        capability_digest = record.get("capability_digest")
+        advertised_at = record.get("advertised_at")
+        if (
+            not isinstance(capability_digest, str)
+            or (
+                capability_digest != ""
+                and (
+                    len(capability_digest) != 71
+                    or not capability_digest.startswith("sha256:")
+                    or any(character not in "0123456789abcdef" for character in capability_digest[7:])
+                )
+            )
+            or isinstance(advertised_at, bool)
+            or not isinstance(advertised_at, (int, float))
+            or not math.isfinite(advertised_at)
+            or advertised_at <= 0
+        ):
+            raise LauncherConfigurationError("Runtime operator discovery metadata is invalid")
     endpoint = record.get("endpoint")
     parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
     port = parsed.port if parsed else None
