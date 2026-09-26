@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import threading
 from types import SimpleNamespace
@@ -12,6 +13,69 @@ import pytest
 
 from source.runtime import supervisor
 from source.runtime.worker import preflight
+
+
+def test_supervisor_module_entrypoint_serves_private_control_channel() -> None:
+    runtime, worker = socket.socketpair()
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    repository = Path(__file__).resolve().parents[2]
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "source.runtime.supervisor",
+            "--prepared-control-fd",
+            str(worker.fileno()),
+        ],
+        cwd=repository,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        close_fds=True,
+        pass_fds=(worker.fileno(),),
+    )
+    worker.close()
+    runtime.settimeout(5)
+    try:
+        supervisor._send_private_frame(
+            runtime,
+            {"version": supervisor.CONTROL_VERSION, "command": "entrypoint-probe"},
+        )
+        response = supervisor._receive_private_frame(runtime)
+        assert response == {
+            "version": supervisor.CONTROL_VERSION,
+            "status": "error",
+            "error": "private Worker command is invalid",
+        }
+    finally:
+        runtime.close()
+    assert process.wait(timeout=5) == 78
+    assert process.stdout is not None
+    assert process.stderr is not None
+    assert process.stdout.read() == b""
+    assert process.stderr.read() == b""
+
+
+def test_supervisor_module_entrypoint_rejects_unsupported_arguments() -> None:
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    completed = subprocess.run(
+        [sys.executable, "-m", "source.runtime.supervisor", "--unsupported"],
+        cwd=Path(__file__).resolve().parents[2],
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    assert completed.returncode == 78
+    assert completed.stdout == ""
+    assert completed.stderr == (
+        "Worker launcher configuration error: unsupported private arguments\n"
+    )
 
 
 class FakeProcess:

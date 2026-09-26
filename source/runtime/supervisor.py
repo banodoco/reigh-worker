@@ -2010,3 +2010,7 @@ __all__ = [
     "launch_generic_pack_host",
     "main",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
