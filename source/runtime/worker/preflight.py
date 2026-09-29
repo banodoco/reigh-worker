@@ -48,6 +48,7 @@ class WorkerPreflightResult:
     completed_at: float
     phase: str | None = None
     verified_facts: VerifiedFacts = field(default_factory=empty_verified_facts)
+    model_root_binding: dict[str, Any] | None = None
 
     @property
     def ok(self) -> bool:
@@ -157,6 +158,7 @@ def collect_verified_facts(
     probes: FactProbeOverrides | None = None,
     runtime_binding: RuntimeBinding | None = None,
     fact_inputs: Mapping[str, Any] | None = None,
+    verified_details: dict[str, Any] | None = None,
 ) -> tuple[VerifiedFacts, list[PreflightCheck]]:
     """Collect only independently verifiable, HC-02-shaped host facts.
 
@@ -201,10 +203,12 @@ def collect_verified_facts(
 
     model_root = _configured_path("REIGH_MODEL_ROOT", environ=configured)
     model_manifest = _configured_path("REIGH_MODEL_MANIFEST_PATH", environ=configured)
-    model_digest, detail = _digest_manifest(model_root, model_manifest, label="model")
+    model_digest, detail, model_binding = _inspect_model_manifest(model_root, model_manifest)
     checks.append(PreflightCheck("fact:model_digest", model_digest is not None, detail))
     if model_digest is not None:
         exact["model_digest"] = model_digest
+        if verified_details is not None:
+            verified_details["model_root_binding"] = model_binding
 
     custom_root = _configured_path("REIGH_CUSTOM_NODE_ROOT", environ=configured)
     custom_manifest = _configured_path(
@@ -404,12 +408,14 @@ def run_neutral_worker_preflight(
                 "explicit" if value else "required",
             )
         )
+    verified_details: dict[str, Any] = {}
     facts, fact_checks = collect_verified_facts(
         repo_root=repo_root,
         main_output_dir=main_output_dir,
         probes=probes,
         runtime_binding=runtime_binding,
         fact_inputs=fact_inputs,
+        verified_details=verified_details,
     )
     checks.extend(fact_checks)
     status = PREFLIGHT_STATUS_PASSED if all(check.ok or not check.required for check in checks) else PREFLIGHT_STATUS_FAILED
@@ -420,6 +426,7 @@ def run_neutral_worker_preflight(
         completed_at=time.time(),
         phase="neutral",
         verified_facts=facts,
+        model_root_binding=verified_details.get("model_root_binding"),
     )
 
 
@@ -436,19 +443,26 @@ def _configured_path(
 
 
 def _digest_file(path: Path | None) -> tuple[str | None, str]:
+    digest, detail, _ = _digest_file_with_size(path)
+    return digest, detail
+
+
+def _digest_file_with_size(path: Path | None) -> tuple[str | None, str, int | None]:
     if path is None:
-        return None, "not configured"
+        return None, "not configured", None
     try:
         if not path.is_file() or path.is_symlink():
-            return None, f"{path}: regular file required"
+            return None, f"{path}: regular file required", None
         hasher = hashlib.sha256()
+        size = 0
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 hasher.update(chunk)
+                size += len(chunk)
         digest = hasher.hexdigest()
     except OSError as exc:
-        return None, f"{path}: {exc}"
-    return f"sha256:{digest}", str(path.resolve())
+        return None, f"{path}: {exc}", None
+    return f"sha256:{digest}", str(path.resolve()), size
 
 
 def _digest_manifest(
@@ -457,51 +471,119 @@ def _digest_manifest(
     *,
     label: str,
 ) -> tuple[str | None, str]:
+    digest, detail, _ = _inspect_manifest(root, manifest, label=label)
+    return digest, detail
+
+
+def _inspect_model_manifest(
+    root: Path | None,
+    manifest: Path | None,
+) -> tuple[str | None, str, dict[str, Any] | None]:
+    return _inspect_manifest(root, manifest, label="model", include_inventory=True)
+
+
+def _inspect_manifest(
+    root: Path | None,
+    manifest: Path | None,
+    *,
+    label: str,
+    include_inventory: bool = False,
+) -> tuple[str | None, str, dict[str, Any] | None]:
     if root is None or manifest is None:
-        return None, f"{label} root and manifest are required"
+        return None, f"{label} root and manifest are required", None
     root_identity, root_detail = _strict_root_identity(root)
     if root_identity is None:
-        return None, root_detail
-    root = root.expanduser().absolute()
+        return None, root_detail, None
+    root = root.expanduser().absolute().resolve(strict=True)
     try:
         if not manifest.is_file() or manifest.is_symlink():
-            return None, f"{manifest}: regular manifest file required"
+            return None, f"{manifest}: regular manifest file required", None
         document = json.loads(manifest.read_text(encoding="utf-8"))
         entries = document.get("files") if isinstance(document, dict) else None
         if not isinstance(entries, list) or not entries:
-            return None, f"{manifest}: non-empty files list required"
+            return None, f"{manifest}: non-empty files list required", None
     except (OSError, json.JSONDecodeError) as exc:
-        return None, f"{manifest}: {exc}"
+        return None, f"{manifest}: {exc}", None
 
     observed: list[dict[str, Any]] = []
+    inventory: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-            return None, f"{manifest}: each files entry needs a relative path"
+            return None, f"{manifest}: each files entry needs a relative path", None
         relative = Path(entry["path"])
-        if relative.is_absolute() or ".." in relative.parts:
-            return None, f"{manifest}: path escapes root: {relative}"
+        normalized_path = relative.as_posix()
+        if relative.is_absolute() or ".." in relative.parts or normalized_path in ("", "."):
+            return None, f"{manifest}: path escapes root or is not a file path: {relative}", None
+        if normalized_path in seen_paths:
+            return None, f"{manifest}: duplicate {label} file path: {normalized_path}", None
+        seen_paths.add(normalized_path)
         expected = entry.get("sha256")
         if not isinstance(expected, str) or not expected:
-            return None, f"{manifest}: each {label} file needs sha256"
+            return None, f"{manifest}: each {label} file needs sha256", None
         candidate = root / relative
         try:
             if candidate.resolve(strict=True) != candidate.absolute():
-                return None, f"{candidate}: symlinked model/node bytes are not verifiable"
+                return None, f"{candidate}: symlinked model/node bytes are not verifiable", None
         except OSError as exc:
-            return None, f"{candidate}: {exc}"
-        actual, detail = _digest_file(candidate)
+            return None, f"{candidate}: {exc}", None
+        actual, detail, size = _digest_file_with_size(candidate)
         if actual is None:
-            return None, detail
+            return None, detail, None
         expected_digest = expected if expected.startswith("sha256:") else f"sha256:{expected}"
         if actual != expected_digest:
-            return None, f"{candidate}: digest mismatch"
+            return None, f"{candidate}: digest mismatch", None
         observed.append({"path": relative.as_posix(), "sha256": actual})
+        if include_inventory:
+            if not candidate.is_file():
+                return None, f"{candidate}: regular file required", None
+            inventory.append({
+                "subdir": relative.parent.as_posix() if relative.parent != Path(".") else "",
+                "name": relative.name,
+                "size": size,
+                "sha256": actual,
+            })
+
+    if include_inventory:
+        for candidate in root.rglob("*"):
+            if candidate.is_symlink():
+                return None, f"{candidate}: symlinked model bytes are not verifiable", None
+            if candidate.is_file() and candidate.relative_to(root).as_posix() not in seen_paths:
+                return None, f"{candidate}: unlisted model file", None
+            if not candidate.is_file() and not candidate.is_dir():
+                return None, f"{candidate}: unsupported model filesystem entry", None
 
     # Model/node identity is content-addressed and therefore portable across
     # mounts.  The absolute roots are represented separately by HC-03's root
     # fact and must not contaminate the byte digest.
     canonical = {"files": observed}
-    return _canonical_digest(canonical), str(manifest.resolve())
+    digest = _canonical_digest(canonical)
+    if not include_inventory:
+        return digest, str(manifest.resolve()), None
+    inventory.sort(key=lambda item: (item["subdir"], item["name"]))
+    binding = {
+        "schema_version": 1,
+        "path": str(root),
+        "inventory": inventory,
+        "inventory_digest": _model_inventory_digest(inventory),
+    }
+    return digest, str(manifest.resolve()), binding
+
+
+def _model_inventory_digest(inventory: list[dict[str, Any]]) -> str:
+    normalized = []
+    for item in sorted(inventory, key=lambda entry: (entry["subdir"], entry["name"])):
+        entry = dict(item)
+        if entry.get("subdir") == ".":
+            entry["subdir"] = ""
+        normalized.append(entry)
+    payload = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 def _strict_root_identity(path: Path | None) -> tuple[str | None, str]:

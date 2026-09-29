@@ -23,6 +23,10 @@ from source.runtime.worker.preflight import (
     FactProbeOverrides,
     _probe_runtime_binding,
     _process_birth_identity,
+    _canonical_digest,
+    _inspect_model_manifest,
+    _model_inventory_digest,
+    collect_verified_facts,
     finalize_preflight_result,
     preflight_state_path,
     publish_preflight_metadata,
@@ -403,6 +407,95 @@ def test_worker_preflight_fails_closed_when_verified_model_bytes_drift(tmp_path,
     assert result.readiness == "not_ready"
     assert "fact:model_digest" in result.failed_checks
     assert result.verified_facts.exact.get("model_digest") is None
+
+
+def test_verified_model_manifest_produces_canonical_launch_inventory(tmp_path):
+    root = tmp_path / "models"
+    (root / "nested").mkdir(parents=True)
+    files = {"z.bin": b"z", "nested/a.bin": b"alpha"}
+    entries = []
+    for relative, content in files.items():
+        path = root / relative
+        path.write_bytes(content)
+        entries.append({"path": relative, "sha256": hashlib.sha256(content).hexdigest()})
+    manifest = tmp_path / "models.json"
+    manifest.write_text(json.dumps({"files": entries}), encoding="utf-8")
+
+    model_digest, _detail, binding = _inspect_model_manifest(root, manifest)
+
+    expected_inventory = [
+        {"subdir": "", "name": "z.bin", "size": 1, "sha256": "sha256:" + hashlib.sha256(b"z").hexdigest()},
+        {"subdir": "nested", "name": "a.bin", "size": 5, "sha256": "sha256:" + hashlib.sha256(b"alpha").hexdigest()},
+    ]
+    expected_model_digest = _canonical_digest({
+        "files": [
+            {"path": "z.bin", "sha256": "sha256:" + hashlib.sha256(b"z").hexdigest()},
+            {"path": "nested/a.bin", "sha256": "sha256:" + hashlib.sha256(b"alpha").hexdigest()},
+        ]
+    })
+    assert model_digest == expected_model_digest
+    assert binding == {
+        "schema_version": 1,
+        "path": str(root.resolve()),
+        "inventory": expected_inventory,
+        "inventory_digest": _model_inventory_digest(expected_inventory),
+    }
+
+
+def test_verified_facts_and_launch_inventory_share_model_inspection(tmp_path, monkeypatch):
+    repo_root, _wan2gp = _make_worker_repo(tmp_path)
+    probes, runtime_binding = _configure_verified_facts(tmp_path, monkeypatch, repo_root)
+    details = {}
+
+    facts, checks = collect_verified_facts(
+        repo_root=repo_root,
+        main_output_dir=tmp_path / "outputs",
+        probes=probes,
+        runtime_binding=runtime_binding,
+        verified_details=details,
+    )
+
+    assert all(check.ok for check in checks)
+    assert details["model_root_binding"]["inventory"] == [
+        {
+            "subdir": "",
+            "name": "model.bin",
+            "size": len(b"model bytes"),
+            "sha256": "sha256:" + hashlib.sha256(b"model bytes").hexdigest(),
+        }
+    ]
+    assert facts.exact["model_digest"] == _canonical_digest({
+        "files": [{
+            "path": "model.bin",
+            "sha256": "sha256:" + hashlib.sha256(b"model bytes").hexdigest(),
+        }]
+    })
+
+
+@pytest.mark.parametrize("case", ["duplicate", "escaping", "missing", "unlisted", "changed"])
+def test_verified_model_manifest_rejects_unbound_inventory_changes(tmp_path, case):
+    root = tmp_path / "models"
+    root.mkdir()
+    model_file = root / "model.bin"
+    model_file.write_bytes(b"verified")
+    entry = {"path": "model.bin", "sha256": hashlib.sha256(b"verified").hexdigest()}
+    entries = [entry, dict(entry)] if case == "duplicate" else [entry]
+    if case == "escaping":
+        entries = [{"path": "../outside.bin", "sha256": entry["sha256"]}]
+    if case == "missing":
+        model_file.unlink()
+    if case == "unlisted":
+        (root / "extra.bin").write_bytes(b"extra")
+    if case == "changed":
+        model_file.write_bytes(b"changed")
+    manifest = tmp_path / "models.json"
+    manifest.write_text(json.dumps({"files": entries}), encoding="utf-8")
+
+    digest, detail, binding = _inspect_model_manifest(root, manifest)
+
+    assert digest is None
+    assert binding is None
+    assert detail
 
 
 def test_worker_preflight_fails_closed_without_fact_configuration(tmp_path, monkeypatch):

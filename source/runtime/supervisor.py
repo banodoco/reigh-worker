@@ -574,6 +574,7 @@ def _prepare_worker_readiness(
             "output_root": fact_inputs.get("REIGH_OUTPUT_ROOT"), "pack_root": str(config.pack_root), "support_root": str(config.support_root),
             "ready_file": str(config.ready_file), "state_file": str(config.state_file),
             "boot_manifest_path": str(config.boot_manifest_path), "boot_manifest_hash": config.boot_manifest_hash,
+            "model_root": result.model_root_binding,
         },
         "worker_actor": discovery.worker_actor, "worker_scopes": list(discovery.worker_scopes),
     }

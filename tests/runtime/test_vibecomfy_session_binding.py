@@ -16,6 +16,7 @@ from source.runtime.supervisor import (
     _read_owned_vibecomfy_custody,
     _read_owned_vibecomfy_session,
     _stop_owned_vibecomfy_session,
+    _prepare_worker_readiness,
 )
 
 
@@ -49,6 +50,50 @@ def test_host_spawn_failure_cleans_owned_session(tmp_path, monkeypatch):
         supervisor.launch_generic_pack_host(config, environ={}, enforce_readiness=True)
     assert stopped == [owned]
     assert not profile.exists()
+
+
+def test_readiness_profile_publishes_verified_model_root_before_hash(tmp_path, monkeypatch):
+    config = supervisor.HostLaunchConfig(
+        host_python=Path(sys.executable), source_checkout=tmp_path, pack_root=tmp_path,
+        runtime_endpoint="http://127.0.0.1:9000", credential_file=tmp_path / "credential",
+        support_root=tmp_path, runtime_instance_id="test-runtime", ready_file=tmp_path / "ready.json",
+        state_file=tmp_path / "state.json", boot_manifest_path=tmp_path / "boot.json",
+        boot_manifest_hash="sha256:" + "a" * 64,
+    )
+    discovery = SimpleNamespace(
+        endpoint="http://127.0.0.1:9000", port=9000, pid=os.getpid(),
+        process_birth_id="birth", runtime_instance_id="test-runtime",
+        worker_credential_file=tmp_path / "credential", coordinator_epoch=1,
+        active_realm="realm", snapshot_digest="sha256:" + "b" * 64,
+        worker_actor="worker", worker_scopes=("tasks:claim",),
+    )
+    binding = {
+        "schema_version": 1, "path": str((tmp_path / "models").resolve()),
+        "inventory": [{"subdir": ".", "name": "model.bin", "size": 7, "sha256": "sha256:" + "c" * 64}],
+        "inventory_digest": "sha256:" + "d" * 64,
+    }
+    fake_result = SimpleNamespace(
+        ready_for_tasks=True, model_root_binding=binding,
+        to_metadata=lambda: {"verified_facts": {"exact": {"model_digest": "sha256:" + "e" * 64}},
+                            "verified_facts_digest": "sha256:" + "f" * 64},
+    )
+    monkeypatch.setattr(supervisor, "_read_runtime_discovery", lambda _config: discovery)
+    monkeypatch.setattr("source.runtime.worker.preflight._verify_runtime_process", lambda _binding: None)
+    monkeypatch.setattr("source.runtime.worker.preflight._read_runtime_health", lambda _binding: {
+        "status": "ok", "protocol": "workspace.v1", "schema_digest": "sha256:" + "0" * 64,
+        "runtime_epoch": 1,
+    })
+    monkeypatch.setattr("source.runtime.worker.preflight._probe_runtime_binding", lambda _binding: None)
+    monkeypatch.setattr(
+        "source.runtime.worker.preflight.run_neutral_worker_preflight",
+        lambda **_kwargs: fake_result,
+    )
+
+    profile_path, profile_hash = _prepare_worker_readiness(config, {})
+    payload = json.loads(profile_path.read_text(encoding="utf-8"))
+
+    assert payload["launch"]["model_root"] == binding
+    assert profile_hash == "sha256:" + hashlib.sha256(profile_path.read_bytes()).hexdigest()
 
 
 def _registry(tmp_path: Path) -> Path:
