@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -85,7 +86,7 @@ def _facts_fixture(tmp_path: Path, config: supervisor.HostLaunchConfig, monkeypa
     return values
 
 
-def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack-host") -> None:
+def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack-host", updates: dict | None = None) -> None:
     realm_root = config.support_root.parent / "realm"
     realm_root.mkdir(exist_ok=True)
     record = {
@@ -97,15 +98,100 @@ def _discovery(config: supervisor.HostLaunchConfig, *, actor: str = "astrid-pack
         "worker_credential_file": str(config.credential_file), "worker_actor": actor,
         "worker_scopes": ["handshake", "worker:register", "worker:execute", "tasks:read", "objects:read", "objects:write"],
     }
+    record.update(updates or {})
     path = config.support_root / "discovery.json"
     path.write_text(json.dumps(record), encoding="utf-8")
     path.chmod(0o600)
 
 
-def test_composed_startup_publishes_secret_free_profile_before_one_spawn(tmp_path, monkeypatch):
+@pytest.fixture
+def runtime_discovery(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    _discovery(config)
+    monkeypatch.setattr(preflight, "_process_birth_identity", lambda pid: "fixture-birth")
+    return config
+
+
+@pytest.mark.parametrize("updates", [{}, {"worker_credential_pending": False}, {"worker_credential_pending": True}])
+def test_runtime_discovery_accepts_legacy_and_boolean_pending(runtime_discovery, updates):
+    config = runtime_discovery
+    _discovery(config, updates=updates)
+    discovery = supervisor._read_runtime_discovery(config)
+    assert discovery.worker_credential_file == config.credential_file
+    assert discovery.runtime_instance_id == config.runtime_instance_id
+
+
+@pytest.mark.parametrize("pending", [None, 0, 1, "false", [], {}])
+def test_runtime_discovery_rejects_non_boolean_pending(runtime_discovery, pending):
+    config = runtime_discovery
+    _discovery(config, updates={"worker_credential_pending": pending})
+    with pytest.raises(supervisor.LauncherConfigurationError, match="must be a boolean"):
+        supervisor._read_runtime_discovery(config)
+
+
+def test_runtime_discovery_rejects_unknown_key(runtime_discovery):
+    config = runtime_discovery
+    _discovery(config, updates={"worker_credential_pending": False, "unrelated": False})
+    with pytest.raises(supervisor.LauncherConfigurationError, match="schema is invalid"):
+        supervisor._read_runtime_discovery(config)
+
+
+@pytest.mark.parametrize("field", [
+    "version", "endpoint", "pid", "process_birth_id", "active_realm", "runtime_instance_id",
+    "realm_root", "protocol_version", "schema_version", "coordinator_epoch", "credential_file",
+    "worker_credential_file", "worker_actor", "worker_scopes",
+])
+def test_runtime_discovery_preserves_required_fields(runtime_discovery, field):
+    config = runtime_discovery
+    _discovery(config, updates={"worker_credential_pending": False})
+    path = config.support_root / "discovery.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    del record[field]
+    path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(supervisor.LauncherConfigurationError, match="schema is invalid"):
+        supervisor._read_runtime_discovery(config)
+
+
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("mutation, message", [
+    ("missing", "owner-only regular file"),
+    ("readable", "must be owner-only"),
+    ("writable", "writable by another principal"),
+    ("symlink", "owner-only regular file"),
+])
+def test_runtime_discovery_pending_does_not_bypass_required_credentials(runtime_discovery, pending, mutation, message):
+    config = runtime_discovery
+    _discovery(config, updates={"worker_credential_pending": pending})
+    if mutation == "missing":
+        config.credential_file.unlink()
+    elif mutation == "symlink":
+        config.credential_file.unlink()
+        config.credential_file.symlink_to(config.boot_manifest_path)
+    else:
+        config.credential_file.chmod(0o644 if mutation == "readable" else 0o620)
+    with pytest.raises(supervisor.LauncherConfigurationError, match=message):
+        supervisor._read_runtime_discovery(config)
+
+
+@pytest.mark.parametrize("updates", [{}, {"worker_credential_pending": False}, {"worker_credential_pending": True}])
+def test_local_worker_preparation_accepts_unissued_credential(runtime_discovery, updates):
+    config = runtime_discovery
+    _discovery(config, updates=updates)
+    config.credential_file.unlink()
+    profile = SimpleNamespace(
+        workspace_uuid="realm-1", realm_root=config.support_root.parent / "realm",
+        support_root=config.support_root, host_executable=config.host_python,
+        worker_executable=Path(sys.executable).resolve(),
+    )
+    adapter = supervisor.LocalWorkerPreparerAdapter(config, environ={})
+    assert adapter._validate_profile(profile).worker_credential_file == config.credential_file
+
+
+@pytest.mark.parametrize("updates", [{}, {"worker_credential_pending": False}])
+def test_composed_startup_publishes_secret_free_profile_before_one_spawn(tmp_path, monkeypatch, updates):
     config = _config(tmp_path)
     fact_inputs = _facts_fixture(tmp_path, config, monkeypatch)
-    _discovery(config)
+    _discovery(config, updates=updates)
     monkeypatch.setattr(preflight, "_process_birth_identity", lambda pid: "fixture-birth")
     monkeypatch.setattr(preflight, "_verify_runtime_process", lambda binding: None)
     monkeypatch.setattr(preflight, "_read_runtime_health", lambda binding: {"status": "ok", "protocol": "workspace.v1", "schema_digest": "sha256:" + "1" * 64, "runtime_epoch": 1})

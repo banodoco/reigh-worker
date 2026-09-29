@@ -400,13 +400,16 @@ def _read_runtime_discovery(
         record = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LauncherConfigurationError("Runtime discovery.json is malformed") from exc
-    allowed = {
+    required = {
         "version", "endpoint", "pid", "process_birth_id", "active_realm", "runtime_instance_id",
         "realm_root", "protocol_version", "schema_version", "coordinator_epoch", "credential_file",
         "worker_credential_file", "worker_actor", "worker_scopes",
     }
-    if not isinstance(record, dict) or set(record) != allowed:
+    allowed = required | {"worker_credential_pending"}
+    if not isinstance(record, dict) or not required <= set(record) or not set(record) <= allowed:
         raise LauncherConfigurationError("Runtime discovery.json schema is invalid")
+    if "worker_credential_pending" in record and not isinstance(record["worker_credential_pending"], bool):
+        raise LauncherConfigurationError("Runtime discovery worker_credential_pending must be a boolean")
     endpoint = record.get("endpoint")
     parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
     port = parsed.port if parsed else None
