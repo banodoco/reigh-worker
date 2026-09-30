@@ -10,14 +10,19 @@ from __future__ import annotations
 
 import json
 import hashlib
+import hmac
 import math
 import os
+import ctypes
 from pathlib import Path
+import select
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass, replace
@@ -25,14 +30,20 @@ from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
+from source.runtime.custody_broker import CustodyError, RoleBoundCustodyBroker
+
 
 GENERIC_HOST_MODULE = "astrid.core.execution.generic_host"
 GENERIC_HOST_EXECUTOR_ID = "astrid-pack-host"
 PREPARATION_VERSION = "runtime.local-worker-preparation/v2"
 ACTIVATION_VERSION = "runtime.local-worker-activation/v1"
 RECEIPT_VERSION = "runtime.local-worker-receipt/v3"
-CONTROL_VERSION = "reigh.local-worker-control/v1"
+CONTROL_VERSION = "reigh.local-worker-control/v2"
 ACTIVATION_ACCEPTED_VERSION = "astrid.local-worker-activation-accepted/v1"
+HANDOFF_PAYLOAD_VERSION = "runtime.local-worker-handoff/v1"
+HOST_CONTROL_VERSION = "astrid.local-worker-host-control/v1"
+HANDOFF_RECORD_VERSION = "runtime.local-worker-handoff-record/v1"
+HANDOFF_EXPORT_SEAL_VERSION = "runtime.local-worker-handoff-export-seal/v1"
 _CONTROL_FRAME_LIMIT = 64 * 1024
 
 # Ambient process settings only. Host bindings that affect identity are
@@ -62,6 +73,48 @@ HOST_ENV_ALLOWLIST = frozenset(
 
 class LauncherConfigurationError(ValueError):
     """A trusted host binding is missing or unsafe."""
+
+
+class _HandoffRejected(LauncherConfigurationError):
+    """A handoff contender failed without authority to mutate custody."""
+
+
+class _HandoffAuthorizedFailure(LauncherConfigurationError):
+    """The bound handoff custodian failed and the owned graph must be cleaned."""
+
+
+def _canonical_json(value: object) -> bytes:
+    try:
+        return json.dumps(
+            value, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False, allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise LauncherConfigurationError("private control value is not canonical JSON") from exc
+
+
+def _sha256_json(value: object) -> str:
+    return "sha256:" + hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    if not isinstance(value, str) or len(value) != 71 or not value.startswith("sha256:"):
+        return False
+    suffix = value[7:]
+    return all(character in "0123456789abcdef" for character in suffix)
+
+
+def _nonce_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _finite_number(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise LauncherConfigurationError("handoff deadline is invalid")
+    converted = float(value)
+    if not math.isfinite(converted) or converted <= 0:
+        raise LauncherConfigurationError("handoff deadline is invalid")
+    return converted
 
 
 @dataclass(frozen=True)
@@ -238,6 +291,7 @@ class HostLaunchConfig:
         self,
         *,
         activation_fd: int | None = None,
+        host_control_fd: int | None = None,
         operation_id: str | None = None,
         channel_id: str | None = None,
         activation_timeout_seconds: float = 120.0,
@@ -302,6 +356,12 @@ class HostLaunchConfig:
                     str(float(activation_timeout_seconds)),
                 )
             )
+        if host_control_fd is not None:
+            if not isinstance(host_control_fd, int) or host_control_fd < 0:
+                raise LauncherConfigurationError(
+                    "GenericPackHost supervisor descriptor is invalid"
+                )
+            args.extend(("--host-control-fd", str(host_control_fd)))
         return args
 
 
@@ -355,41 +415,358 @@ def _normalize_returncode(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 + (-returncode)
 
 
+@dataclass(frozen=True)
+class _CleanupIdentity:
+    pid: int
+    birth_id: str
+    uid: int
+    parent_pid: int
+    process_group: int
+    session_id: int
+    executable: Path
+    artifact_digest: str
+    argv_digest: str
+
+
+def _cleanup_ps(pid: int, field: str) -> str:
+    result = subprocess.run(
+        ["ps", "-p", str(int(pid)), "-o", f"{field}="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise LauncherConfigurationError("owned process cleanup identity is unavailable")
+    return result.stdout.strip().splitlines()[0].strip()
+
+
+def _cleanup_executable(pid: int) -> Path:
+    try:
+        if sys.platform == "darwin":
+            library = ctypes.CDLL("/usr/lib/libproc.dylib")
+            buffer = ctypes.create_string_buffer(4096)
+            if library.proc_pidpath(int(pid), buffer, len(buffer)) <= 0:
+                raise OSError("proc_pidpath failed")
+            return Path(buffer.value.decode()).resolve()
+        return Path(os.readlink(f"/proc/{int(pid)}/exe")).resolve()
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise LauncherConfigurationError(
+            "owned process cleanup executable is unavailable"
+        ) from exc
+
+
+def _cleanup_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise LauncherConfigurationError(
+            "owned process cleanup executable cannot be read"
+        ) from exc
+    return "sha256:" + digest.hexdigest()
+
+
+def _darwin_cleanup_argv(pid: int) -> tuple[bytes, ...] | None:
+    """Read exact argv bytes through Darwin's supported KERN_PROCARGS2 API."""
+
+    ctl_kern = 1
+    kern_procargs2 = 49
+    libc = ctypes.CDLL(None, use_errno=True)
+    sysctl = libc.sysctl
+    sysctl.argtypes = (
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.c_uint,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    )
+    sysctl.restype = ctypes.c_int
+    mib = (ctypes.c_int * 3)(ctl_kern, kern_procargs2, int(pid))
+    size = ctypes.c_size_t(0)
+    if sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0 or size.value < 4:
+        return None
+    buffer = ctypes.create_string_buffer(size.value)
+    if sysctl(mib, 3, buffer, ctypes.byref(size), None, 0) != 0:
+        return None
+    raw = buffer.raw[: size.value]
+    argc = struct.unpack_from("=i", raw)[0]
+    if argc < 1 or argc > 1_000_000:
+        return None
+    offset = 4
+    executable_end = raw.find(b"\0", offset)
+    if executable_end < 0:
+        return None
+    offset = executable_end + 1
+    while offset < len(raw) and raw[offset] == 0:
+        offset += 1
+    argv: list[bytes] = []
+    while len(argv) < argc and offset < len(raw):
+        end = raw.find(b"\0", offset)
+        if end < 0:
+            return None
+        argv.append(raw[offset:end])
+        offset = end + 1
+    return tuple(argv) if len(argv) == argc else None
+
+
+def _cleanup_argv(pid: int) -> tuple[bytes, ...]:
+    try:
+        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+    except OSError:
+        raw = b""
+    if raw:
+        argv = tuple(value for value in raw.split(b"\0") if value)
+        if argv:
+            return argv
+    if sys.platform == "darwin":
+        argv = _darwin_cleanup_argv(pid)
+        if argv:
+            return argv
+    raise LauncherConfigurationError("owned process cleanup argv is unavailable")
+
+
+def _argv_digest(argv: Sequence[bytes]) -> str:
+    encoded = bytearray(b"astrid.argv.v1\0")
+    encoded.extend(len(argv).to_bytes(8, "big"))
+    for value in argv:
+        if not isinstance(value, bytes):
+            raise LauncherConfigurationError("owned process cleanup argv is invalid")
+        encoded.extend(len(value).to_bytes(8, "big"))
+        encoded.extend(value)
+    return "sha256:" + hashlib.sha256(bytes(encoded)).hexdigest()
+
+
+def _capture_cleanup_identity(pid: int) -> _CleanupIdentity:
+    from source.runtime.worker.preflight import _process_birth_identity
+
+    birth = _process_birth_identity(pid)
+    if not birth:
+        raise LauncherConfigurationError("owned process cleanup birth identity is unavailable")
+    executable = _cleanup_executable(pid)
+    try:
+        return _CleanupIdentity(
+            pid=int(pid),
+            birth_id=birth,
+            uid=int(_cleanup_ps(pid, "uid")),
+            parent_pid=int(_cleanup_ps(pid, "ppid")),
+            process_group=os.getpgid(pid),
+            session_id=os.getsid(pid),
+            executable=executable,
+            artifact_digest=_cleanup_digest(executable),
+            argv_digest=_argv_digest(_cleanup_argv(pid)),
+        )
+    except (OSError, ValueError) as exc:
+        raise LauncherConfigurationError("owned process cleanup identity is invalid") from exc
+
+
+def _custody_identity(pid: int) -> Mapping[str, object] | None:
+    try:
+        identity = _capture_cleanup_identity(pid)
+    except LauncherConfigurationError:
+        return None
+    return {
+        "pid": identity.pid,
+        "birth_id": identity.birth_id,
+        "uid": identity.uid,
+        "parent_pid": identity.parent_pid,
+        "process_group": identity.process_group,
+        "session_id": identity.session_id,
+        "executable": str(identity.executable),
+        "artifact_digest": identity.artifact_digest,
+        "argv_digest": identity.argv_digest,
+    }
+
+
+@dataclass
+class _CustodyLaunchOwner:
+    """Caller-visible ownership populated before custody admission can fail."""
+
+    role: str
+    process: subprocess.Popen[bytes] | None = None
+    broker: RoleBoundCustodyBroker | None = None
+    state: str = "new"
+    error: BaseException | None = None
+
+
+class _CustodyAdmissionFailure(LauncherConfigurationError):
+    def __init__(self, owner: _CustodyLaunchOwner):
+        self.owner = owner
+        suffix = (
+            " and live custody remains unresolved"
+            if owner.state == "unresolved"
+            else " after audit-token cleanup and reaping"
+        )
+        super().__init__(f"{owner.role} audit-token custody registration failed{suffix}")
+
+
+_CUSTODY_LAUNCH_LOCK = threading.Lock()
+_UNRESOLVED_CUSTODY: dict[int, _CustodyLaunchOwner] = {}
+
+
+def _reserve_custody_launch(owner: _CustodyLaunchOwner) -> None:
+    with _CUSTODY_LAUNCH_LOCK:
+        unresolved = [item for item in _UNRESOLVED_CUSTODY.values() if item.state == "unresolved"]
+        if unresolved:
+            roles = ", ".join(sorted({item.role for item in unresolved}))
+            raise LauncherConfigurationError(
+                f"unresolved audit-token custody refuses follow-on launch ({roles})"
+            )
+        if owner.state != "new" or owner.process is not None or owner.broker is not None:
+            raise LauncherConfigurationError("custody launch owner is already used")
+        owner.state = "reserved"
+        _UNRESOLVED_CUSTODY[id(owner)] = owner
+
+
+def _release_custody_launch(owner: _CustodyLaunchOwner, state: str) -> None:
+    owner.state = state
+    with _CUSTODY_LAUNCH_LOCK:
+        _UNRESOLVED_CUSTODY.pop(id(owner), None)
+
+
+def _cleanup_failed_custody(owner: _CustodyLaunchOwner) -> bool:
+    """Attempt bounded audit-token-only cleanup; retain uncertainty on failure."""
+
+    process = owner.process
+    broker = owner.broker
+    if process is None or broker is None:
+        return True
+    if process.poll() is not None:
+        try:
+            process.wait(timeout=0)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return True
+    try:
+        broker.signal_failed_admission(signal.SIGTERM, expected_pid=process.pid)
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            broker.signal_failed_admission(signal.SIGKILL, expected_pid=process.pid)
+            process.wait(timeout=3)
+    except (CustodyError, OSError, subprocess.SubprocessError):
+        return False
+    return process.poll() is not None
+
+
+def _custodied_popen(
+    argv: Sequence[str], *, custody_role: str,
+    custody_owner: _CustodyLaunchOwner | None = None, **kwargs: Any
+) -> subprocess.Popen[bytes]:
+    """Spawn through the reviewed pre-exec audit-token broker contract."""
+
+    owner = custody_owner or _CustodyLaunchOwner(custody_role)
+    if owner.role != custody_role:
+        raise LauncherConfigurationError("custody launch owner role is invalid")
+    _reserve_custody_launch(owner)
+    options = dict(kwargs)
+    start_new_session = bool(options.pop("start_new_session", False))
+    child_environment = dict(options.pop("env", os.environ))
+    try:
+        broker = RoleBoundCustodyBroker(
+            role=custody_role,
+            identity_provider=_custody_identity,
+        )
+        child_environment.update(
+            broker.child_environment(argv, start_new_session=start_new_session)
+        )
+    except CustodyError as exc:
+        owner.error = exc
+        _release_custody_launch(owner, "failed_before_spawn")
+        raise LauncherConfigurationError(
+            f"{custody_role} audit-token custody admission is unavailable"
+        ) from exc
+    options["env"] = child_environment
+    options["start_new_session"] = False
+    wrapper = [
+        sys.executable,
+        "-I",
+        str(Path(__file__).with_name("custody_broker.py").resolve()),
+        "--custody-exec",
+    ]
+    try:
+        process = subprocess.Popen(wrapper, **options)
+    except BaseException:
+        _release_custody_launch(owner, "failed_before_spawn")
+        raise
+    process._reigh_custody_broker = broker  # type: ignore[attr-defined]
+    owner.process = process
+    owner.broker = broker
+    owner.state = "admission_pending"
+    try:
+        broker.wait_until_sealed()
+    except CustodyError as exc:
+        owner.error = exc
+        owner.state = "unresolved"
+        if _cleanup_failed_custody(owner):
+            _release_custody_launch(owner, "failed_reaped")
+        raise _CustodyAdmissionFailure(owner) from exc
+    _release_custody_launch(owner, "sealed")
+    return process
+
+
+def _verify_cleanup_identity(
+    identity: _CleanupIdentity, *, allow_reparented: bool = False
+) -> bool:
+    from source.runtime.worker.preflight import _process_birth_identity
+
+    observed = _process_birth_identity(identity.pid)
+    if observed is None:
+        return False
+    if observed != identity.birth_id:
+        raise LauncherConfigurationError("owned process cleanup birth identity changed")
+    try:
+        current = _capture_cleanup_identity(identity.pid)
+    except LauncherConfigurationError:
+        if _process_birth_identity(identity.pid) is None:
+            return False
+        raise
+    comparable = current
+    if allow_reparented and current.parent_pid == 1:
+        comparable = replace(current, parent_pid=identity.parent_pid)
+    if comparable != identity:
+        raise LauncherConfigurationError("owned process cleanup identity changed")
+    return True
+
+
 def _signal_owned_group(process: subprocess.Popen[bytes], signum: int) -> None:
     if process.poll() is not None:
         return
-    if os.name == "nt":
-        process.terminate()
-        return
-    try:
-        os.killpg(process.pid, signum)
-    except ProcessLookupError:
-        pass
-
-
-def _signal_owned_pgid(pgid: int, signum: int) -> None:
-    if os.name == "nt":
-        return
-    try:
-        os.killpg(pgid, signum)
-    except ProcessLookupError:
-        pass
+    identity = _capture_cleanup_identity(process.pid)
+    if identity.process_group != identity.pid or identity.session_id != identity.pid:
+        raise LauncherConfigurationError("owned process cleanup group is invalid")
+    broker = getattr(process, "_reigh_custody_broker", None)
+    if not isinstance(broker, RoleBoundCustodyBroker):
+        raise LauncherConfigurationError(
+            "owned process role-bound audit-token custody is unavailable"
+        )
+    if _verify_cleanup_identity(identity):
+        try:
+            broker.signal(signum, expected_pid=identity.pid)
+        except CustodyError as exc:
+            raise LauncherConfigurationError(
+                "owned process audit-token signal failed"
+            ) from exc
 
 
 def _terminate_and_wait(process: subprocess.Popen[bytes], pgid: int) -> None:
     """Terminate and reap a verified host process group."""
 
-    if os.name == "nt":
-        process.terminate()
-    else:
-        _signal_owned_pgid(pgid, signal.SIGTERM)
+    identity = _capture_cleanup_identity(process.pid)
+    if (
+        pgid != identity.pid
+        or identity.process_group != identity.pid
+        or identity.session_id != identity.pid
+    ):
+        raise LauncherConfigurationError("owned process cleanup group is invalid")
+    _signal_owned_group(process, signal.SIGTERM)
     try:
         process.wait(timeout=3)
     except subprocess.TimeoutExpired:
-        if os.name == "nt":
-            process.kill()
-        else:
-            _signal_owned_pgid(pgid, signal.SIGKILL)
+        if _verify_cleanup_identity(identity):
+            _signal_owned_group(process, signal.SIGKILL)
         process.wait(timeout=3)
 
 
@@ -706,11 +1083,12 @@ def _read_owned_vibecomfy_session(
             raise ValueError("pid must be positive")
         if expected_daemon_pid is not None and pid != expected_daemon_pid:
             raise ValueError("session daemon pid does not match the Worker-owned child")
-        os.kill(pid, 0)
+        from source.runtime.worker.preflight import _process_birth_identity
+        if _process_birth_identity(pid) is None:
+            raise ValueError("session daemon process identity is unavailable")
         comfy_pid = int(registry["comfy_pid"].read_text(encoding="utf-8").strip())
         if comfy_pid <= 0:
             raise ValueError("comfy_pid must be positive")
-        from source.runtime.worker.preflight import _process_birth_identity
         comfy_process_birth_id = registry["comfy_process_start_identity"].read_text(encoding="utf-8").strip()
         if _process_birth_identity(comfy_pid) != comfy_process_birth_id:
             raise ValueError("Comfy child process birth identity is stale or mismatched")
@@ -897,6 +1275,8 @@ class _OwnedVibeComfySession:
     comfy_pid: int = 0
     comfy_process_birth_id: str = ""
     server_url: str = ""
+    daemon_cleanup_identity: _CleanupIdentity | None = None
+    listener_cleanup_identity: _CleanupIdentity | None = None
 
 def _start_owned_vibecomfy_session(
     config: HostLaunchConfig,
@@ -1009,10 +1389,13 @@ def _start_owned_vibecomfy_session(
         child_env["COMFYUI_PATH"] = str(comfyui_root)
     child_env["PYTHONUNBUFFERED"] = "1"
     log_path = root / "daemon.log"
+    custody_owner = _CustodyLaunchOwner("engine_daemon")
     try:
         log_handle = log_path.open("ab", buffering=0)
-        process = subprocess.Popen(
+        process = _custodied_popen(
             command,
+            custody_role="engine_daemon",
+            custody_owner=custody_owner,
             # VibeComfy resolves its registry as cwd/out/sessions/<id>.
             # For <base>/out/sessions/<id>, cwd must therefore be <base>.
             cwd=str(root.parents[2]),
@@ -1048,6 +1431,10 @@ def _start_owned_vibecomfy_session(
                     comfy_pid=int(payload["comfy_pid"]),
                     comfy_process_birth_id=str(payload["comfy_process_birth_id"]),
                     server_url=str(payload["server_url"]),
+                    daemon_cleanup_identity=_capture_cleanup_identity(process.pid),
+                    listener_cleanup_identity=_capture_cleanup_identity(
+                        int(payload["comfy_pid"])
+                    ),
                 )
             except LauncherConfigurationError:
                 time.sleep(0.1)
@@ -1072,6 +1459,10 @@ def _start_owned_vibecomfy_session(
                 comfy_pid=int(partial["comfy_pid"]),
                 comfy_process_birth_id=str(partial["comfy_process_birth_id"]),
                 server_url=str(partial["server_url"]),
+                daemon_cleanup_identity=_capture_cleanup_identity(process.pid),
+                listener_cleanup_identity=_capture_cleanup_identity(
+                    int(partial["comfy_pid"])
+                ),
             )
         _stop_owned_vibecomfy_session(cleanup_session)
         raise
@@ -1079,79 +1470,76 @@ def _start_owned_vibecomfy_session(
 
 def _stop_owned_vibecomfy_session(session: _OwnedVibeComfySession) -> None:
     process = session.process
-    if process.poll() is None:
-        _signal_owned_group(process, signal.SIGTERM)
-        try:
-            process.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            _signal_owned_group(process, signal.SIGKILL)
-            process.wait(timeout=15)
-
-    from source.runtime.worker.preflight import _process_birth_identity
-
-    child_pid = session.comfy_pid
-    child_birth_id = session.comfy_process_birth_id
     parsed = urlsplit(session.server_url)
-    def child_state() -> str:
-        """Return owned, absent, or unknown without adopting a PID."""
-        if child_pid <= 0 or not child_birth_id:
-            return "unknown"
-        observed_birth_id = _process_birth_identity(child_pid)
-        if observed_birth_id is None:
-            try:
-                os.kill(child_pid, 0)
-            except ProcessLookupError:
-                return "absent"
-            except OSError:
-                return "unknown"
-            return "unknown"
-        if observed_birth_id != child_birth_id:
-            return "absent"
-        if os.name == "nt":
-            return "owned"
-        try:
-            return "owned" if os.getpgid(child_pid) == session.process.pid else "unknown"
-        except OSError:
-            return "unknown"
+    daemon = session.daemon_cleanup_identity
+    listener = session.listener_cleanup_identity
+    if daemon is None or listener is None:
+        if process.poll() is None or _owned_listener_pid(parsed.port or 0) is not None:
+            raise LauncherConfigurationError(
+                "owned VibeComfy cleanup identity is incomplete"
+            )
+        return
+    if daemon.pid != process.pid or listener.pid != session.comfy_pid:
+        raise LauncherConfigurationError("owned VibeComfy cleanup identity is inconsistent")
+    if (
+        daemon.process_group != daemon.pid
+        or daemon.session_id != daemon.pid
+        or listener.process_group != daemon.pid
+        or listener.session_id != daemon.pid
+    ):
+        raise LauncherConfigurationError("owned VibeComfy cleanup group is invalid")
 
-    if child_state() == "owned":
-        try:
-            os.kill(child_pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        deadline = time.monotonic() + 15
-        while child_state() == "owned" and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if child_state() == "owned":
-            try:
-                os.kill(child_pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            deadline = time.monotonic() + 15
-            while child_state() == "owned" and time.monotonic() < deadline:
-                time.sleep(0.1)
-
-    if parsed.port is not None:
-        listener_pid = _owned_listener_pid(parsed.port)
-        if listener_pid is None:
-            if child_state() != "absent":
+    def live_members() -> list[_CleanupIdentity]:
+        result: list[_CleanupIdentity] = []
+        if _verify_cleanup_identity(daemon, allow_reparented=False):
+            result.append(daemon)
+        if _verify_cleanup_identity(listener, allow_reparented=True):
+            result.append(listener)
+        owner = _owned_listener_pid(parsed.port or 0)
+        if listener in result:
+            if owner != listener.pid:
                 raise LauncherConfigurationError(
-                    "owned VibeComfy child absence could not be verified"
+                    "owned VibeComfy listener identity changed"
                 )
-            return
+        elif owner is not None:
+            raise LauncherConfigurationError(
+                "owned VibeComfy listener was replaced"
+            )
+        return result
+
+    members = live_members()
+    if members:
+        # Full identity, group and endpoint ownership are rechecked directly
+        # before both TERM and KILL.  No PID-only signal is used.
+        _signal_owned_group(process, signal.SIGTERM)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
-            listener_pid = _owned_listener_pid(parsed.port)
-            if listener_pid is None:
-                if child_state() != "absent":
-                    raise LauncherConfigurationError(
-                        "owned VibeComfy child absence could not be verified"
-                    )
-                return
+            if not any(
+                _verify_cleanup_identity(item, allow_reparented=item is listener)
+                for item in (daemon, listener)
+            ):
+                break
             time.sleep(0.1)
-        raise LauncherConfigurationError(
-            "owned VibeComfy listener remained after cleanup"
-        )
+        members = live_members()
+        if members:
+            _signal_owned_group(process, signal.SIGKILL)
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if not any(
+                    _verify_cleanup_identity(item, allow_reparented=item is listener)
+                    for item in (daemon, listener)
+                ):
+                    break
+                time.sleep(0.1)
+    if live_members():
+        raise LauncherConfigurationError("owned VibeComfy group survived cleanup")
+    if process.poll() is None:
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired as exc:
+            raise LauncherConfigurationError(
+                "owned VibeComfy daemon could not be reaped"
+            ) from exc
 
 
 @dataclass
@@ -1163,13 +1551,240 @@ class PreparedHostHandle:
     channel_id: str
     host: subprocess.Popen[bytes]
     host_birth_id: str
+    host_cleanup_identity: _CleanupIdentity
     activation: socket.socket
+    host_control: socket.socket
     engine: _OwnedVibeComfySession
     engine_report: dict[str, object]
     readiness_profile: Path | None = None
     activated: bool = False
     activation_grant: dict[str, object] | None = None
     closed: bool = False
+
+
+@dataclass
+class _WorkerHandoff:
+    handoff_id: str
+    nonce_digest: str
+    sealed_record_digest: str
+    deadline_monotonic: float
+    deadline_unix_ms: int
+    old_runtime: dict[str, Any]
+    receipt_evidence_digest: str
+    credential_generation: dict[str, Any]
+    registered_state: dict[str, Any]
+    old_owner: dict[str, Any]
+    sealed_record: dict[str, Any]
+    export_sealed_digest: str | None = None
+    export_record_digest: str | None = None
+    export_digest: str | None = None
+    adopter_record_digest: str | None = None
+    new_owner: dict[str, Any] | None = None
+    phase: str = "paused"
+    adopter_request_id: str | None = None
+    new_runtime: dict[str, Any] | None = None
+    nonce_consumed: bool = False
+    acknowledgements: dict[str, tuple[str, dict[str, Any]]] | None = None
+
+
+@dataclass(frozen=True)
+class _FinalizedHandoffAck:
+    handoff_id: str
+    request_digest: str
+    response: dict[str, Any]
+
+
+_RUNTIME_IDENTITY_FIELDS = frozenset(
+    {
+        "endpoint",
+        "protocol",
+        "schema_digest",
+        "runtime_epoch",
+        "runtime_instance_id",
+        "runtime_session_id",
+    }
+)
+_CREDENTIAL_GENERATION_FIELDS = frozenset(
+    {"generation", "token_sha256", "metadata_sha256", "commit_sha256"}
+)
+_REGISTERED_STATE_FIELDS = frozenset(
+    {
+        "executor_id", "source_epoch", "runtime", "capabilities",
+        "registration_actor", "registration_bodies", "registration_allowlist",
+    }
+)
+_CAPABILITY_STATE_FIELDS = frozenset(
+    {
+        "capability_id",
+        "capability_digest",
+        "source_digest",
+        "dependency_digest",
+        "ready",
+        "preflight_digest",
+    }
+)
+_OWNER_FIELDS = frozenset({"pid", "birth_id"})
+
+
+def _strict_object(value: object, fields: frozenset[str], label: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise LauncherConfigurationError(f"{label} has an invalid shape")
+    return dict(value)
+
+
+def _runtime_identity(value: object, label: str) -> dict[str, Any]:
+    result = _strict_object(value, _RUNTIME_IDENTITY_FIELDS, label)
+    for name in _RUNTIME_IDENTITY_FIELDS - {"runtime_epoch"}:
+        if not isinstance(result[name], str) or not result[name]:
+            raise LauncherConfigurationError(f"{label} has an invalid value")
+    if (
+        isinstance(result["runtime_epoch"], bool)
+        or not isinstance(result["runtime_epoch"], int)
+        or result["runtime_epoch"] < 1
+    ):
+        raise LauncherConfigurationError(f"{label} Runtime epoch is invalid")
+    if not _is_sha256(result["schema_digest"]):
+        raise LauncherConfigurationError(f"{label} schema digest is invalid")
+    return result
+
+
+def _runtime_owner(value: object, label: str) -> dict[str, Any]:
+    result = _strict_object(value, _OWNER_FIELDS, label)
+    pid = result["pid"]
+    birth_id = result["birth_id"]
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid < 1:
+        raise LauncherConfigurationError(f"{label} pid is invalid")
+    if not isinstance(birth_id, str) or not birth_id or len(birth_id) > 512:
+        raise LauncherConfigurationError(f"{label} birth identity is invalid")
+    return result
+
+
+def _contains_raw_nonce(value: object) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            key in {"nonce", "raw_nonce"} or _contains_raw_nonce(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_raw_nonce(item) for item in value)
+    return False
+
+
+def _sealed_handoff_record(
+    value: object,
+    *,
+    handoff_id: str,
+    nonce_digest: str,
+    sealed_record_digest: str,
+    old_owner: Mapping[str, Any],
+    deadline_monotonic: float,
+    deadline_unix_ms: int,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise _HandoffRejected("private Worker sealed handoff record is invalid")
+    result = dict(value)
+    record_digest = result.get("record_digest")
+    if (
+        result.get("version") != HANDOFF_RECORD_VERSION
+        or result.get("state") != "OWNED"
+        or result.get("handoff_id") != handoff_id
+        or result.get("nonce_digest") != nonce_digest
+        or result.get("sealed_record_digest") != sealed_record_digest
+        or result.get("old_owner") != dict(old_owner)
+        or result.get("deadline_monotonic") != deadline_monotonic
+        or result.get("deadline_unix_ms") != deadline_unix_ms
+        or not _is_sha256(record_digest)
+        or _contains_raw_nonce(result)
+    ):
+        raise _HandoffRejected("private Worker sealed handoff record is invalid")
+    seal_value = {
+        key: item
+        for key, item in result.items()
+        if key not in {"sealed_record_digest", "record_digest"}
+    }
+    if not hmac.compare_digest(sealed_record_digest, _sha256_json(seal_value)):
+        raise _HandoffRejected("private Worker sealed handoff digest is invalid")
+    record_value = {
+        key: item for key, item in result.items() if key != "record_digest"
+    }
+    if not hmac.compare_digest(str(record_digest), _sha256_json(record_value)):
+        raise _HandoffRejected("private Worker handoff record digest is invalid")
+    return result
+
+
+def _credential_generation(value: object) -> dict[str, Any]:
+    result = _strict_object(
+        value, _CREDENTIAL_GENERATION_FIELDS, "handoff credential generation"
+    )
+    if not isinstance(result["generation"], str) or not result["generation"]:
+        raise LauncherConfigurationError("handoff credential generation is invalid")
+    for name in ("token_sha256", "metadata_sha256", "commit_sha256"):
+        if not _is_sha256(result[name]):
+            raise LauncherConfigurationError(f"handoff credential {name} is invalid")
+    return result
+
+
+def _registered_state(value: object) -> dict[str, Any]:
+    result = _strict_object(value, _REGISTERED_STATE_FIELDS, "registered state")
+    if not isinstance(result["executor_id"], str) or not result["executor_id"]:
+        raise LauncherConfigurationError("registered executor identity is invalid")
+    if not isinstance(result["source_epoch"], str) or not result["source_epoch"]:
+        raise LauncherConfigurationError("registered source epoch is invalid")
+    result["runtime"] = _runtime_identity(result["runtime"], "registered Runtime")
+    capabilities = result["capabilities"]
+    if not isinstance(capabilities, list):
+        raise LauncherConfigurationError("registered capabilities are invalid")
+    normalized: list[dict[str, Any]] = []
+    for capability in capabilities:
+        item = _strict_object(
+            capability, _CAPABILITY_STATE_FIELDS, "registered capability"
+        )
+        if not isinstance(item["capability_id"], str) or not item["capability_id"]:
+            raise LauncherConfigurationError("registered capability identity is invalid")
+        if not isinstance(item["ready"], bool):
+            raise LauncherConfigurationError("registered capability readiness is invalid")
+        for name in (
+            "capability_digest", "source_digest", "dependency_digest", "preflight_digest"
+        ):
+            if not _is_sha256(item[name]):
+                raise LauncherConfigurationError(
+                    f"registered capability {name} is invalid"
+                )
+        normalized.append(item)
+    if [item["capability_id"] for item in normalized] != sorted(
+        item["capability_id"] for item in normalized
+    ):
+        raise LauncherConfigurationError("registered capabilities are not canonical")
+    result["capabilities"] = normalized
+    actor = result["registration_actor"]
+    bodies = result["registration_bodies"]
+    allowlist = result["registration_allowlist"]
+    routes = ("/v1/capabilities", "/v1/executors")
+    if actor != result["executor_id"]:
+        raise LauncherConfigurationError("registered admission actor is invalid")
+    if not isinstance(bodies, Mapping) or set(bodies) != set(routes):
+        raise LauncherConfigurationError("registered admission routes are invalid")
+    normalized_bodies: dict[str, list[object]] = {}
+    expected_allowlist = []
+    for path in routes:
+        items = bodies[path]
+        if not isinstance(items, list):
+            raise LauncherConfigurationError("registered admission bodies are invalid")
+        normalized_bodies[path] = list(items)
+        expected_allowlist.append(
+            {
+                "method": "POST",
+                "path": path,
+                "actor": actor,
+                "body_sha256": sorted(_sha256_json(item) for item in items),
+            }
+        )
+    expected_allowlist.sort(key=lambda item: (item["path"], item["actor"]))
+    if allowlist != expected_allowlist:
+        raise LauncherConfigurationError("registered admission allowlist is invalid")
+    result["registration_bodies"] = normalized_bodies
+    result["registration_allowlist"] = expected_allowlist
+    return result
 
 
 class LocalWorkerPreparerAdapter:
@@ -1192,6 +1807,9 @@ class LocalWorkerPreparerAdapter:
         self.environ = dict(os.environ if environ is None else environ)
         self.activation_timeout_seconds = float(activation_timeout_seconds)
         self._active: PreparedHostHandle | None = None
+        self._handoff: _WorkerHandoff | None = None
+        self._runtime_owner_identity: dict[str, Any] | None = None
+        self._finalized_handoff_acks: list[_FinalizedHandoffAck] = []
 
     @staticmethod
     def _birth(pid: int) -> str:
@@ -1278,34 +1896,44 @@ class LocalWorkerPreparerAdapter:
         if engine_report.get("config_digest") != expected_config_digest:
             _stop_owned_vibecomfy_session(engine)
             raise LauncherConfigurationError("prepared VibeComfy session configuration is invalid")
-        parent_control, host_control = socket.socketpair()
+        parent_activation, host_activation = socket.socketpair()
+        parent_supervisor, host_supervisor = socket.socketpair()
         self.config.ready_file.unlink(missing_ok=True)
         child: subprocess.Popen[bytes] | None = None
+        child_cleanup_identity: _CleanupIdentity | None = None
+        custody_owner = _CustodyLaunchOwner("generic_pack_host")
         try:
             argv = self.config.argv(
-                activation_fd=host_control.fileno(),
+                activation_fd=host_activation.fileno(),
+                host_control_fd=host_supervisor.fileno(),
                 operation_id=operation_id,
                 channel_id=channel_id,
                 activation_timeout_seconds=self.activation_timeout_seconds,
             )
-            child = subprocess.Popen(
+            child = _custodied_popen(
                 argv,
+                custody_role="generic_pack_host",
+                custody_owner=custody_owner,
                 cwd=str(_host_working_directory(self.config)),
                 env=_host_environment(self.environ, self.config),
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
                 close_fds=True,
-                pass_fds=(host_control.fileno(),),
+                pass_fds=(host_activation.fileno(), host_supervisor.fileno()),
             )
-            host_control.close()
+            host_activation.close()
+            host_supervisor.close()
             birth = self._birth(child.pid)
+            child_cleanup_identity = _capture_cleanup_identity(child.pid)
             handle = PreparedHostHandle(
                 profile=profile,
                 operation_id=operation_id,
                 channel_id=channel_id,
                 host=child,
                 host_birth_id=birth,
-                activation=parent_control,
+                host_cleanup_identity=child_cleanup_identity,
+                activation=parent_activation,
+                host_control=parent_supervisor,
                 engine=engine,
                 engine_report=dict(engine_report),
             )
@@ -1313,11 +1941,22 @@ class LocalWorkerPreparerAdapter:
             self._active = handle
             return handle
         except BaseException:
-            host_control.close()
-            parent_control.close()
+            host_activation.close()
+            host_supervisor.close()
+            parent_activation.close()
+            parent_supervisor.close()
             if child is not None:
                 try:
-                    _terminate_and_wait(child, child.pid)
+                    if child_cleanup_identity is None:
+                        child_cleanup_identity = _capture_cleanup_identity(child.pid)
+                    if _verify_cleanup_identity(child_cleanup_identity):
+                        _signal_owned_group(child, signal.SIGTERM)
+                        try:
+                            child.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            if _verify_cleanup_identity(child_cleanup_identity):
+                                _signal_owned_group(child, signal.SIGKILL)
+                            child.wait(timeout=3)
                 except BaseException:
                     pass
             _stop_owned_vibecomfy_session(engine)
@@ -1416,6 +2055,906 @@ class LocalWorkerPreparerAdapter:
         handle.activated = True
         handle.activation_grant = dict(grant)
 
+    @staticmethod
+    def _ack_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+        result = dict(payload)
+        result["ack_sha256"] = _sha256_json(result)
+        return result
+
+    @staticmethod
+    def _common_handoff_request(
+        request: Mapping[str, Any], expected: frozenset[str]
+    ) -> tuple[str, str, str, float, int]:
+        common = frozenset(
+            {
+                "version", "command", "handoff_id", "nonce_digest",
+                "sealed_record_digest", "deadline_monotonic", "deadline_unix_ms",
+            }
+        )
+        if set(request) != common | expected:
+            raise _HandoffRejected("private Worker handoff request has an invalid shape")
+        if request.get("version") != CONTROL_VERSION:
+            raise _HandoffRejected("private Worker control version is invalid")
+        handoff_id = request.get("handoff_id")
+        nonce_digest = request.get("nonce_digest")
+        sealed_digest = request.get("sealed_record_digest")
+        if not isinstance(handoff_id, str) or not handoff_id or len(handoff_id) > 256:
+            raise _HandoffRejected("private Worker handoff identity is invalid")
+        if not _is_sha256(nonce_digest) or not _is_sha256(sealed_digest):
+            raise _HandoffRejected("private Worker handoff digest is invalid")
+        try:
+            deadline_monotonic = _finite_number(request.get("deadline_monotonic"))
+            unix_value = request.get("deadline_unix_ms")
+            if isinstance(unix_value, bool) or not isinstance(unix_value, int) or unix_value < 1:
+                raise LauncherConfigurationError("handoff deadline is invalid")
+            deadline_unix_ms = unix_value
+        except LauncherConfigurationError as exc:
+            raise _HandoffRejected(str(exc)) from exc
+        return (
+            handoff_id,
+            str(nonce_digest),
+            str(sealed_digest),
+            deadline_monotonic,
+            deadline_unix_ms,
+        )
+
+    def _bound_handoff(
+        self, request: Mapping[str, Any], expected: frozenset[str], phase: str
+    ) -> _WorkerHandoff:
+        values = self._common_handoff_request(request, expected)
+        current = self._handoff
+        if current is None:
+            raise _HandoffRejected("private Worker has no prepared handoff")
+        if (
+            values[0] != current.handoff_id
+            or not hmac.compare_digest(values[1], current.nonce_digest)
+            or not hmac.compare_digest(values[2], current.sealed_record_digest)
+            or values[3] != current.deadline_monotonic
+            or values[4] != current.deadline_unix_ms
+        ):
+            raise _HandoffRejected("private Worker handoff binding is invalid")
+        if current.phase != phase:
+            raise _HandoffRejected("private Worker handoff phase is invalid")
+        if time.monotonic() >= current.deadline_monotonic or time.time() * 1000 >= current.deadline_unix_ms:
+            raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
+        return current
+
+    def _expected_activation(self, handle: PreparedHostHandle) -> dict[str, Any]:
+        grant = handle.activation_grant
+        if not isinstance(grant, Mapping):
+            raise LauncherConfigurationError("activated host has no activation identity")
+        return {
+            **dict(grant),
+            "host": {"pid": handle.host.pid, "birth_id": handle.host_birth_id},
+        }
+
+    def _host_rpc(
+        self,
+        handle: PreparedHostHandle,
+        payload: Mapping[str, Any],
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> dict[str, Any]:
+        self._assert_live(handle)
+        timeout: float | None = None
+        if deadline_monotonic is not None:
+            timeout = deadline_monotonic - time.monotonic()
+            if timeout <= 0:
+                raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
+        handle.host_control.settimeout(timeout)
+        try:
+            _send_private_frame(handle.host_control, payload)
+            response = _receive_private_frame(handle.host_control)
+        except (socket.timeout, TimeoutError) as exc:
+            raise _HandoffAuthorizedFailure("GenericPackHost handoff acknowledgement timed out") from exc
+        except (BrokenPipeError, ConnectionError, OSError, LauncherConfigurationError) as exc:
+            raise _HandoffAuthorizedFailure("GenericPackHost control channel failed") from exc
+        finally:
+            try:
+                handle.host_control.settimeout(None)
+            except OSError:
+                pass
+        return response
+
+    def _verify_host_ack(
+        self,
+        handle: PreparedHostHandle,
+        request: Mapping[str, Any],
+        response: Mapping[str, Any],
+        *,
+        statuses: frozenset[str],
+        snapshot: bool = False,
+        registration: bool = False,
+    ) -> dict[str, Any]:
+        fields = {
+            "version", "command", "handoff_id", "nonce_digest", "status",
+            "host", "phase", "ack_sha256",
+        }
+        active_refusal = (
+            request.get("command") == "pause_prepare"
+            and response.get("status") == "active_work"
+        )
+        if snapshot or active_refusal:
+            fields.update(("activation", "registered_state"))
+        if active_refusal:
+            fields.add("inflight_claim_iterations")
+        if request.get("command") in {"rebind_prepare", "rebind_commit"}:
+            fields.add("credential_generation")
+        if registration:
+            fields.add("registration")
+        if not isinstance(response, Mapping) or set(response) != fields:
+            raise _HandoffAuthorizedFailure("GenericPackHost acknowledgement has an invalid shape")
+        if (
+            response.get("version") != HOST_CONTROL_VERSION
+            or response.get("command") != f"{request['command']}_ack"
+            or response.get("handoff_id") != request.get("handoff_id")
+            or response.get("nonce_digest") != request.get("nonce_digest")
+            or response.get("status") not in statuses
+            or response.get("host")
+            != {"pid": handle.host.pid, "birth_id": handle.host_birth_id}
+        ):
+            raise _HandoffAuthorizedFailure("GenericPackHost acknowledgement binding is invalid")
+        expected_phase = {
+            ("pause_prepare", "paused"): "PAUSED",
+            ("pause_prepare", "active_work"): "ACTIVE",
+            ("pause_cancel", "pause_cancelled"): "ACTIVE",
+            ("rebind_prepare", "rebind_prepared"): "REBIND_PREPARED",
+            ("rebind_commit", "rebind_committed"): "REBIND_COMMITTED",
+            ("resume_prepare", "resume_prepared"): "RESUME_PREPARED",
+            ("resume_commit", "resumed"): "RESUMED",
+            ("handoff_finalize", "adopted"): "ADOPTED",
+            ("handoff_abort", "aborted"): "ABORTED",
+        }.get((str(request.get("command")), str(response.get("status"))))
+        if response.get("phase") != expected_phase:
+            raise _HandoffAuthorizedFailure("GenericPackHost acknowledgement phase is invalid")
+        claimed = response.get("ack_sha256")
+        without_digest = {name: value for name, value in response.items() if name != "ack_sha256"}
+        if not isinstance(claimed, str) or not hmac.compare_digest(claimed, _sha256_json(without_digest)):
+            raise _HandoffAuthorizedFailure("GenericPackHost acknowledgement digest is invalid")
+        if snapshot or active_refusal:
+            if response.get("activation") != self._expected_activation(handle):
+                raise _HandoffAuthorizedFailure("GenericPackHost activation identity changed")
+            _registered_state(response.get("registered_state"))
+        if active_refusal:
+            inflight = response.get("inflight_claim_iterations")
+            if isinstance(inflight, bool) or not isinstance(inflight, int) or inflight < 1:
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost active-work count is invalid"
+                )
+        if request.get("command") in {"rebind_prepare", "rebind_commit"}:
+            if response.get("credential_generation") != request.get("credential_generation", self._handoff.credential_generation if self._handoff else None):
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost credential generation changed"
+                )
+        if registration:
+            value = _strict_object(
+                response.get("registration"),
+                frozenset({"runtime_registration", "withdrawn_capabilities"}),
+                "GenericPackHost registration acknowledgement",
+            )
+            withdrawn = value["withdrawn_capabilities"]
+            if (
+                not isinstance(withdrawn, list)
+                or any(not isinstance(item, str) or not item for item in withdrawn)
+                or withdrawn != sorted(withdrawn)
+            ):
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost withdrawn capability acknowledgement is invalid"
+                )
+        return dict(response)
+
+    def _forward_host(
+        self,
+        handle: PreparedHostHandle,
+        payload: Mapping[str, Any],
+        *,
+        statuses: frozenset[str],
+        deadline_monotonic: float | None = None,
+        snapshot: bool = False,
+        registration: bool = False,
+    ) -> dict[str, Any]:
+        response = self._host_rpc(
+            handle, payload, deadline_monotonic=deadline_monotonic
+        )
+        return self._verify_host_ack(
+            handle,
+            payload,
+            response,
+            statuses=statuses,
+            snapshot=snapshot,
+            registration=registration,
+        )
+
+    def _validate_handoff_export(
+        self,
+        handle: PreparedHostHandle,
+        current: _WorkerHandoff,
+        value: object,
+    ) -> dict[str, Any]:
+        export = _strict_object(
+            value,
+            frozenset(
+                {"receipt", "identity", "credential_generation", "registered_state"}
+            ),
+            "handoff export",
+        )
+        if _contains_raw_nonce(export):
+            raise _HandoffRejected("private Worker handoff export contains a raw nonce")
+        receipt = export["receipt"]
+        identity = export["identity"]
+        if not isinstance(receipt, Mapping) or not isinstance(identity, Mapping):
+            raise _HandoffRejected("private Worker handoff export graph is invalid")
+        identity_value = dict(identity)
+        expected_receipt = {
+            "version": RECEIPT_VERSION,
+            **identity_value,
+            "executor_incarnation": (handle.activation_grant or {}).get(
+                "executor_incarnation"
+            ),
+        }
+        if dict(receipt) != expected_receipt:
+            raise _HandoffRejected("private Worker handoff receipt is invalid")
+        if (
+            identity_value.get("evidence_digest") != current.receipt_evidence_digest
+            or export["credential_generation"] != current.credential_generation
+            or _registered_state(export["registered_state"]) != current.registered_state
+        ):
+            raise _HandoffRejected("private Worker handoff export evidence is invalid")
+        engine = handle.engine_report
+        expected_processes = {
+            "worker": {"pid": os.getpid(), "birth_id": self._birth(os.getpid())},
+            "host": {"pid": handle.host.pid, "birth_id": handle.host_birth_id},
+            "engine": {
+                "pid": int(engine.get("pid", 0)),
+                "birth_id": str(engine.get("process_birth_id", "")),
+            },
+            "engine_listener": {
+                "pid": int(engine.get("comfy_pid", 0)),
+                "birth_id": str(engine.get("comfy_process_birth_id", "")),
+            },
+        }
+        for name, expected in expected_processes.items():
+            process = identity_value.get(name)
+            if (
+                not isinstance(process, Mapping)
+                or process.get("pid") != expected["pid"]
+                or process.get("birth_id") != expected["birth_id"]
+            ):
+                raise _HandoffRejected("private Worker handoff export graph is invalid")
+        return export
+
+    def _cached_handoff_ack(
+        self, request: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], bool] | None:
+        current = self._handoff
+        command = request.get("command")
+        if current is None or not isinstance(command, str):
+            return None
+        same_identity = (
+            request.get("handoff_id") == current.handoff_id
+            and request.get("nonce_digest") == current.nonce_digest
+            and request.get("sealed_record_digest") == current.sealed_record_digest
+            and (
+                command == "handoff_seal"
+                or (
+                    request.get("deadline_monotonic")
+                    == current.deadline_monotonic
+                    and request.get("deadline_unix_ms") == current.deadline_unix_ms
+                )
+            )
+        )
+        if not same_identity:
+            return None
+        acknowledgements = current.acknowledgements or {}
+        cached = acknowledgements.get(command)
+        if cached is None:
+            return None
+        if command == "handoff_seal":
+            raise _HandoffRejected(
+                "private Worker handoff seal authority is already consumed"
+            )
+        replay_phases = {
+            "handoff_prepare": "paused",
+            "handoff_seal": "export_sealed",
+            "handoff_adopt": "adopt_prepared",
+            "handoff_commit": "rebind_committed",
+            "resume_prepare": "resume_armed",
+            "resume_commit": "resumed",
+        }
+        if replay_phases.get(command) != current.phase:
+            raise _HandoffRejected("private Worker handoff replay phase is invalid")
+        if (
+            time.monotonic() >= current.deadline_monotonic
+            or time.time() * 1000 >= current.deadline_unix_ms
+        ):
+            raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
+        digest = _sha256_json(dict(request))
+        if cached[0] != digest:
+            raise _HandoffRejected("private Worker handoff replay changed")
+        return dict(cached[1]), False
+
+    def _remember_handoff_ack(
+        self, request: Mapping[str, Any], response: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        current = self._handoff
+        if current is not None:
+            if current.acknowledgements is None:
+                current.acknowledgements = {}
+            current.acknowledgements[str(request.get("command"))] = (
+                _sha256_json(dict(request)),
+                dict(response),
+            )
+        return response, False
+
+    def _finalized_handoff_ack(
+        self, request: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], bool] | None:
+        handoff_id = request.get("handoff_id")
+        tombstone = next(
+            (
+                item
+                for item in reversed(self._finalized_handoff_acks)
+                if item.handoff_id == handoff_id
+            ),
+            None,
+        )
+        if tombstone is None:
+            return None
+        if (
+            self._handoff is None
+            and request.get("command") == "handoff_finalize"
+            and hmac.compare_digest(
+                _sha256_json(dict(request)), tombstone.request_digest
+            )
+        ):
+            return dict(tombstone.response), False
+        raise _HandoffRejected("private Worker handoff is finalized")
+
+    def _remember_finalized_handoff_ack(
+        self, request: Mapping[str, Any], response: Mapping[str, Any]
+    ) -> None:
+        handoff_id = str(request["handoff_id"])
+        self._finalized_handoff_acks = [
+            item
+            for item in self._finalized_handoff_acks
+            if item.handoff_id != handoff_id
+        ]
+        self._finalized_handoff_acks.append(
+            _FinalizedHandoffAck(
+                handoff_id=handoff_id,
+                request_digest=_sha256_json(dict(request)),
+                response=dict(response),
+            )
+        )
+        del self._finalized_handoff_acks[:-8]
+
+    def handoff_command(
+        self, handle: object, request: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        if not isinstance(handle, PreparedHostHandle) or handle is not self._active:
+            raise _HandoffRejected("prepared host handle is not owned by this Worker")
+        if not handle.activated:
+            raise _HandoffRejected("GenericPackHost is not activated")
+        command = request.get("command")
+        finalized = self._finalized_handoff_ack(request)
+        if finalized is not None:
+            return finalized
+        cached = self._cached_handoff_ack(request)
+        if cached is not None:
+            return cached
+        if command == "handoff_prepare":
+            values = self._common_handoff_request(
+                request,
+                frozenset(
+                    {
+                        "old_owner", "old_runtime",
+                        "receipt_evidence_digest", "credential_generation",
+                        "sealed_record",
+                    }
+                ),
+            )
+            if self._handoff is not None:
+                raise _HandoffRejected("private Worker handoff is already prepared")
+            if time.monotonic() >= values[3] or time.time() * 1000 >= values[4]:
+                raise _HandoffRejected("private Worker handoff deadline expired")
+            old_runtime = _runtime_identity(request.get("old_runtime"), "old Runtime")
+            old_owner = _runtime_owner(request.get("old_owner"), "old owner")
+            if (
+                self._runtime_owner_identity is not None
+                and old_owner != self._runtime_owner_identity
+            ):
+                raise _HandoffRejected("private Worker owner A is stale")
+            sealed_record = _sealed_handoff_record(
+                request.get("sealed_record"),
+                handoff_id=values[0],
+                nonce_digest=values[1],
+                sealed_record_digest=values[2],
+                old_owner=old_owner,
+                deadline_monotonic=values[3],
+                deadline_unix_ms=values[4],
+            )
+            credential = _credential_generation(request.get("credential_generation"))
+            receipt_digest = request.get("receipt_evidence_digest")
+            if not _is_sha256(receipt_digest):
+                raise _HandoffRejected("handoff receipt evidence digest is invalid")
+            if receipt_digest != (handle.activation_grant or {}).get("evidence_digest"):
+                raise _HandoffRejected("handoff receipt evidence does not match activation")
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": "pause_prepare",
+                "handoff_id": values[0],
+                "nonce_digest": values[1],
+                "deadline_monotonic": values[3],
+                "deadline_unix_ms": values[4],
+                "old_runtime": old_runtime,
+                "old_owner": old_owner,
+            }
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=frozenset({"paused", "active_work"}),
+                deadline_monotonic=values[3],
+                snapshot=True,
+            )
+            state = _registered_state(host_ack["registered_state"])
+            if state["runtime"] != old_runtime:
+                raise _HandoffAuthorizedFailure("GenericPackHost old Runtime state changed")
+            if host_ack["status"] == "active_work":
+                return self._ack_payload(
+                    {
+                        "version": CONTROL_VERSION,
+                        "command": "handoff_prepare_ack",
+                        "handoff_id": values[0],
+                        "status": "active_work",
+                        "nonce_digest": values[1],
+                        "sealed_record_digest": values[2],
+                        "host_ack": host_ack,
+                        "worker_phase": "owned",
+                    }
+                ), False
+            self._handoff = _WorkerHandoff(
+                handoff_id=values[0],
+                nonce_digest=values[1],
+                sealed_record_digest=values[2],
+                deadline_monotonic=values[3],
+                deadline_unix_ms=values[4],
+                old_runtime=old_runtime,
+                receipt_evidence_digest=str(receipt_digest),
+                credential_generation=credential,
+                registered_state=state,
+                old_owner=old_owner,
+                sealed_record=sealed_record,
+                acknowledgements={},
+            )
+            self._runtime_owner_identity = old_owner
+            response = self._ack_payload(
+                {
+                    "version": CONTROL_VERSION,
+                    "command": "handoff_prepare_ack",
+                    "handoff_id": values[0],
+                    "status": "prepared",
+                    "nonce_digest": values[1],
+                    "sealed_record_digest": values[2],
+                    "host_ack": host_ack,
+                    "worker_phase": "paused",
+                }
+            )
+            return self._remember_handoff_ack(request, response)
+
+        if command == "handoff_seal":
+            expected = {
+                "version", "command", "handoff_id", "nonce", "nonce_digest",
+                "sealed_record_digest", "export_sealed_digest",
+                "export_record_digest", "export", "old_owner",
+            }
+            if set(request) != expected or request.get("version") != CONTROL_VERSION:
+                raise _HandoffRejected(
+                    "private Worker handoff seal request has an invalid shape"
+                )
+            current = self._handoff
+            if current is None:
+                raise _HandoffRejected("private Worker has no prepared handoff")
+            if (
+                current.phase != "paused"
+                or request.get("handoff_id") != current.handoff_id
+                or request.get("nonce_digest") != current.nonce_digest
+                or request.get("sealed_record_digest")
+                != current.sealed_record_digest
+            ):
+                raise _HandoffRejected("private Worker handoff seal binding is invalid")
+            if (
+                time.monotonic() >= current.deadline_monotonic
+                or time.time() * 1000 >= current.deadline_unix_ms
+            ):
+                raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
+            nonce = request.get("nonce")
+            if (
+                not isinstance(nonce, str)
+                or len(nonce) < 32
+                or not hmac.compare_digest(_nonce_digest(nonce), current.nonce_digest)
+                or _runtime_owner(request.get("old_owner"), "old owner")
+                != current.old_owner
+            ):
+                raise _HandoffRejected("private Worker handoff seal authority is invalid")
+            export_sealed_digest = request.get("export_sealed_digest")
+            export_record_digest = request.get("export_record_digest")
+            if not _is_sha256(export_sealed_digest) or not _is_sha256(
+                export_record_digest
+            ):
+                raise _HandoffRejected("private Worker handoff export digest is invalid")
+            export = self._validate_handoff_export(
+                handle, current, request.get("export")
+            )
+            expected_export_seal = _sha256_json(
+                {
+                    "version": HANDOFF_EXPORT_SEAL_VERSION,
+                    "sealed_record_digest": current.sealed_record_digest,
+                    "nonce_digest": current.nonce_digest,
+                    "export": export,
+                }
+            )
+            if not hmac.compare_digest(
+                str(export_sealed_digest), expected_export_seal
+            ):
+                raise _HandoffRejected("private Worker handoff export seal is invalid")
+            bound_record = {
+                key: item
+                for key, item in current.sealed_record.items()
+                if key != "record_digest"
+            }
+            bound_record["export"] = export
+            bound_record["export_sealed_digest"] = str(export_sealed_digest)
+            if not hmac.compare_digest(
+                str(export_record_digest), _sha256_json(bound_record)
+            ):
+                raise _HandoffRejected(
+                    "private Worker handoff export record digest is invalid"
+                )
+            current.export_sealed_digest = str(export_sealed_digest)
+            current.export_record_digest = str(export_record_digest)
+            current.export_digest = _sha256_json(export)
+            current.phase = "export_sealed"
+            response = self._ack_payload(
+                {
+                    "version": CONTROL_VERSION,
+                    "command": "handoff_seal_ack",
+                    "handoff_id": current.handoff_id,
+                    "status": "sealed",
+                    "nonce_digest": current.nonce_digest,
+                    "sealed_record_digest": current.sealed_record_digest,
+                    "host_ack": {
+                        "status": "export_sealed",
+                        "host": {
+                            "pid": handle.host.pid,
+                            "birth_id": handle.host_birth_id,
+                        },
+                    },
+                    "worker_phase": "export_sealed",
+                }
+            )
+            return self._remember_handoff_ack(request, response)
+
+        if command == "handoff_adopt":
+            current = self._bound_handoff(
+                request,
+                frozenset(
+                    {
+                        "nonce", "request_id", "old_runtime", "new_runtime", "endpoint",
+                        "credential_file", "credential_generation", "receipt_evidence_digest",
+                        "executor_incarnation", "registered_state", "old_owner", "new_owner",
+                        "export_sealed_digest", "export_record_digest",
+                        "adopter_record_digest",
+                    }
+                ),
+                "export_sealed",
+            )
+            nonce = request.get("nonce")
+            if (
+                not isinstance(nonce, str)
+                or len(nonce) < 32
+                or not hmac.compare_digest(_nonce_digest(nonce), current.nonce_digest)
+            ):
+                raise _HandoffRejected("private Worker handoff nonce is invalid")
+            request_id = request.get("request_id")
+            if (
+                not isinstance(request_id, str)
+                or request_id != current.handoff_id
+                or len(request_id) > 256
+            ):
+                raise _HandoffRejected("private Worker adopter request is invalid")
+            old_runtime = _runtime_identity(request.get("old_runtime"), "old Runtime")
+            new_runtime = _runtime_identity(request.get("new_runtime"), "new Runtime")
+            old_owner = _runtime_owner(request.get("old_owner"), "old owner")
+            new_owner = _runtime_owner(request.get("new_owner"), "new owner")
+            generation = _credential_generation(request.get("credential_generation"))
+            registered = _registered_state(request.get("registered_state"))
+            credential_file = request.get("credential_file")
+            incarnation = request.get("executor_incarnation")
+            adopter_record_digest = request.get("adopter_record_digest")
+            runtime_transition_valid = (
+                new_runtime["endpoint"] == old_runtime["endpoint"]
+                and new_runtime["protocol"] == old_runtime["protocol"]
+                and new_runtime["schema_digest"] == old_runtime["schema_digest"]
+                and new_runtime["runtime_epoch"] > old_runtime["runtime_epoch"]
+                and new_runtime["runtime_instance_id"] != old_runtime["runtime_instance_id"]
+                and new_runtime["runtime_session_id"] != old_runtime["runtime_session_id"]
+            )
+            if (
+                old_runtime != current.old_runtime
+                or old_owner != current.old_owner
+                or new_owner == current.old_owner
+                or request.get("export_sealed_digest")
+                != current.export_sealed_digest
+                or request.get("export_record_digest") != current.export_record_digest
+                or not _is_sha256(adopter_record_digest)
+                or adopter_record_digest == current.export_record_digest
+                or not runtime_transition_valid
+                or generation != current.credential_generation
+                or registered != current.registered_state
+                or request.get("receipt_evidence_digest") != current.receipt_evidence_digest
+                or request.get("endpoint") != new_runtime["endpoint"]
+                or credential_file != str(self.config.credential_file)
+                or not isinstance(incarnation, str)
+                or not incarnation
+                or incarnation != (handle.activation_grant or {}).get("executor_incarnation")
+            ):
+                raise _HandoffRejected("private Worker adopter evidence is invalid")
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": "rebind_prepare",
+                "handoff_id": current.handoff_id,
+                "nonce_digest": current.nonce_digest,
+                "deadline_monotonic": current.deadline_monotonic,
+                "deadline_unix_ms": current.deadline_unix_ms,
+                "new_runtime": new_runtime,
+                "credential_file": str(self.config.credential_file),
+                "credential_generation": generation,
+                "registered_state": registered,
+                "old_owner": current.old_owner,
+                "new_owner": new_owner,
+            }
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=frozenset({"rebind_prepared"}),
+                deadline_monotonic=current.deadline_monotonic,
+                snapshot=True,
+            )
+            prospective = _registered_state(host_ack["registered_state"])
+            if prospective["runtime"] != new_runtime:
+                raise _HandoffAuthorizedFailure("GenericPackHost did not preview the new Runtime")
+            current.phase = "adopt_prepared"
+            current.adopter_request_id = request_id
+            current.new_runtime = new_runtime
+            current.new_owner = new_owner
+            current.adopter_record_digest = str(adopter_record_digest)
+            current.registered_state = prospective
+            current.nonce_consumed = True
+            response = self._ack_payload(
+                {
+                    "version": CONTROL_VERSION,
+                    "command": "handoff_adopt_ack",
+                    "handoff_id": current.handoff_id,
+                    "status": "prepared",
+                    "nonce_digest": current.nonce_digest,
+                    "sealed_record_digest": current.sealed_record_digest,
+                    "host_ack": host_ack,
+                    "worker_phase": "adopt_prepared",
+                }
+            )
+            return self._remember_handoff_ack(request, response)
+
+        if command == "handoff_commit":
+            current = self._bound_handoff(
+                request,
+                frozenset(
+                    {"new_owner", "new_runtime", "credential_generation", "registered_state"}
+                ),
+                "adopt_prepared",
+            )
+            if (
+                _runtime_owner(request.get("new_owner"), "new owner") != current.new_owner
+                or _runtime_identity(request.get("new_runtime"), "new Runtime")
+                != current.new_runtime
+                or _credential_generation(request.get("credential_generation"))
+                != current.credential_generation
+                or _registered_state(request.get("registered_state"))
+                != current.registered_state
+            ):
+                raise _HandoffRejected("private Worker commit evidence is invalid")
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": "rebind_commit",
+                "handoff_id": current.handoff_id,
+                "nonce_digest": current.nonce_digest,
+                "new_owner": current.new_owner,
+            }
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=frozenset({"rebind_committed"}),
+                deadline_monotonic=current.deadline_monotonic,
+                snapshot=True,
+                registration=True,
+            )
+            rebound = _registered_state(host_ack["registered_state"])
+            if rebound["runtime"] != current.new_runtime:
+                raise _HandoffAuthorizedFailure("GenericPackHost did not bind the new Runtime")
+            current.registered_state = rebound
+            current.phase = "rebind_committed"
+            response_status = "committed"
+            response_phase = "rebind_committed"
+        elif command == "resume_prepare":
+            current = self._bound_handoff(
+                request, frozenset({"new_owner", "new_runtime"}), "rebind_committed"
+            )
+            if (
+                _runtime_owner(request.get("new_owner"), "new owner") != current.new_owner
+                or _runtime_identity(request.get("new_runtime"), "new Runtime")
+                != current.new_runtime
+            ):
+                raise _HandoffRejected("private Worker resume Runtime is invalid")
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": "resume_prepare",
+                "handoff_id": current.handoff_id,
+                "nonce_digest": current.nonce_digest,
+                "new_owner": current.new_owner,
+            }
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=frozenset({"resume_prepared"}),
+                deadline_monotonic=current.deadline_monotonic,
+            )
+            current.phase = "resume_armed"
+            response_status = "prepared"
+            response_phase = "resume_armed"
+        elif command == "resume_commit":
+            current = self._bound_handoff(
+                request, frozenset({"new_owner", "new_runtime"}), "resume_armed"
+            )
+            if (
+                _runtime_owner(request.get("new_owner"), "new owner") != current.new_owner
+                or _runtime_identity(request.get("new_runtime"), "new Runtime")
+                != current.new_runtime
+            ):
+                raise _HandoffRejected("private Worker resume Runtime is invalid")
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": "resume_commit",
+                "handoff_id": current.handoff_id,
+                "nonce_digest": current.nonce_digest,
+                "new_owner": current.new_owner,
+            }
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=frozenset({"resumed"}),
+                deadline_monotonic=current.deadline_monotonic,
+            )
+            current.phase = "resumed"
+            response_status = "committed"
+            response_phase = "resumed"
+        elif command == "handoff_finalize":
+            current = self._bound_handoff(
+                request, frozenset({"new_owner"}), "resumed"
+            )
+            new_owner = _runtime_owner(request.get("new_owner"), "new owner")
+            if new_owner != current.new_owner:
+                raise _HandoffRejected("private Worker finalizer identity is invalid")
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": "handoff_finalize",
+                "handoff_id": current.handoff_id,
+                "nonce_digest": current.nonce_digest,
+                "new_owner": current.new_owner,
+            }
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=frozenset({"adopted"}),
+                deadline_monotonic=current.deadline_monotonic,
+            )
+            response = self._ack_payload(
+                {
+                    "version": CONTROL_VERSION,
+                    "command": "handoff_finalize_ack",
+                    "handoff_id": current.handoff_id,
+                    "status": "finalized",
+                    "nonce_digest": current.nonce_digest,
+                    "sealed_record_digest": current.sealed_record_digest,
+                    "host_ack": host_ack,
+                    "worker_phase": "finalized",
+                }
+            )
+            self._runtime_owner_identity = new_owner
+            self._remember_finalized_handoff_ack(request, response)
+            self._handoff = None
+            return response, False
+        elif command == "handoff_abort":
+            phase = str(self._handoff.phase if self._handoff else "")
+            owner_field = (
+                "old_owner"
+                if phase in {"paused", "export_sealed"}
+                else "new_owner"
+            )
+            current = self._bound_handoff(
+                request, frozenset({"reason_code", owner_field}), phase
+            )
+            expected_owner = current.old_owner if owner_field == "old_owner" else current.new_owner
+            if _runtime_owner(request.get(owner_field), owner_field) != expected_owner:
+                raise _HandoffRejected("private Worker abort owner is invalid")
+            reason = request.get("reason_code")
+            if not isinstance(reason, str) or not reason or len(reason) > 256:
+                raise _HandoffRejected("private Worker abort reason is invalid")
+            host_command = (
+                "pause_cancel"
+                if current.phase in {"paused", "export_sealed"}
+                else "handoff_abort"
+            )
+            host_request = {
+                "version": HOST_CONTROL_VERSION,
+                "command": host_command,
+                "handoff_id": current.handoff_id,
+                "nonce_digest": current.nonce_digest,
+            }
+            if host_command == "handoff_abort":
+                host_request["reason"] = reason
+                statuses = frozenset({"aborted"})
+            else:
+                host_request["old_owner"] = current.old_owner
+                statuses = frozenset({"pause_cancelled"})
+            host_ack = self._forward_host(
+                handle,
+                host_request,
+                statuses=statuses,
+                deadline_monotonic=current.deadline_monotonic,
+            )
+            if host_command == "pause_cancel":
+                self._handoff = None
+                return self._ack_payload(
+                    {
+                        "version": CONTROL_VERSION,
+                        "command": "handoff_abort_ack",
+                        "handoff_id": current.handoff_id,
+                        "status": "cancelled",
+                        "nonce_digest": current.nonce_digest,
+                        "sealed_record_digest": current.sealed_record_digest,
+                        "host_ack": host_ack,
+                        "worker_phase": "owned",
+                    }
+                ), False
+            self.abort(handle)
+            return self._ack_payload(
+                {
+                    "version": CONTROL_VERSION,
+                    "command": "handoff_abort_ack",
+                    "handoff_id": current.handoff_id,
+                    "status": "aborted",
+                    "nonce_digest": current.nonce_digest,
+                    "sealed_record_digest": current.sealed_record_digest,
+                    "host_ack": host_ack,
+                    "worker_phase": "aborted",
+                }
+            ), True
+        else:
+            raise _HandoffRejected("private Worker handoff command is invalid")
+
+        response = self._ack_payload(
+            {
+                "version": CONTROL_VERSION,
+                "command": f"{command}_ack",
+                "handoff_id": current.handoff_id,
+                "status": response_status,
+                "nonce_digest": current.nonce_digest,
+                "sealed_record_digest": current.sealed_record_digest,
+                "host_ack": host_ack,
+                "worker_phase": response_phase,
+            }
+        )
+        return self._remember_handoff_ack(request, response)
+
     def abort(self, handle: object) -> None:
         if not isinstance(handle, PreparedHostHandle) or handle is not self._active:
             return
@@ -1423,12 +2962,25 @@ class LocalWorkerPreparerAdapter:
         try:
             if handle.activation.fileno() >= 0:
                 handle.activation.close()
+            if handle.host_control.fileno() >= 0:
+                handle.host_control.close()
             if handle.host.poll() is None:
-                if self._birth(handle.host.pid) != handle.host_birth_id:
+                identity = handle.host_cleanup_identity
+                if not _verify_cleanup_identity(identity):
                     raise LauncherConfigurationError(
-                        "prepared host replacement prevents safe cleanup"
+                        "prepared host disappeared before safe cleanup"
                     )
-                _terminate_and_wait(handle.host, handle.host.pid)
+                if identity.process_group != identity.pid or identity.session_id != identity.pid:
+                    raise LauncherConfigurationError(
+                        "prepared host cleanup group is invalid"
+                    )
+                _signal_owned_group(handle.host, signal.SIGTERM)
+                try:
+                    handle.host.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    if _verify_cleanup_identity(identity):
+                        _signal_owned_group(handle.host, signal.SIGKILL)
+                    handle.host.wait(timeout=3)
             _stop_owned_vibecomfy_session(handle.engine)
         except BaseException as exc:
             error = exc
@@ -1438,6 +2990,7 @@ class LocalWorkerPreparerAdapter:
                 handle.readiness_profile.unlink(missing_ok=True)
             handle.closed = True
             self._active = None
+            self._handoff = None
         if error is not None:
             raise error
 
@@ -1487,7 +3040,11 @@ class PreparedWorkerHandle:
 
 def _send_private_frame(channel: socket.socket, payload: Mapping[str, Any]) -> None:
     encoded = json.dumps(
-        dict(payload), sort_keys=True, separators=(",", ":"), allow_nan=False
+        dict(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
     if len(encoded) > _CONTROL_FRAME_LIMIT:
         raise LauncherConfigurationError("local Worker control frame is too large")
@@ -1512,6 +3069,8 @@ def _receive_private_frame(channel: socket.socket) -> dict[str, Any]:
         raise LauncherConfigurationError("local Worker control frame is malformed") from exc
     if not isinstance(value, dict):
         raise LauncherConfigurationError("local Worker control frame must be an object")
+    if _canonical_json(value) != encoded:
+        raise LauncherConfigurationError("local Worker control frame is not canonical")
     return value
 
 
@@ -1627,6 +3186,7 @@ class LocalWorkerProcessPreparer:
             self.abort(self._active)
         parent, child = socket.socketpair()
         worker: subprocess.Popen[bytes] | None = None
+        custody_owner = _CustodyLaunchOwner("worker")
         try:
             executable = Path(getattr(profile, "worker_executable"))
             worker_root = Path(__file__).resolve().parents[2]
@@ -1636,11 +3196,13 @@ class LocalWorkerProcessPreparer:
             if self.config.launch_mode == "editable":
                 child_env["PYTHONPATH"] = str(worker_root)
                 worker_cwd = worker_root
-            worker = subprocess.Popen(
+            worker = _custodied_popen(
                 [
                     str(executable), "-m", "source.runtime.supervisor",
                     "--prepared-control-fd", str(child.fileno()),
                 ],
+                custody_role="worker",
+                custody_owner=custody_owner,
                 cwd=str(worker_cwd),
                 env=child_env,
                 stdin=subprocess.DEVNULL,
@@ -1738,6 +3300,32 @@ class LocalWorkerProcessPreparer:
         )
         return handle if response.get("reconnected") is True else None
 
+    def handoff(self, handle: object, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Send one exact v2 handoff command over the retained live descriptor."""
+        if not isinstance(handle, PreparedWorkerHandle) or handle is not self._active:
+            raise LauncherConfigurationError("prepared Worker handle is not active")
+        if request.get("version") != CONTROL_VERSION:
+            raise LauncherConfigurationError("prepared Worker handoff version is invalid")
+        if handle.closed or handle.worker.poll() is not None:
+            raise LauncherConfigurationError("prepared Worker is not alive")
+        if self._birth(handle.worker.pid) != handle.worker_birth_id:
+            raise LauncherConfigurationError("prepared Worker identity changed")
+        _send_private_frame(handle.control, request)
+        response = _receive_private_frame(handle.control)
+        if response.get("version") != CONTROL_VERSION:
+            raise LauncherConfigurationError("prepared Worker control version is invalid")
+        if response.get("status") == "error":
+            raise LauncherConfigurationError(
+                str(response.get("error") or "prepared Worker rejected the handoff")
+            )
+        claimed = response.get("ack_sha256")
+        without_digest = {name: value for name, value in response.items() if name != "ack_sha256"}
+        if not isinstance(claimed, str) or not hmac.compare_digest(
+            claimed, _sha256_json(without_digest)
+        ):
+            raise LauncherConfigurationError("prepared Worker handoff acknowledgement is invalid")
+        return response
+
 
 def _serve_prepared_worker(descriptor: int) -> int:
     """Run the private Worker side of ``LocalWorkerProcessPreparer``."""
@@ -1749,11 +3337,44 @@ def _serve_prepared_worker(descriptor: int) -> int:
     try:
         while True:
             try:
+                handoff = getattr(adapter, "_handoff", None)
+                wait_timeout: float | None = None
+                if handoff is not None and handoff.phase != "resumed":
+                    remaining = handoff.deadline_monotonic - time.monotonic()
+                    if remaining <= 0:
+                        raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
+                    wait_timeout = remaining
+                watched: list[socket.socket] = [control]
+                host_channel = getattr(handle, "host_control", None)
+                if isinstance(host_channel, socket.socket) and host_channel.fileno() >= 0:
+                    watched.append(host_channel)
+                readable, _, _ = select.select(watched, [], [], wait_timeout)
+                if not readable:
+                    raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
+                if host_channel in readable:
+                    try:
+                        pending = host_channel.recv(1, socket.MSG_PEEK)
+                    except OSError as exc:
+                        raise _HandoffAuthorizedFailure(
+                            "GenericPackHost control channel failed"
+                        ) from exc
+                    if not pending:
+                        raise _HandoffAuthorizedFailure(
+                            "GenericPackHost control channel closed"
+                        )
+                    raise _HandoffAuthorizedFailure(
+                        "GenericPackHost control channel sent an unsolicited frame"
+                    )
+                control.settimeout(None)
                 request = _receive_private_frame(control)
                 if request.get("version") != CONTROL_VERSION:
                     raise LauncherConfigurationError("private Worker control version is invalid")
                 command = request.get("command")
                 if command == "prepare":
+                    if set(request) != {
+                        "version", "command", "operation_id", "channel_id", "profile", "config"
+                    }:
+                        raise LauncherConfigurationError("private Worker prepare request has an invalid shape")
                     if adapter is not None:
                         raise LauncherConfigurationError("private Worker is already prepared")
                     profile_value = request.get("profile")
@@ -1784,18 +3405,24 @@ def _serve_prepared_worker(descriptor: int) -> int:
                         "report": dict(adapter.report(handle)),
                     }
                 elif command == "report" and adapter is not None and handle is not None:
+                    if set(request) != {"version", "command"}:
+                        raise LauncherConfigurationError("private Worker report request has an invalid shape")
                     response = {
                         "version": CONTROL_VERSION,
                         "status": "ok",
                         "report": dict(adapter.report(handle)),
                     }
                 elif command == "activate" and adapter is not None and handle is not None:
+                    if set(request) != {"version", "command", "grant"}:
+                        raise LauncherConfigurationError("private Worker activation request has an invalid shape")
                     grant = request.get("grant")
                     if not isinstance(grant, Mapping):
                         raise LauncherConfigurationError("private Worker activation grant is invalid")
                     adapter.activate(handle, grant)
                     response = {"version": CONTROL_VERSION, "status": "ok"}
                 elif command == "reconnect" and adapter is not None and handle is not None:
+                    if set(request) != {"version", "command", "receipt"}:
+                        raise LauncherConfigurationError("private Worker reconnect request has an invalid shape")
                     receipt = request.get("receipt")
                     if not isinstance(receipt, Mapping):
                         raise LauncherConfigurationError("private Worker reconnect receipt is invalid")
@@ -1805,20 +3432,55 @@ def _serve_prepared_worker(descriptor: int) -> int:
                         "reconnected": adapter.reconnect(receipt) is handle,
                     }
                 elif command == "abort" and adapter is not None and handle is not None:
+                    if set(request) != {"version", "command"}:
+                        raise LauncherConfigurationError("private Worker abort request has an invalid shape")
                     adapter.abort(handle)
                     _send_private_frame(
                         control, {"version": CONTROL_VERSION, "status": "ok"}
                     )
                     return 0
+                elif (
+                    command in {
+                        "handoff_prepare", "handoff_seal", "handoff_adopt",
+                        "handoff_commit", "resume_prepare", "resume_commit",
+                        "handoff_finalize", "handoff_abort",
+                    }
+                    and adapter is not None
+                    and handle is not None
+                ):
+                    response, should_exit = adapter.handoff_command(handle, request)
+                    _send_private_frame(control, response)
+                    if should_exit:
+                        return 0
+                    continue
                 else:
                     raise LauncherConfigurationError("private Worker command is invalid")
                 _send_private_frame(control, response)
+            except _HandoffAuthorizedFailure as exc:
+                if adapter is not None and handle is not None:
+                    try:
+                        adapter.abort(handle)
+                    except BaseException:
+                        pass
+                try:
+                    _send_private_frame(
+                        control,
+                        {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
+                    )
+                except BaseException:
+                    pass
+                return 78
+            except _HandoffRejected as exc:
+                _send_private_frame(
+                    control,
+                    {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
+                )
             except LauncherConfigurationError as exc:
                 _send_private_frame(
                     control,
                     {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
                 )
-    except (BrokenPipeError, ConnectionError, OSError):
+    except (BrokenPipeError, ConnectionError, OSError, socket.timeout):
         if adapter is not None and handle is not None:
             try:
                 adapter.abort(handle)
@@ -1892,6 +3554,7 @@ def launch_generic_pack_host(
     signal.signal(signal.SIGTERM, _forward_signal)
     owned_pgid: int | None = None
     cleanup_complete = False
+    custody_owner = _CustodyLaunchOwner("generic_pack_host")
 
     def _cleanup_host() -> None:
         nonlocal cleanup_complete, owned_vibecomfy
@@ -1910,8 +3573,10 @@ def launch_generic_pack_host(
 
     try:
         try:
-            child = subprocess.Popen(
+            child = _custodied_popen(
                 argv,
+                custody_role="generic_pack_host",
+                custody_owner=custody_owner,
                 cwd=str(_host_working_directory(config)),
                 env=child_env,
                 stdin=subprocess.DEVNULL,
@@ -1924,7 +3589,7 @@ def launch_generic_pack_host(
                 except OSError:
                     own_group = False
                 if not own_group:
-                    child.terminate()
+                    _signal_owned_group(child, signal.SIGTERM)
                     child.wait(timeout=3)
                     raise LauncherConfigurationError(
                         "GenericPackHost did not become its own process-group leader"
