@@ -698,8 +698,8 @@ def _registered(
             {
                 "capability_id": "echo",
                 "capability_digest": "sha256:" + "4" * 64,
-                "source_digest": "sha256:" + "5" * 64,
-                "dependency_digest": "sha256:" + "6" * 64,
+                "source_digest": "5" * 64,
+                "dependency_digest": "6" * 64,
                 "ready": True,
                 "preflight_digest": "sha256:" + "7" * 64,
             }
@@ -717,6 +717,34 @@ def _registered(
         ],
     }
     return value
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        ("source_digest", "sha256:" + "5" * 64),
+        ("source_digest", "5" * 63),
+        ("dependency_digest", "sha256:" + "6" * 64),
+        ("dependency_digest", "G" * 64),
+    ],
+)
+def test_registered_state_requires_generic_host_canonical_digest_shape(
+    field, invalid
+):
+    value = _registered(_runtime_identity("old"))
+    value["capabilities"][0][field] = invalid
+    with pytest.raises(
+        supervisor.LauncherConfigurationError,
+        match=rf"registered capability {field} is invalid",
+    ):
+        supervisor._registered_state(value)
+
+
+def test_registered_state_accepts_generic_host_canonical_digest_shape():
+    value = _registered(_runtime_identity("old"))
+    normalized = supervisor._registered_state(value)
+    assert normalized["capabilities"][0]["source_digest"] == "5" * 64
+    assert normalized["capabilities"][0]["dependency_digest"] == "6" * 64
 
 
 def _handoff_fixture(tmp_path, monkeypatch, statuses):

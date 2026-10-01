@@ -129,6 +129,16 @@ def _is_sha256(value: object) -> bool:
     return all(character in "0123456789abcdef" for character in suffix)
 
 
+def _is_canonical_digest(value: object) -> bool:
+    """Validate GenericPackHost's unprefixed canonical content digests."""
+
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _nonce_digest(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -1859,10 +1869,13 @@ def _registered_state(value: object) -> dict[str, Any]:
             raise LauncherConfigurationError("registered capability identity is invalid")
         if not isinstance(item["ready"], bool):
             raise LauncherConfigurationError("registered capability readiness is invalid")
-        for name in (
-            "capability_digest", "source_digest", "dependency_digest", "preflight_digest"
-        ):
+        for name in ("capability_digest", "preflight_digest"):
             if not _is_sha256(item[name]):
+                raise LauncherConfigurationError(
+                    f"registered capability {name} is invalid"
+                )
+        for name in ("source_digest", "dependency_digest"):
+            if not _is_canonical_digest(item[name]):
                 raise LauncherConfigurationError(
                     f"registered capability {name} is invalid"
                 )
