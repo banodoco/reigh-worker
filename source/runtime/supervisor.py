@@ -88,6 +88,19 @@ class _HandoffRejected(LauncherConfigurationError):
 class _HandoffAuthorizedFailure(LauncherConfigurationError):
     """The bound handoff custodian failed and the owned graph must be cleaned."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        host_control_diagnostic: Mapping[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.host_control_diagnostic = (
+            dict(host_control_diagnostic)
+            if host_control_diagnostic is not None
+            else None
+        )
+
 
 def _canonical_json(value: object) -> bytes:
     try:
@@ -1769,6 +1782,27 @@ def _bounded_handoff_error_code(exc: BaseException) -> str:
     )
 
 
+def _authorized_handoff_error_response(
+    exc: _HandoffAuthorizedFailure,
+    command: object,
+) -> dict[str, Any]:
+    error_code = _bounded_handoff_error_code(exc)
+    response: dict[str, Any] = {
+        "version": CONTROL_VERSION,
+        "status": "error",
+        "error": "prepared Worker rejected the handoff",
+        "error_code": error_code,
+        "error_stage": (
+            "control"
+            if error_code.startswith("host_")
+            else str(command or "control")
+        ),
+    }
+    if exc.host_control_diagnostic is not None:
+        response["host_control_diagnostic"] = dict(exc.host_control_diagnostic)
+    return response
+
+
 def _sealed_handoff_record(
     value: object,
     *,
@@ -2260,6 +2294,81 @@ class LocalWorkerPreparerAdapter:
             "host": {"pid": handle.host.pid, "birth_id": handle.host_birth_id},
         }
 
+    def _host_control_diagnostic(
+        self,
+        handle: PreparedHostHandle,
+        payload: Mapping[str, Any],
+        *,
+        stage: str,
+        category: str,
+        exc: BaseException | None = None,
+    ) -> dict[str, Any]:
+        operations = frozenset(
+            {
+                "pause_prepare", "pause_cancel", "rebind_prepare",
+                "rebind_commit", "resume_prepare", "resume_commit",
+                "handoff_finalize", "handoff_abort", "idle_peek",
+            }
+        )
+        phases = frozenset(
+            {
+                "owned", "paused", "export_sealed", "adopt_prepared",
+                "rebind_committed", "resume_armed", "resumed",
+            }
+        )
+        operation = payload.get("command")
+        current = self._handoff
+        phase = current.phase if current is not None else "owned"
+        diagnostic: dict[str, Any] = {
+            "operation": operation if operation in operations else "unknown",
+            "handoff_phase": phase if phase in phases else "unknown",
+            "stage": stage,
+            "exception_category": category,
+            "host": {
+                "pid": handle.host.pid,
+                "birth_id": handle.host_birth_id,
+            },
+        }
+        handoff_id = payload.get("handoff_id")
+        if isinstance(handoff_id, str) and 0 < len(handoff_id) <= 256:
+            diagnostic["handoff_id"] = handoff_id
+        error_number = getattr(exc, "errno", None)
+        if (
+            not isinstance(error_number, bool)
+            and isinstance(error_number, int)
+            and -(2**31) <= error_number < 2**31
+        ):
+            diagnostic["errno"] = error_number
+        return diagnostic
+
+    @staticmethod
+    def _host_control_exception_category(exc: BaseException) -> str:
+        if isinstance(exc, (socket.timeout, TimeoutError)):
+            return "timeout"
+        if isinstance(exc, BrokenPipeError):
+            return "broken_pipe"
+        if isinstance(exc, ConnectionResetError):
+            return "connection_reset"
+        if isinstance(exc, ConnectionError):
+            return "connection_error"
+        if isinstance(exc, LauncherConfigurationError):
+            detail = str(exc)
+            if detail == "local Worker control channel closed":
+                return "eof"
+            if detail in {
+                "local Worker control frame is too large",
+                "local Worker control channel carried multiple frames",
+                "local Worker control frame is malformed",
+                "local Worker control frame must be an object",
+                "local Worker control frame is not canonical",
+                "private control value is not canonical JSON",
+            }:
+                return "framing"
+            return "configuration"
+        if isinstance(exc, EOFError):
+            return "eof"
+        return "os_error"
+
     def _host_rpc(
         self,
         handle: PreparedHostHandle,
@@ -2275,12 +2384,60 @@ class LocalWorkerPreparerAdapter:
                 raise _HandoffAuthorizedFailure("private Worker handoff deadline expired")
         handle.host_control.settimeout(timeout)
         try:
-            _send_private_frame(handle.host_control, payload)
-            response = _receive_private_frame(handle.host_control)
-        except (socket.timeout, TimeoutError) as exc:
-            raise _HandoffAuthorizedFailure("GenericPackHost handoff acknowledgement timed out") from exc
-        except (BrokenPipeError, ConnectionError, OSError, LauncherConfigurationError) as exc:
-            raise _HandoffAuthorizedFailure("GenericPackHost control channel failed") from exc
+            try:
+                _send_private_frame(handle.host_control, payload)
+            except (socket.timeout, TimeoutError) as exc:
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost handoff acknowledgement timed out",
+                    host_control_diagnostic=self._host_control_diagnostic(
+                        handle,
+                        payload,
+                        stage="send",
+                        category=self._host_control_exception_category(exc),
+                        exc=exc,
+                    ),
+                ) from exc
+            except (
+                BrokenPipeError, ConnectionError, OSError,
+                LauncherConfigurationError,
+            ) as exc:
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost control channel failed",
+                    host_control_diagnostic=self._host_control_diagnostic(
+                        handle,
+                        payload,
+                        stage="send",
+                        category=self._host_control_exception_category(exc),
+                        exc=exc,
+                    ),
+                ) from exc
+            try:
+                response = _receive_private_frame(handle.host_control)
+            except (socket.timeout, TimeoutError) as exc:
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost handoff acknowledgement timed out",
+                    host_control_diagnostic=self._host_control_diagnostic(
+                        handle,
+                        payload,
+                        stage="receive",
+                        category=self._host_control_exception_category(exc),
+                        exc=exc,
+                    ),
+                ) from exc
+            except (
+                BrokenPipeError, ConnectionError, OSError,
+                LauncherConfigurationError,
+            ) as exc:
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost control channel failed",
+                    host_control_diagnostic=self._host_control_diagnostic(
+                        handle,
+                        payload,
+                        stage="receive",
+                        category=self._host_control_exception_category(exc),
+                        exc=exc,
+                    ),
+                ) from exc
         finally:
             try:
                 handle.host_control.settimeout(None)
@@ -2397,14 +2554,24 @@ class LocalWorkerPreparerAdapter:
         response = self._host_rpc(
             handle, payload, deadline_monotonic=deadline_monotonic
         )
-        return self._verify_host_ack(
-            handle,
-            payload,
-            response,
-            statuses=statuses,
-            snapshot=snapshot,
-            registration=registration,
-        )
+        try:
+            return self._verify_host_ack(
+                handle,
+                payload,
+                response,
+                statuses=statuses,
+                snapshot=snapshot,
+                registration=registration,
+            )
+        except _HandoffAuthorizedFailure as exc:
+            if exc.host_control_diagnostic is None:
+                exc.host_control_diagnostic = self._host_control_diagnostic(
+                    handle,
+                    payload,
+                    stage="validation",
+                    category="ack_validation",
+                )
+            raise
 
     def _validate_handoff_export(
         self,
@@ -3469,6 +3636,10 @@ class LocalWorkerProcessPreparer:
         return response
 
 
+_host_control_diagnostic_for = LocalWorkerPreparerAdapter._host_control_diagnostic
+_host_control_exception_category = LocalWorkerPreparerAdapter._host_control_exception_category
+
+
 def _serve_prepared_worker(descriptor: int) -> int:
     """Run the private Worker side of ``LocalWorkerProcessPreparer``."""
 
@@ -3498,14 +3669,37 @@ def _serve_prepared_worker(descriptor: int) -> int:
                         pending = host_channel.recv(1, socket.MSG_PEEK)
                     except OSError as exc:
                         raise _HandoffAuthorizedFailure(
-                            "GenericPackHost control channel failed"
+                            "GenericPackHost control channel failed",
+                            host_control_diagnostic=_host_control_diagnostic_for(
+                                adapter,
+                                handle,
+                                {"command": "idle_peek"},
+                                stage="peek",
+                                category=_host_control_exception_category(exc),
+                                exc=exc,
+                            ),
                         ) from exc
                     if not pending:
+                        exc = EOFError("host-control EOF")
                         raise _HandoffAuthorizedFailure(
-                            "GenericPackHost control channel closed"
-                        )
+                            "GenericPackHost control channel closed",
+                            host_control_diagnostic=_host_control_diagnostic_for(
+                                adapter,
+                                handle,
+                                {"command": "idle_peek"},
+                                stage="peek",
+                                category=_host_control_exception_category(exc),
+                                exc=exc,
+                            ),
+                        ) from exc
                     raise _HandoffAuthorizedFailure(
-                        "GenericPackHost control channel sent an unsolicited frame"
+                        "GenericPackHost control channel sent an unsolicited frame",
+                        host_control_diagnostic=adapter._host_control_diagnostic(
+                            handle,
+                            {"command": "idle_peek"},
+                            stage="peek",
+                            category="unsolicited_frame",
+                        ),
                     )
                 control.settimeout(None)
                 request = _receive_private_frame(control)
@@ -3604,20 +3798,9 @@ def _serve_prepared_worker(descriptor: int) -> int:
                 # until after abort makes the authenticated peer observe only
                 # EOF and loses the credential-safe failure classification.
                 try:
-                    error_code = _bounded_handoff_error_code(exc)
                     _send_private_frame(
                         control,
-                        {
-                            "version": CONTROL_VERSION,
-                            "status": "error",
-                            "error": "prepared Worker rejected the handoff",
-                            "error_code": error_code,
-                            "error_stage": (
-                                "control"
-                                if error_code.startswith("host_")
-                                else str(command or "control")
-                            ),
-                        },
+                        _authorized_handoff_error_response(exc, command),
                     )
                 except BaseException:
                     pass

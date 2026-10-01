@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import errno
 import json
 import os
 import signal
@@ -1096,6 +1097,128 @@ def test_handoff_diagnostic_codes_are_bounded_and_secret_free():
     ) == "handoff_rejected"
 
 
+@pytest.mark.parametrize(
+    ("stage", "transport_error", "category", "error_number"),
+    [
+        ("send", BrokenPipeError(errno.EPIPE, "secret-token"), "broken_pipe", errno.EPIPE),
+        (
+            "receive",
+            ConnectionResetError(errno.ECONNRESET, "secret-token"),
+            "connection_reset",
+            errno.ECONNRESET,
+        ),
+        (
+            "receive",
+            supervisor.LauncherConfigurationError(
+                "local Worker control channel closed"
+            ),
+            "eof",
+            None,
+        ),
+        (
+            "receive",
+            supervisor.LauncherConfigurationError(
+                "local Worker control frame is malformed"
+            ),
+            "framing",
+            None,
+        ),
+        ("receive", socket.timeout("secret-token"), "timeout", None),
+        ("receive", OSError(errno.EIO, "secret-token"), "os_error", errno.EIO),
+    ],
+)
+def test_host_rpc_failure_diagnostic_is_bounded_and_secret_free(
+    monkeypatch, stage, transport_error, category, error_number
+):
+    class FakeChannel:
+        def settimeout(self, _timeout):
+            return None
+
+    adapter = object.__new__(supervisor.LocalWorkerPreparerAdapter)
+    adapter._handoff = SimpleNamespace(phase="export_sealed")
+    adapter._assert_live = lambda *_args, **_kwargs: None
+    handle = SimpleNamespace(
+        host_control=FakeChannel(),
+        host=SimpleNamespace(pid=6200),
+        host_birth_id="birth-6200",
+    )
+    payload = {
+        "command": "rebind_prepare",
+        "handoff_id": "handoff-1",
+        "credential_file": "/secret/token/path",
+        "credential_generation": {"token": "secret-token"},
+    }
+
+    def fail(*_args, **_kwargs):
+        raise transport_error
+
+    if stage == "send":
+        monkeypatch.setattr(supervisor, "_send_private_frame", fail)
+        monkeypatch.setattr(
+            supervisor,
+            "_receive_private_frame",
+            lambda *_args, **_kwargs: pytest.fail("receive followed failed send"),
+        )
+    else:
+        monkeypatch.setattr(
+            supervisor, "_send_private_frame", lambda *_args, **_kwargs: None
+        )
+        monkeypatch.setattr(supervisor, "_receive_private_frame", fail)
+
+    with pytest.raises(supervisor._HandoffAuthorizedFailure) as raised:
+        adapter._host_rpc(handle, payload)
+
+    diagnostic = raised.value.host_control_diagnostic
+    expected = {
+        "operation": "rebind_prepare",
+        "handoff_phase": "export_sealed",
+        "stage": stage,
+        "exception_category": category,
+        "host": {"pid": 6200, "birth_id": "birth-6200"},
+        "handoff_id": "handoff-1",
+    }
+    if error_number is not None:
+        expected["errno"] = error_number
+    assert diagnostic == expected
+    response = supervisor._authorized_handoff_error_response(
+        raised.value, "handoff_adopt"
+    )
+    assert response["error_code"] in {"host_control_failed", "authorized_failure"}
+    encoded = json.dumps(response)
+    assert "secret-token" not in encoded
+    assert "/secret/token/path" not in encoded
+
+
+def test_host_ack_validation_failure_has_correlated_diagnostic(monkeypatch):
+    adapter = object.__new__(supervisor.LocalWorkerPreparerAdapter)
+    adapter._handoff = SimpleNamespace(phase="export_sealed")
+    handle = SimpleNamespace(
+        host=SimpleNamespace(pid=6200),
+        host_birth_id="birth-6200",
+    )
+    payload = {
+        "command": "rebind_prepare",
+        "handoff_id": "handoff-validation",
+    }
+    monkeypatch.setattr(adapter, "_host_rpc", lambda *_args, **_kwargs: {})
+
+    with pytest.raises(supervisor._HandoffAuthorizedFailure) as raised:
+        adapter._forward_host(
+            handle,
+            payload,
+            statuses=frozenset({"rebind_prepared"}),
+        )
+
+    assert raised.value.host_control_diagnostic == {
+        "operation": "rebind_prepare",
+        "handoff_phase": "export_sealed",
+        "stage": "validation",
+        "exception_category": "ack_validation",
+        "host": {"pid": 6200, "birth_id": "birth-6200"},
+        "handoff_id": "handoff-validation",
+    }
+
+
 def _handoff_export(registered):
     identity = {
         "evidence_digest": "sha256:" + "d" * 64,
@@ -1557,7 +1680,11 @@ def test_persistent_host_control_eof_keeps_normal_worker_cleanup(tmp_path, monke
     runtime, worker = socket.socketpair()
     worker_host, host = socket.socketpair()
     events = []
-    owned = SimpleNamespace(host_control=worker_host)
+    owned = SimpleNamespace(
+        host_control=worker_host,
+        host=SimpleNamespace(pid=9876),
+        host_birth_id="host-birth",
+    )
 
     class FakeAdapter:
         _handoff = None
@@ -1605,6 +1732,13 @@ def test_persistent_host_control_eof_keeps_normal_worker_cleanup(tmp_path, monke
     assert error["error"] == "prepared Worker rejected the handoff"
     assert error["error_code"] == "host_control_closed"
     assert error["error_stage"] == "control"
+    assert error["host_control_diagnostic"] == {
+        "operation": "idle_peek",
+        "handoff_phase": "owned",
+        "stage": "peek",
+        "exception_category": "eof",
+        "host": {"pid": 9876, "birth_id": "host-birth"},
+    }
     thread.join(timeout=2)
     runtime.close()
     assert outcome == [78]
@@ -1618,7 +1752,11 @@ def test_persistent_host_control_refusal_precedes_blocked_cleanup(tmp_path, monk
     worker_host, host = socket.socketpair()
     cleanup_started = threading.Event()
     allow_cleanup = threading.Event()
-    owned = SimpleNamespace(host_control=worker_host)
+    owned = SimpleNamespace(
+        host_control=worker_host,
+        host=SimpleNamespace(pid=9876),
+        host_birth_id="host-birth",
+    )
 
     class FakeAdapter:
         _handoff = None
@@ -1669,6 +1807,13 @@ def test_persistent_host_control_refusal_precedes_blocked_cleanup(tmp_path, monk
         "error": "prepared Worker rejected the handoff",
         "error_code": "host_control_closed",
         "error_stage": "control",
+        "host_control_diagnostic": {
+            "operation": "idle_peek",
+            "handoff_phase": "owned",
+            "stage": "peek",
+            "exception_category": "eof",
+            "host": {"pid": 9876, "birth_id": "host-birth"},
+        },
     }
     assert cleanup_started.wait(timeout=1)
     assert thread.is_alive()
