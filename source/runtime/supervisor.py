@@ -45,7 +45,10 @@ HANDOFF_PAYLOAD_VERSION = "runtime.local-worker-handoff/v1"
 HOST_CONTROL_VERSION = "astrid.local-worker-host-control/v1"
 HANDOFF_RECORD_VERSION = "runtime.local-worker-handoff-record/v1"
 HANDOFF_EXPORT_SEAL_VERSION = "runtime.local-worker-handoff-export-seal/v1"
-_CONTROL_FRAME_LIMIT = 64 * 1024
+# Handoff seal requests contain the full registered-state export.  Match the
+# bounded Runtime-side private control ceiling so the exact sealed bytes can
+# be verified without truncation or a second unbound transport.
+_CONTROL_FRAME_LIMIT = 1024 * 1024
 VIBECOMFY_CLEANUP_TOTAL_SECONDS = 35.0
 VIBECOMFY_TERM_GRACE_SECONDS = 15.0
 

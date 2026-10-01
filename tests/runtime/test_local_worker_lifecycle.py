@@ -18,6 +18,46 @@ from source.runtime import supervisor
 from source.runtime.worker import preflight
 
 
+def test_private_control_accepts_large_bounded_handoff_seal() -> None:
+    sender, receiver = socket.socketpair()
+    observed: dict[str, object] = {}
+
+    def receive() -> None:
+        observed["frame"] = supervisor._receive_private_frame(receiver)
+
+    thread = threading.Thread(target=receive)
+    thread.start()
+    frame = {
+        "version": supervisor.CONTROL_VERSION,
+        "command": "handoff_seal",
+        "export": {"registered_state": "x" * (256 * 1024)},
+    }
+    try:
+        supervisor._send_private_frame(sender, frame)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert observed["frame"] == frame
+    finally:
+        sender.close()
+        receiver.close()
+
+
+def test_private_control_rejects_above_bound() -> None:
+    sender, receiver = socket.socketpair()
+    try:
+        with pytest.raises(
+            supervisor.LauncherConfigurationError,
+            match="local Worker control frame is too large",
+        ):
+            supervisor._send_private_frame(
+                sender,
+                {"payload": "x" * supervisor._CONTROL_FRAME_LIMIT},
+            )
+    finally:
+        sender.close()
+        receiver.close()
+
+
 def test_private_control_canonical_json_is_utf8_for_registration_and_acks() -> None:
     value = {"actor": "astrid-pack-host", "label": "München/東京"}
     encoded = b'{"actor":"astrid-pack-host","label":"M\xc3\xbcnchen/\xe6\x9d\xb1\xe4\xba\xac"}'
