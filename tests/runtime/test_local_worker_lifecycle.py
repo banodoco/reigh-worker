@@ -826,7 +826,9 @@ def _adopt_request(common, nonce, old_runtime, new_runtime, registered, credenti
     }
 
 
-def _initial_sealed_record(common):
+def _initial_sealed_record(common, old_runtime=None):
+    if old_runtime is None:
+        old_runtime = _runtime_identity("old")
     value = {
         "version": supervisor.HANDOFF_RECORD_VERSION,
         "state": "OWNED",
@@ -836,7 +838,12 @@ def _initial_sealed_record(common):
         "deadline_unix_ms": common["deadline_unix_ms"],
         "nonce_digest": common["nonce_digest"],
         "sealed_record_digest": None,
-        "old_owner": {"pid": 4100, "birth_id": "birth-4100"},
+        "old_owner": {
+            "pid": 4100,
+            "birth_id": "birth-4100",
+            "runtime_instance_id": old_runtime["runtime_instance_id"],
+            "runtime": dict(old_runtime),
+        },
         "export": None,
         "export_sealed_digest": None,
         "adopter": None,
@@ -850,6 +857,87 @@ def _initial_sealed_record(common):
     )
     value["record_digest"] = supervisor._sha256_json(value)
     return value
+
+
+def _reseal_initial_record(value):
+    value.pop("record_digest", None)
+    value["sealed_record_digest"] = supervisor._sha256_json(
+        {
+            key: item
+            for key, item in value.items()
+            if key != "sealed_record_digest"
+        }
+    )
+    value["record_digest"] = supervisor._sha256_json(value)
+    return value
+
+
+def test_sealed_handoff_record_binds_full_owner_runtime_and_digests():
+    old_runtime = _runtime_identity("old")
+    common = {
+        "handoff_id": "handoff-owner-binding",
+        "nonce_digest": "sha256:" + "9" * 64,
+        "deadline_monotonic": 1234.5,
+        "deadline_unix_ms": 1_900_000_000_000,
+    }
+    record = _initial_sealed_record(common, old_runtime)
+    common["sealed_record_digest"] = record["sealed_record_digest"]
+    validation = {
+        "handoff_id": common["handoff_id"],
+        "nonce_digest": common["nonce_digest"],
+        "sealed_record_digest": common["sealed_record_digest"],
+        "old_owner": {"pid": 4100, "birth_id": "birth-4100"},
+        "old_runtime": old_runtime,
+        "deadline_monotonic": common["deadline_monotonic"],
+        "deadline_unix_ms": common["deadline_unix_ms"],
+    }
+
+    assert supervisor._sealed_handoff_record(record, **validation) == record
+
+    identity_mutations = {
+        "owner pid": lambda value: value["old_owner"].update(pid=4101),
+        "owner birth": lambda value: value["old_owner"].update(
+            birth_id="birth-4101"
+        ),
+        "Runtime identity": lambda value: value["old_owner"]["runtime"].update(
+            endpoint="http://127.0.0.1:9999"
+        ),
+        "Runtime instance": lambda value: value["old_owner"].update(
+            runtime_instance_id="runtime-other"
+        ),
+    }
+    for label, mutate in identity_mutations.items():
+        changed = copy.deepcopy(record)
+        mutate(changed)
+        _reseal_initial_record(changed)
+        changed_validation = {
+            **validation,
+            "sealed_record_digest": changed["sealed_record_digest"],
+        }
+        with pytest.raises(
+            supervisor._HandoffRejected,
+            match="sealed handoff owner does not match owner A",
+        ):
+            supervisor._sealed_handoff_record(changed, **changed_validation)
+
+    changed_nonce = copy.deepcopy(record)
+    changed_nonce["nonce_digest"] = "sha256:" + "8" * 64
+    _reseal_initial_record(changed_nonce)
+    with pytest.raises(supervisor._HandoffRejected, match="sealed handoff record"):
+        supervisor._sealed_handoff_record(changed_nonce, **validation)
+
+    changed_seal = copy.deepcopy(record)
+    changed_seal["sealed_record_digest"] = "sha256:" + "7" * 64
+    changed_seal["record_digest"] = supervisor._sha256_json(
+        {key: item for key, item in changed_seal.items() if key != "record_digest"}
+    )
+    with pytest.raises(supervisor._HandoffRejected, match="sealed handoff record"):
+        supervisor._sealed_handoff_record(changed_seal, **validation)
+
+    changed_record = copy.deepcopy(record)
+    changed_record["record_digest"] = "sha256:" + "6" * 64
+    with pytest.raises(supervisor._HandoffRejected, match="record digest"):
+        supervisor._sealed_handoff_record(changed_record, **validation)
 
 
 def _handoff_export(registered):

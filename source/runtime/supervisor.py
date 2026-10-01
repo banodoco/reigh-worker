@@ -1646,6 +1646,9 @@ _CAPABILITY_STATE_FIELDS = frozenset(
     }
 )
 _OWNER_FIELDS = frozenset({"pid", "birth_id"})
+_SEALED_OWNER_FIELDS = frozenset(
+    {"pid", "birth_id", "runtime_instance_id", "runtime"}
+)
 
 
 def _strict_object(value: object, fields: frozenset[str], label: str) -> dict[str, Any]:
@@ -1699,6 +1702,7 @@ def _sealed_handoff_record(
     nonce_digest: str,
     sealed_record_digest: str,
     old_owner: Mapping[str, Any],
+    old_runtime: Mapping[str, Any],
     deadline_monotonic: float,
     deadline_unix_ms: int,
 ) -> dict[str, Any]:
@@ -1706,13 +1710,42 @@ def _sealed_handoff_record(
         raise _HandoffRejected("private Worker sealed handoff record is invalid")
     result = dict(value)
     record_digest = result.get("record_digest")
+    try:
+        sealed_owner = _strict_object(
+            result.get("old_owner"),
+            _SEALED_OWNER_FIELDS,
+            "private Worker sealed handoff owner",
+        )
+        sealed_owner_projection = _runtime_owner(
+            {
+                "pid": sealed_owner["pid"],
+                "birth_id": sealed_owner["birth_id"],
+            },
+            "private Worker sealed handoff owner",
+        )
+        sealed_runtime = _runtime_identity(
+            sealed_owner["runtime"],
+            "private Worker sealed handoff Runtime",
+        )
+    except LauncherConfigurationError as exc:
+        raise _HandoffRejected(
+            "private Worker sealed handoff owner is invalid"
+        ) from exc
+    if (
+        sealed_owner_projection != dict(old_owner)
+        or sealed_runtime != dict(old_runtime)
+        or sealed_owner["runtime_instance_id"]
+        != old_runtime["runtime_instance_id"]
+    ):
+        raise _HandoffRejected(
+            "private Worker sealed handoff owner does not match owner A"
+        )
     if (
         result.get("version") != HANDOFF_RECORD_VERSION
         or result.get("state") != "OWNED"
         or result.get("handoff_id") != handoff_id
         or result.get("nonce_digest") != nonce_digest
         or result.get("sealed_record_digest") != sealed_record_digest
-        or result.get("old_owner") != dict(old_owner)
         or result.get("deadline_monotonic") != deadline_monotonic
         or result.get("deadline_unix_ms") != deadline_unix_ms
         or not _is_sha256(record_digest)
@@ -2492,6 +2525,7 @@ class LocalWorkerPreparerAdapter:
                 nonce_digest=values[1],
                 sealed_record_digest=values[2],
                 old_owner=old_owner,
+                old_runtime=old_runtime,
                 deadline_monotonic=values[3],
                 deadline_unix_ms=values[4],
             )
