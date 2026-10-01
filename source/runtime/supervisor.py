@@ -724,6 +724,20 @@ def _verify_cleanup_identity(
     except LauncherConfigurationError:
         if _process_birth_identity(identity.pid) is None:
             return False
+        # On Darwin proc_pidpath stops exposing the executable once an owned
+        # child has exited, while ps may still expose its unreaped zombie and
+        # stable birth identity.  A zombie cannot own a listener or receive a
+        # signal; classify it as absent here so the retained Popen can be
+        # reaped below.  Any live or unobservable incarnation still fails
+        # closed.
+        try:
+            state = _cleanup_ps(identity.pid, "state")
+        except LauncherConfigurationError:
+            if _process_birth_identity(identity.pid) is None:
+                return False
+            raise
+        if state.startswith("Z"):
+            return False
         raise
     comparable = current
     if allow_reparented and current.parent_pid == 1:

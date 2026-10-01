@@ -12,10 +12,12 @@ import pytest
 import source.runtime.supervisor as supervisor
 from source.runtime.supervisor import (
     LauncherConfigurationError,
+    _CleanupIdentity,
     _OwnedVibeComfySession,
     _read_owned_vibecomfy_custody,
     _read_owned_vibecomfy_session,
     _stop_owned_vibecomfy_session,
+    _verify_cleanup_identity,
 )
 
 
@@ -226,6 +228,67 @@ def test_startup_custody_recovery_accepts_absent_daemon_and_listener(
             server_url="http://127.0.0.1:8188",
         )
     )
+
+
+def test_cleanup_identity_treats_unreaped_owned_zombie_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = _CleanupIdentity(
+        pid=1234,
+        birth_id="ps-lstart:owned",
+        uid=os.getuid(),
+        parent_pid=os.getpid(),
+        process_group=1234,
+        session_id=1234,
+        executable=Path(sys.executable),
+        artifact_digest="sha256:" + "a" * 64,
+        argv_digest="sha256:" + "b" * 64,
+    )
+    monkeypatch.setattr(
+        "source.runtime.worker.preflight._process_birth_identity",
+        lambda _pid: identity.birth_id,
+    )
+    monkeypatch.setattr(
+        supervisor,
+        "_capture_cleanup_identity",
+        lambda _pid: (_ for _ in ()).throw(
+            LauncherConfigurationError("owned process cleanup executable is unavailable")
+        ),
+    )
+    monkeypatch.setattr(supervisor, "_cleanup_ps", lambda _pid, field: "Z" if field == "state" else "")
+
+    assert _verify_cleanup_identity(identity) is False
+
+
+def test_cleanup_identity_keeps_live_unobservable_process_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = _CleanupIdentity(
+        pid=1234,
+        birth_id="ps-lstart:owned",
+        uid=os.getuid(),
+        parent_pid=os.getpid(),
+        process_group=1234,
+        session_id=1234,
+        executable=Path(sys.executable),
+        artifact_digest="sha256:" + "a" * 64,
+        argv_digest="sha256:" + "b" * 64,
+    )
+    monkeypatch.setattr(
+        "source.runtime.worker.preflight._process_birth_identity",
+        lambda _pid: identity.birth_id,
+    )
+    monkeypatch.setattr(
+        supervisor,
+        "_capture_cleanup_identity",
+        lambda _pid: (_ for _ in ()).throw(
+            LauncherConfigurationError("owned process cleanup executable is unavailable")
+        ),
+    )
+    monkeypatch.setattr(supervisor, "_cleanup_ps", lambda _pid, field: "S" if field == "state" else "")
+
+    with pytest.raises(LauncherConfigurationError, match="cleanup executable is unavailable"):
+        _verify_cleanup_identity(identity)
 
 
 def test_partial_or_mismatched_session_registry_fails_closed(tmp_path: Path) -> None:
