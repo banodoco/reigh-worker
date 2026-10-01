@@ -65,6 +65,76 @@ def test_private_control_canonical_json_is_utf8_for_registration_and_acks() -> N
     ]
 
 
+@pytest.mark.parametrize(
+    ("expected", "observed"),
+    [
+        (
+            "ps-lstart:Thu Oct  1 09:08:07 2026",
+            "ps-lstart:Thu Oct 1 09:08:07 2026",
+        ),
+        ("proc-start-ticks:123456", "proc-start-ticks:123456"),
+    ],
+)
+def test_process_birth_identity_comparison_accepts_padding_only_or_exact(
+    expected, observed
+):
+    assert supervisor._process_birth_identities_match(expected, observed)
+
+
+@pytest.mark.parametrize(
+    ("expected", "observed"),
+    [
+        (
+            "ps-lstart:Thu Oct  1 09:08:07 2026",
+            "ps-lstart:Thu Oct 1 09:08:08 2026",
+        ),
+        ("ps-lstart:Thu Oct  1 09:08 2026", "ps-lstart:Thu Oct 1 09:08 2026"),
+        ("", ""),
+        ("proc-start-ticks:123456", "proc-start-ticks:123457"),
+        ("proc-start-ticks:123456", "other-format:123456"),
+    ],
+)
+def test_process_birth_identity_comparison_rejects_changed_or_invalid_values(
+    expected, observed
+):
+    assert not supervisor._process_birth_identities_match(expected, observed)
+
+
+@pytest.mark.parametrize("ack_pid", [6201, True])
+def test_host_ack_binding_requires_exact_pid(ack_pid):
+    request = {
+        "command": "pause_prepare",
+        "handoff_id": "handoff-1",
+        "nonce_digest": "sha256:" + "1" * 64,
+    }
+    response = {
+        "version": supervisor.HOST_CONTROL_VERSION,
+        "command": "pause_prepare_ack",
+        "handoff_id": request["handoff_id"],
+        "nonce_digest": request["nonce_digest"],
+        "status": "paused",
+        "host": {
+            "pid": ack_pid,
+            "birth_id": "ps-lstart:Thu Oct 1 09:08:07 2026",
+        },
+        "phase": "PAUSED",
+    }
+    response["ack_sha256"] = supervisor._sha256_json(response)
+    handle = SimpleNamespace(
+        host=SimpleNamespace(pid=6200),
+        host_birth_id="ps-lstart:Thu Oct  1 09:08:07 2026",
+    )
+
+    with pytest.raises(supervisor._HandoffAuthorizedFailure, match="binding"):
+        supervisor.LocalWorkerPreparerAdapter._verify_host_ack(
+            SimpleNamespace(),
+            handle,
+            request,
+            response,
+            statuses=frozenset({"paused"}),
+        )
+
+
 def test_cleanup_argv_digest_preserves_argument_boundaries() -> None:
     assert supervisor._argv_digest([b"a b", b"c"]) != supervisor._argv_digest(
         [b"a", b"b c"]

@@ -15,6 +15,7 @@ import math
 import os
 import ctypes
 from pathlib import Path
+import re
 import select
 import signal
 import socket
@@ -97,6 +98,28 @@ def _canonical_json(value: object) -> bytes:
 
 def _sha256_json(value: object) -> str:
     return "sha256:" + hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+_PS_LSTART_BIRTH_ID = re.compile(
+    r"ps-lstart:(Mon|Tue|Wed|Thu|Fri|Sat|Sun) +"
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +"
+    r"([1-9]|[12][0-9]|3[01]) +"
+    r"([01][0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9]) +([0-9]{4})\Z"
+)
+
+
+def _process_birth_identities_match(expected: object, observed: object) -> bool:
+    if not isinstance(expected, str) or not isinstance(observed, str):
+        return False
+    if expected.startswith("ps-lstart:") or observed.startswith("ps-lstart:"):
+        expected_match = _PS_LSTART_BIRTH_ID.fullmatch(expected)
+        observed_match = _PS_LSTART_BIRTH_ID.fullmatch(observed)
+        return (
+            expected_match is not None
+            and observed_match is not None
+            and expected_match.groups() == observed_match.groups()
+        )
+    return bool(expected) and expected == observed
 
 
 def _is_sha256(value: object) -> bool:
@@ -2277,14 +2300,23 @@ class LocalWorkerPreparerAdapter:
             fields.add("registration")
         if not isinstance(response, Mapping) or set(response) != fields:
             raise _HandoffAuthorizedFailure("GenericPackHost acknowledgement has an invalid shape")
+        host = response.get("host")
+        host_matches = (
+            isinstance(host, Mapping)
+            and set(host) == {"pid", "birth_id"}
+            and type(host.get("pid")) is int
+            and host.get("pid") == handle.host.pid
+            and _process_birth_identities_match(
+                handle.host_birth_id, host.get("birth_id")
+            )
+        )
         if (
             response.get("version") != HOST_CONTROL_VERSION
             or response.get("command") != f"{request['command']}_ack"
             or response.get("handoff_id") != request.get("handoff_id")
             or response.get("nonce_digest") != request.get("nonce_digest")
             or response.get("status") not in statuses
-            or response.get("host")
-            != {"pid": handle.host.pid, "birth_id": handle.host_birth_id}
+            or not host_matches
         ):
             raise _HandoffAuthorizedFailure("GenericPackHost acknowledgement binding is invalid")
         expected_phase = {
