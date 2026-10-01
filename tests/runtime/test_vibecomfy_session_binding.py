@@ -192,7 +192,7 @@ def test_startup_custody_recovery_never_adopts_a_later_port_binder(
         "kill",
         lambda *_args, **_kwargs: pytest.fail("unrelated listener must not be signalled"),
     )
-    with pytest.raises(LauncherConfigurationError, match="remained"):
+    with pytest.raises(LauncherConfigurationError, match="cleanup identity is incomplete"):
         _stop_owned_vibecomfy_session(
             _OwnedVibeComfySession(
                 root=root,
@@ -203,7 +203,7 @@ def test_startup_custody_recovery_never_adopts_a_later_port_binder(
         )
 
 
-def test_startup_custody_recovery_rejects_unknown_non_listening_child(
+def test_startup_custody_recovery_accepts_absent_daemon_and_listener(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = _registry(tmp_path)
@@ -218,15 +218,14 @@ def test_startup_custody_recovery_rejects_unknown_non_listening_child(
     monkeypatch.setattr(supervisor, "_owned_listener_pid", lambda _port: None)
     monotonic_values = iter((100.0, 200.0))
     monkeypatch.setattr(supervisor.time, "monotonic", lambda: next(monotonic_values))
-    with pytest.raises(LauncherConfigurationError, match="child absence"):
-        _stop_owned_vibecomfy_session(
-            _OwnedVibeComfySession(
-                root=root,
-                process=DeadProcess(),
-                daemon_pid=DeadProcess.pid,
-                server_url="http://127.0.0.1:8188",
-            )
+    _stop_owned_vibecomfy_session(
+        _OwnedVibeComfySession(
+            root=root,
+            process=DeadProcess(),
+            daemon_pid=DeadProcess.pid,
+            server_url="http://127.0.0.1:8188",
         )
+    )
 
 
 def test_partial_or_mismatched_session_registry_fails_closed(tmp_path: Path) -> None:

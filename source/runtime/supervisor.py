@@ -45,6 +45,8 @@ HOST_CONTROL_VERSION = "astrid.local-worker-host-control/v1"
 HANDOFF_RECORD_VERSION = "runtime.local-worker-handoff-record/v1"
 HANDOFF_EXPORT_SEAL_VERSION = "runtime.local-worker-handoff-export-seal/v1"
 _CONTROL_FRAME_LIMIT = 64 * 1024
+VIBECOMFY_CLEANUP_TOTAL_SECONDS = 35.0
+VIBECOMFY_TERM_GRACE_SECONDS = 15.0
 
 # Ambient process settings only. Host bindings that affect identity are
 # validated and passed as argv values rather than inherited from the process.
@@ -1507,13 +1509,17 @@ def _stop_owned_vibecomfy_session(session: _OwnedVibeComfySession) -> None:
             )
         return result
 
+    cleanup_deadline = time.monotonic() + VIBECOMFY_CLEANUP_TOTAL_SECONDS
     members = live_members()
     if members:
         # Full identity, group and endpoint ownership are rechecked directly
         # before both TERM and KILL.  No PID-only signal is used.
         _signal_owned_group(process, signal.SIGTERM)
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
+        term_deadline = min(
+            cleanup_deadline,
+            time.monotonic() + VIBECOMFY_TERM_GRACE_SECONDS,
+        )
+        while time.monotonic() < term_deadline:
             if not any(
                 _verify_cleanup_identity(item, allow_reparented=item is listener)
                 for item in (daemon, listener)
@@ -1523,8 +1529,7 @@ def _stop_owned_vibecomfy_session(session: _OwnedVibeComfySession) -> None:
         members = live_members()
         if members:
             _signal_owned_group(process, signal.SIGKILL)
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
+            while time.monotonic() < cleanup_deadline:
                 if not any(
                     _verify_cleanup_identity(item, allow_reparented=item is listener)
                     for item in (daemon, listener)
@@ -1535,7 +1540,10 @@ def _stop_owned_vibecomfy_session(session: _OwnedVibeComfySession) -> None:
         raise LauncherConfigurationError("owned VibeComfy group survived cleanup")
     if process.poll() is None:
         try:
-            process.wait(timeout=1)
+            remaining = cleanup_deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired("owned VibeComfy daemon", 0)
+            process.wait(timeout=min(1.0, remaining))
         except subprocess.TimeoutExpired as exc:
             raise LauncherConfigurationError(
                 "owned VibeComfy daemon could not be reaped"
