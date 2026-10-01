@@ -378,6 +378,21 @@ class RoleBoundCustodyBroker:
                 pass
 
 
+def _executable_identity(candidate: Path) -> tuple[object, ...]:
+    lexical = os.lstat(candidate)
+    if not (stat.S_ISREG(lexical.st_mode) or stat.S_ISLNK(lexical.st_mode)):
+        raise CustodyError("custodied executable is not a regular file or symlink")
+    resolved = candidate.resolve(strict=True)
+    target = os.stat(resolved)
+    if not stat.S_ISREG(target.st_mode) or not os.access(candidate, os.X_OK):
+        raise CustodyError("custodied executable is not executable")
+    return (
+        lexical.st_dev, lexical.st_ino, lexical.st_mode, lexical.st_size,
+        lexical.st_mtime_ns, str(resolved), target.st_dev, target.st_ino,
+        target.st_mode, target.st_size, target.st_mtime_ns,
+    )
+
+
 def _resolve_executable(value: str) -> str:
     candidate = Path(value)
     if not candidate.is_absolute():
@@ -385,13 +400,17 @@ def _resolve_executable(value: str) -> str:
         if located is None:
             raise CustodyError("custodied executable is unavailable")
         candidate = Path(located)
+    candidate = Path(os.path.abspath(candidate))
     try:
-        resolved = candidate.resolve(strict=True)
-    except OSError as exc:
+        before = _executable_identity(candidate)
+        after = _executable_identity(candidate)
+    except CustodyError:
+        raise
+    except (OSError, RuntimeError) as exc:
         raise CustodyError("custodied executable is unavailable") from exc
-    if not resolved.is_file() or not os.access(resolved, os.X_OK):
-        raise CustodyError("custodied executable is not executable")
-    return str(resolved)
+    if before != after:
+        raise CustodyError("custodied executable changed during validation")
+    return str(candidate)
 
 
 def custody_wrapper_argv(module_name: str) -> list[str]:

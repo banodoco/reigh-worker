@@ -372,3 +372,91 @@ def test_real_worker_launch_registers_seals_and_signals_with_kernel_audit_token(
     assert broker.registration["audit_token_pidversion"] != broker.registration["pre_exec_pidversion"]
     supervisor._terminate_and_wait(process, process.pid)
     assert process.returncode == -signal.SIGTERM
+
+
+def test_resolve_executable_preserves_lexical_venv_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "base-python"
+    target.write_bytes(b"#!/bin/sh\nexit 0\n")
+    target.chmod(0o755)
+    lexical = tmp_path / "venv-python"
+    lexical.symlink_to(target.name)
+
+    assert custody_broker._resolve_executable(str(lexical)) == str(lexical)
+    assert lexical.resolve(strict=True) == target
+    broker = object.__new__(custody_broker.RoleBoundCustodyBroker)
+    broker.socket_path = tmp_path / "custody.sock"
+    broker.run_id = "sha256:" + "1" * 64
+    broker.role = "engine_daemon"
+    environment = broker.child_environment(
+        [str(lexical), "-I", "-m", "vibecomfy.commands.session"],
+        start_new_session=True,
+    )
+    normalized = json.loads(
+        custody_broker.base64.b64decode(
+            environment["ASTRID_CUSTODY_TARGET_B64"], validate=True
+        )
+    )
+    assert normalized[0] == str(lexical)
+    assert Path(normalized[0]).resolve(strict=True) == target
+
+
+def test_resolve_executable_rejects_retarget_during_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lexical = tmp_path / "venv-python"
+    first = tmp_path / "python-a"
+    second = tmp_path / "python-b"
+    for target in (first, second):
+        target.write_bytes(b"#!/bin/sh\nexit 0\n")
+        target.chmod(0o755)
+    lexical.symlink_to(first.name)
+    original = custody_broker._executable_identity
+    calls = 0
+
+    def retarget(candidate: Path):
+        nonlocal calls
+        calls += 1
+        observed = original(candidate)
+        if calls == 1:
+            lexical.unlink()
+            lexical.symlink_to(second.name)
+        return observed
+
+    monkeypatch.setattr(custody_broker, "_executable_identity", retarget)
+    with pytest.raises(custody_broker.CustodyError, match="changed during validation"):
+        custody_broker._resolve_executable(str(lexical))
+
+
+def test_resolve_executable_rejects_lexical_replacement_during_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lexical = tmp_path / "venv-python"
+    lexical.write_bytes(b"#!/bin/sh\nexit 0\n")
+    lexical.chmod(0o755)
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(b"#!/bin/sh\nexit 0\n")
+    replacement.chmod(0o755)
+    original = custody_broker._executable_identity
+    calls = 0
+
+    def replace(candidate: Path):
+        nonlocal calls
+        calls += 1
+        observed = original(candidate)
+        if calls == 1:
+            os.replace(replacement, lexical)
+        return observed
+
+    monkeypatch.setattr(custody_broker, "_executable_identity", replace)
+    with pytest.raises(custody_broker.CustodyError, match="changed during validation"):
+        custody_broker._resolve_executable(str(lexical))
+
+
+def test_resolve_executable_rejects_missing_and_nonexecutable(tmp_path: Path) -> None:
+    with pytest.raises(custody_broker.CustodyError, match="unavailable"):
+        custody_broker._resolve_executable(str(tmp_path / "missing"))
+    candidate = tmp_path / "python"
+    candidate.write_bytes(b"#!/bin/sh\nexit 0\n")
+    candidate.chmod(0o600)
+    with pytest.raises(custody_broker.CustodyError, match="not executable"):
+        custody_broker._resolve_executable(str(candidate))
