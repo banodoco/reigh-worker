@@ -3551,11 +3551,10 @@ def _serve_prepared_worker(descriptor: int) -> int:
                     raise LauncherConfigurationError("private Worker command is invalid")
                 _send_private_frame(control, response)
             except _HandoffAuthorizedFailure as exc:
-                if adapter is not None and handle is not None:
-                    try:
-                        adapter.abort(handle)
-                    except BaseException:
-                        pass
+                # Publish the bounded refusal before cleanup.  Abort may take
+                # longer than the Runtime control timeout; delaying this frame
+                # until after abort makes the authenticated peer observe only
+                # EOF and loses the credential-safe failure classification.
                 try:
                     error_code = _bounded_handoff_error_code(exc)
                     _send_private_frame(
@@ -3574,6 +3573,11 @@ def _serve_prepared_worker(descriptor: int) -> int:
                     )
                 except BaseException:
                     pass
+                if adapter is not None and handle is not None:
+                    try:
+                        adapter.abort(handle)
+                    except BaseException:
+                        pass
                 return 78
             except _HandoffRejected as exc:
                 _send_private_frame(

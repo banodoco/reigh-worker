@@ -1471,3 +1471,70 @@ def test_persistent_host_control_eof_keeps_normal_worker_cleanup(tmp_path, monke
     runtime.close()
     assert outcome == [78]
     assert events == ["abort"]
+
+
+def test_persistent_host_control_refusal_precedes_blocked_cleanup(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    profile = _profile(config)
+    runtime, worker = socket.socketpair()
+    worker_host, host = socket.socketpair()
+    cleanup_started = threading.Event()
+    allow_cleanup = threading.Event()
+    owned = SimpleNamespace(host_control=worker_host)
+
+    class FakeAdapter:
+        _handoff = None
+
+        def __init__(self, received_config, *, environ):
+            assert received_config == config
+
+        def prepare(self, *_args, **_kwargs):
+            return owned
+
+        def report(self, received):
+            assert received is owned
+            return {
+                "version": supervisor.PREPARATION_VERSION,
+                "operation_id": "operation-1",
+                "channel_id": "channel-1",
+            }
+
+        def abort(self, received):
+            assert received is owned
+            cleanup_started.set()
+            assert allow_cleanup.wait(timeout=2)
+            worker_host.close()
+
+    monkeypatch.setattr(supervisor, "LocalWorkerPreparerAdapter", FakeAdapter)
+    outcome = []
+    thread = threading.Thread(
+        target=lambda: outcome.append(supervisor._serve_prepared_worker(worker.detach()))
+    )
+    thread.start()
+    supervisor._send_private_frame(
+        runtime,
+        {
+            "version": supervisor.CONTROL_VERSION,
+            "command": "prepare",
+            "operation_id": "operation-1",
+            "channel_id": "channel-1",
+            "profile": supervisor._private_profile_payload(profile),
+            "config": supervisor._private_config_payload(config),
+        },
+    )
+    assert supervisor._receive_private_frame(runtime)["status"] == "ok"
+    host.close()
+    error = supervisor._receive_private_frame(runtime)
+    assert error == {
+        "version": supervisor.CONTROL_VERSION,
+        "status": "error",
+        "error": "prepared Worker rejected the handoff",
+        "error_code": "host_control_closed",
+        "error_stage": "control",
+    }
+    assert cleanup_started.wait(timeout=1)
+    assert thread.is_alive()
+    allow_cleanup.set()
+    thread.join(timeout=2)
+    runtime.close()
+    assert outcome == [78]
