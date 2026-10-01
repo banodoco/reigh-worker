@@ -788,7 +788,86 @@ def test_registered_state_accepts_generic_host_canonical_digest_shape():
     assert normalized["capabilities"][0]["dependency_digest"] == "6" * 64
 
 
-def _handoff_fixture(tmp_path, monkeypatch, statuses):
+def _registration_ack(runtime_registration):
+    generation = _generation()
+    request = {
+        "command": "rebind_commit",
+        "handoff_id": "handoff-registration",
+        "nonce_digest": "sha256:" + "9" * 64,
+        "credential_generation": generation,
+    }
+    response = {
+        "version": supervisor.HOST_CONTROL_VERSION,
+        "command": "rebind_commit_ack",
+        "handoff_id": request["handoff_id"],
+        "nonce_digest": request["nonce_digest"],
+        "status": "rebind_committed",
+        "host": {"pid": 6200, "birth_id": "birth-6200"},
+        "phase": "REBIND_COMMITTED",
+        "credential_generation": generation,
+        "registration": {
+            "runtime_registration": runtime_registration,
+            "withdrawn_capabilities": [],
+        },
+    }
+    response["ack_sha256"] = supervisor._sha256_json(response)
+    return request, response
+
+
+def test_generic_host_registration_receipt_accepts_compact_schema():
+    request, response = _registration_ack(
+        {"canonical_bytes": 1, "sha256": "sha256:" + "e" * 64}
+    )
+    adapter = object.__new__(supervisor.LocalWorkerPreparerAdapter)
+    adapter._handoff = None
+    handle = SimpleNamespace(host=SimpleNamespace(pid=6200), host_birth_id="birth-6200")
+
+    validated = adapter._verify_host_ack(
+        handle,
+        request,
+        response,
+        statuses=frozenset({"rebind_committed"}),
+        registration=True,
+    )
+
+    assert validated["registration"] == response["registration"]
+
+
+@pytest.mark.parametrize(
+    "runtime_registration",
+    [
+        {},
+        {"canonical_bytes": 1},
+        {"canonical_bytes": 1, "sha256": "sha256:" + "e" * 64, "extra": True},
+        {"canonical_bytes": "1", "sha256": "sha256:" + "e" * 64},
+        {"canonical_bytes": True, "sha256": "sha256:" + "e" * 64},
+        {"canonical_bytes": 0, "sha256": "sha256:" + "e" * 64},
+        {"canonical_bytes": (1 << 30) + 1, "sha256": "sha256:" + "e" * 64},
+        {"canonical_bytes": 1, "sha256": "invalid"},
+    ],
+)
+def test_generic_host_registration_receipt_rejects_invalid_compact_schema(
+    runtime_registration,
+):
+    request, response = _registration_ack(runtime_registration)
+    adapter = object.__new__(supervisor.LocalWorkerPreparerAdapter)
+    adapter._handoff = None
+    handle = SimpleNamespace(host=SimpleNamespace(pid=6200), host_birth_id="birth-6200")
+
+    with pytest.raises(
+        (supervisor._HandoffAuthorizedFailure, supervisor.LauncherConfigurationError),
+        match="Runtime registration receipt|registration acknowledgement",
+    ):
+        adapter._verify_host_ack(
+            handle,
+            request,
+            response,
+            statuses=frozenset({"rebind_committed"}),
+            registration=True,
+        )
+
+
+def _handoff_fixture(tmp_path, monkeypatch, statuses, *, mismatch_rebind_commit=False):
     config = _config(tmp_path)
     adapter = supervisor.LocalWorkerPreparerAdapter(config, environ={})
     worker_control, host_control = socket.socketpair()
@@ -895,17 +974,23 @@ def _handoff_fixture(tmp_path, monkeypatch, statuses):
                         **handle.activation_grant,
                         "host": {"pid": 6200, "birth_id": "birth-6200"},
                     }
-                    payload["registered_state"] = _registered(
+                    registered_state = _registered(
                         new_runtime if request["command"] in {"rebind_prepare", "rebind_commit"} else old_runtime,
                         label=unicode_label,
                     )
+                    if mismatch_rebind_commit and request["command"] == "rebind_commit":
+                        registered_state["source_epoch"] = "source-mismatch"
+                    payload["registered_state"] = registered_state
                 if status == "active_work":
                     payload["inflight_claim_iterations"] = 1
                 if request["command"] in {"rebind_prepare", "rebind_commit"}:
                     payload["credential_generation"] = _generation()
                 if request["command"] == "rebind_commit":
                     payload["registration"] = {
-                        "runtime_registration": {"registered": True},
+                        "runtime_registration": {
+                            "canonical_bytes": 1,
+                            "sha256": "sha256:" + "e" * 64,
+                        },
                         "withdrawn_capabilities": [],
                     }
                 payload["ack_sha256"] = supervisor._sha256_json(payload)
@@ -1456,6 +1541,8 @@ def test_handoff_state_transitions_nonce_replay_lost_final_ack_and_hashes(
     }
     response, _ = adapter.handoff_command(handle, commit_request)
     assert response["worker_phase"] == "rebind_committed"
+    assert response["host_ack"]["registered_state"] == prospective
+    assert response["host_ack"]["registered_state"]["runtime"] == new_runtime
     response, _ = adapter.handoff_command(
         handle,
         {
@@ -1543,6 +1630,48 @@ def test_handoff_state_transitions_nonce_replay_lost_final_ack_and_hashes(
     )
     for item in observed:
         assert "nonce" not in item
+
+
+def test_rebind_commit_rejects_registered_state_changed_after_prepare(
+    tmp_path, monkeypatch
+):
+    fixture = _handoff_fixture(
+        tmp_path,
+        monkeypatch,
+        ["paused", "rebind_prepared", "rebind_committed"],
+        mismatch_rebind_commit=True,
+    )
+    (
+        adapter, handle, thread, _observed, _stopped, _terminated, common,
+        nonce, old_runtime, new_runtime, registered,
+    ) = fixture
+
+    adapter.handoff_command(handle, _prepare_request(common, old_runtime))
+    seal = _seal_request(common, registered)
+    adapter.handoff_command(handle, seal)
+    adopt = _adopt_request(
+        common, nonce, old_runtime, new_runtime, registered, adapter.config.credential_file
+    )
+    response, _ = adapter.handoff_command(handle, adopt)
+    prospective = response["host_ack"]["registered_state"]
+    assert prospective["runtime"] == new_runtime
+
+    commit_request = {
+        **common,
+        "command": "handoff_commit",
+        "new_owner": {"pid": 5100, "birth_id": "birth-5100"},
+        "new_runtime": new_runtime,
+        "credential_generation": _generation(),
+        "registered_state": prospective,
+    }
+    with pytest.raises(
+        supervisor._HandoffAuthorizedFailure,
+        match="did not bind the new Runtime",
+    ):
+        adapter.handoff_command(handle, commit_request)
+    assert adapter._handoff is not None
+    assert adapter._handoff.phase == "adopt_prepared"
+    thread.join(timeout=2)
 
 
 def test_finalized_handoff_ack_cache_is_bounded_to_eight(tmp_path):

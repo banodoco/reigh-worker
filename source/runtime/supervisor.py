@@ -2527,9 +2527,30 @@ class LocalWorkerPreparerAdapter:
         if registration:
             value = _strict_object(
                 response.get("registration"),
-                frozenset({"runtime_registration", "withdrawn_capabilities"}),
+                frozenset(
+                    {
+                        "runtime_registration",
+                        "withdrawn_capabilities",
+                    }
+                ),
                 "GenericPackHost registration acknowledgement",
             )
+            runtime_registration = _strict_object(
+                value["runtime_registration"],
+                frozenset({"canonical_bytes", "sha256"}),
+                "GenericPackHost Runtime registration receipt",
+            )
+            canonical_bytes = runtime_registration["canonical_bytes"]
+            if (
+                isinstance(canonical_bytes, bool)
+                or not isinstance(canonical_bytes, int)
+                or canonical_bytes < 1
+                or canonical_bytes > (1 << 30)
+                or not _is_sha256(runtime_registration["sha256"])
+            ):
+                raise _HandoffAuthorizedFailure(
+                    "GenericPackHost Runtime registration receipt is invalid"
+                )
             withdrawn = value["withdrawn_capabilities"]
             if (
                 not isinstance(withdrawn, list)
@@ -3087,7 +3108,10 @@ class LocalWorkerPreparerAdapter:
                 registration=True,
             )
             rebound = _registered_state(host_ack["registered_state"])
-            if rebound["runtime"] != current.new_runtime:
+            if (
+                rebound != current.registered_state
+                or rebound["runtime"] != current.new_runtime
+            ):
                 raise _HandoffAuthorizedFailure("GenericPackHost did not bind the new Runtime")
             current.registered_state = rebound
             current.phase = "rebind_committed"
