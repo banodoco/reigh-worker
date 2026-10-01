@@ -1695,6 +1695,44 @@ def _contains_raw_nonce(value: object) -> bool:
     return False
 
 
+_BOUNDED_HANDOFF_ERROR_CODES = {
+    "private Worker handoff request has an invalid shape": "request_shape",
+    "private Worker control version is invalid": "control_version",
+    "private Worker handoff identity is invalid": "handoff_identity",
+    "private Worker handoff digest is invalid": "handoff_digest",
+    "private Worker handoff is already prepared": "already_prepared",
+    "private Worker handoff deadline expired": "deadline_expired",
+    "private Worker owner A is stale": "owner_a_stale",
+    "private Worker sealed handoff owner is invalid": "sealed_owner_invalid",
+    "private Worker sealed handoff owner does not match owner A": "sealed_owner_mismatch",
+    "private Worker sealed handoff record is invalid": "sealed_record_invalid",
+    "private Worker sealed handoff digest is invalid": "sealed_digest_invalid",
+    "private Worker handoff record digest is invalid": "record_digest_invalid",
+    "handoff credential generation changed": "credential_generation_changed",
+    "handoff receipt evidence digest is invalid": "receipt_digest_invalid",
+    "handoff receipt evidence does not match activation": "receipt_activation_mismatch",
+    "GenericPackHost old Runtime state changed": "host_runtime_changed",
+    "GenericPackHost control channel failed": "host_control_failed",
+    "GenericPackHost control channel closed": "host_control_closed",
+    "GenericPackHost control channel sent an unsolicited frame": "host_unsolicited_frame",
+    "GenericPackHost acknowledgement binding is invalid": "host_ack_binding",
+    "GenericPackHost acknowledgement phase is invalid": "host_ack_phase",
+    "GenericPackHost acknowledgement digest is invalid": "host_ack_digest",
+    "GenericPackHost activation identity changed": "host_activation_changed",
+}
+
+
+def _bounded_handoff_error_code(exc: BaseException) -> str:
+    return _BOUNDED_HANDOFF_ERROR_CODES.get(
+        str(exc),
+        "authorized_failure"
+        if isinstance(exc, _HandoffAuthorizedFailure)
+        else "handoff_rejected"
+        if isinstance(exc, _HandoffRejected)
+        else "worker_configuration",
+    )
+
+
 def _sealed_handoff_record(
     value: object,
     *,
@@ -3519,9 +3557,20 @@ def _serve_prepared_worker(descriptor: int) -> int:
                     except BaseException:
                         pass
                 try:
+                    error_code = _bounded_handoff_error_code(exc)
                     _send_private_frame(
                         control,
-                        {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
+                        {
+                            "version": CONTROL_VERSION,
+                            "status": "error",
+                            "error": "prepared Worker rejected the handoff",
+                            "error_code": error_code,
+                            "error_stage": (
+                                "control"
+                                if error_code.startswith("host_")
+                                else str(command or "control")
+                            ),
+                        },
                     )
                 except BaseException:
                     pass
@@ -3529,12 +3578,24 @@ def _serve_prepared_worker(descriptor: int) -> int:
             except _HandoffRejected as exc:
                 _send_private_frame(
                     control,
-                    {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
+                    {
+                        "version": CONTROL_VERSION,
+                        "status": "error",
+                        "error": "prepared Worker rejected the handoff",
+                        "error_code": _bounded_handoff_error_code(exc),
+                        "error_stage": str(command or "control"),
+                    },
                 )
             except LauncherConfigurationError as exc:
                 _send_private_frame(
                     control,
-                    {"version": CONTROL_VERSION, "status": "error", "error": str(exc)},
+                    {
+                        "version": CONTROL_VERSION,
+                        "status": "error",
+                        "error": "prepared Worker rejected the handoff",
+                        "error_code": _bounded_handoff_error_code(exc),
+                        "error_stage": str(command or "control"),
+                    },
                 )
     except (BrokenPipeError, ConnectionError, OSError, socket.timeout):
         if adapter is not None and handle is not None:

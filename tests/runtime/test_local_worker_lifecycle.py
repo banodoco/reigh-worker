@@ -103,7 +103,9 @@ def test_supervisor_module_entrypoint_serves_private_control_channel() -> None:
         assert response == {
             "version": supervisor.CONTROL_VERSION,
             "status": "error",
-            "error": "private Worker command is invalid",
+            "error": "prepared Worker rejected the handoff",
+            "error_code": "worker_configuration",
+            "error_stage": "entrypoint-probe",
         }
     finally:
         runtime.close()
@@ -940,6 +942,22 @@ def test_sealed_handoff_record_binds_full_owner_runtime_and_digests():
         supervisor._sealed_handoff_record(changed_record, **validation)
 
 
+def test_handoff_diagnostic_codes_are_bounded_and_secret_free():
+    assert supervisor._bounded_handoff_error_code(
+        supervisor._HandoffRejected(
+            "private Worker sealed handoff owner does not match owner A"
+        )
+    ) == "sealed_owner_mismatch"
+    assert supervisor._bounded_handoff_error_code(
+        supervisor._HandoffAuthorizedFailure(
+            "GenericPackHost old Runtime state changed"
+        )
+    ) == "host_runtime_changed"
+    assert supervisor._bounded_handoff_error_code(
+        supervisor._HandoffRejected("unrecognized detail: secret-material")
+    ) == "handoff_rejected"
+
+
 def _handoff_export(registered):
     identity = {
         "evidence_digest": "sha256:" + "d" * 64,
@@ -1446,7 +1464,9 @@ def test_persistent_host_control_eof_keeps_normal_worker_cleanup(tmp_path, monke
     host.close()
     error = supervisor._receive_private_frame(runtime)
     assert error["status"] == "error"
-    assert "control channel closed" in error["error"]
+    assert error["error"] == "prepared Worker rejected the handoff"
+    assert error["error_code"] == "host_control_closed"
+    assert error["error_stage"] == "control"
     thread.join(timeout=2)
     runtime.close()
     assert outcome == [78]
