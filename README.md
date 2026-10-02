@@ -49,11 +49,26 @@ astrid-local start-worker --profile astrid \
   --expected-workspace-uuid <workspace-uuid> --json
 ```
 
+The product gateway is the equivalent user-facing route:
+
+```bash
+astrid worker start --json
+```
+
+`astrid-local start-worker` is the operator form and requires the expected
+workspace UUID. `astrid worker start` requests the same Runtime-owned handoff
+without exposing Worker credentials or a direct Worker process command. Use
+`ASTRID_LOCAL_DATA_ROOT` (or an absolute `--data-root`) consistently. The
+legacy `BANODOCO_LOCAL_DATA_ROOT` spelling is accepted only during migration,
+with a warning; conflicting canonical and legacy values fail closed.
+
 The installed closeout mode uses Python 3.10.21 for Worker and does not require
 an Astrid or Runtime checkout on `PYTHONPATH`. An editable Worker source profile
 is a development-only path and must be labelled as such. Direct `run_worker.py`
 and the `uv sync --extra cuda124` command above remain production GPU setup and
-do not establish Runtime ownership.
+do not establish Runtime ownership. The CPU closeout used a deterministic
+fake-engine composition; no CUDA, provider, RunPod, or hosted qualification is
+claimed here.
 
 ## Packaging Notes
 
