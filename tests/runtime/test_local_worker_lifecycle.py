@@ -542,7 +542,7 @@ def test_wrong_or_stale_activation_is_rejected_while_host_remains_parked(tmp_pat
 
 
 def test_identity_change_aborts_without_signalling_replacement(tmp_path, monkeypatch):
-    adapter, profile, _engine, _stopped, terminated, _threads = _install_fakes(tmp_path, monkeypatch)
+    adapter, profile, _engine, stopped, terminated, _threads = _install_fakes(tmp_path, monkeypatch)
     handle = adapter.prepare(profile, operation_id="operation-1", channel_id="channel-1")
     original = preflight._process_birth_identity
     monkeypatch.setattr(preflight, "_process_birth_identity", lambda pid: "replacement" if pid == handle.host.pid else original(pid))
@@ -550,6 +550,9 @@ def test_identity_change_aborts_without_signalling_replacement(tmp_path, monkeyp
     with pytest.raises(supervisor.LauncherConfigurationError, match="birth identity changed"):
         adapter.abort(handle)
     assert terminated == []
+    assert stopped == [handle.engine]
+    assert handle.closed is True
+    assert adapter.reconnect({}) is None
 
 
 def test_parked_host_crash_is_reported_and_abort_cleans_engine(tmp_path, monkeypatch):

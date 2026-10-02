@@ -3291,7 +3291,7 @@ class LocalWorkerPreparerAdapter:
     def abort(self, handle: object) -> None:
         if not isinstance(handle, PreparedHostHandle) or handle is not self._active:
             return
-        error: BaseException | None = None
+        errors: list[BaseException] = []
         try:
             if handle.activation.fileno() >= 0:
                 handle.activation.close()
@@ -3314,9 +3314,16 @@ class LocalWorkerPreparerAdapter:
                     if _verify_cleanup_identity(identity):
                         _signal_owned_group(handle.host, signal.SIGKILL)
                     handle.host.wait(timeout=3)
+        except BaseException as exc:
+            # Host custody and Engine custody are independent.  A missing or
+            # replaced host must never authorize signalling that PID, but it
+            # also must not skip cleanup of the separately sealed Engine
+            # session owned by this handle.
+            errors.append(exc)
+        try:
             _stop_owned_vibecomfy_session(handle.engine)
         except BaseException as exc:
-            error = exc
+            errors.append(exc)
         finally:
             self.config.ready_file.unlink(missing_ok=True)
             if handle.readiness_profile is not None:
@@ -3324,8 +3331,8 @@ class LocalWorkerPreparerAdapter:
             handle.closed = True
             self._active = None
             self._handoff = None
-        if error is not None:
-            raise error
+        if errors:
+            raise errors[0]
 
     def reconnect(self, receipt: Mapping[str, Any]) -> object | None:
         handle = self._active
