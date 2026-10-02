@@ -555,6 +555,40 @@ def test_identity_change_aborts_without_signalling_replacement(tmp_path, monkeyp
     assert adapter.reconnect({}) is None
 
 
+def test_host_cleanup_failure_preserves_first_error_after_engine_cleanup_failure(
+    tmp_path, monkeypatch
+):
+    adapter, profile, _engine_report, _stopped, terminated, _threads = _install_fakes(
+        tmp_path, monkeypatch
+    )
+    handle = adapter.prepare(profile, operation_id="operation-1", channel_id="channel-1")
+    original = preflight._process_birth_identity
+    monkeypatch.setattr(
+        preflight,
+        "_process_birth_identity",
+        lambda pid: "replacement" if pid == handle.host.pid else original(pid),
+    )
+    engine_attempts = []
+
+    def fail_engine_cleanup(received):
+        engine_attempts.append(received)
+        raise RuntimeError("injected engine cleanup failure")
+
+    monkeypatch.setattr(supervisor, "_stop_owned_vibecomfy_session", fail_engine_cleanup)
+
+    with pytest.raises(
+        supervisor.LauncherConfigurationError,
+        match="owned process cleanup birth identity changed",
+    ) as raised:
+        adapter.abort(handle)
+
+    assert engine_attempts == [handle.engine]
+    assert "engine cleanup failure" not in str(raised.value)
+    assert terminated == []
+    assert handle.closed is True
+    assert adapter.reconnect({}) is None
+
+
 def test_parked_host_crash_is_reported_and_abort_cleans_engine(tmp_path, monkeypatch):
     adapter, profile, _engine, stopped, _terminated, _threads = _install_fakes(tmp_path, monkeypatch)
     handle = adapter.prepare(profile, operation_id="operation-1", channel_id="channel-1")
