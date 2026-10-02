@@ -260,6 +260,57 @@ class FakeProcess:
         return 0
 
 
+def test_audit_token_signal_race_accepts_only_retained_child_exit(monkeypatch):
+    class FailingBroker:
+        def __init__(self, process, *, exits):
+            self.process = process
+            self.exits = exits
+
+        def signal(self, _signum, *, expected_pid):
+            assert expected_pid == self.process.pid
+            if self.exits:
+                self.process.returncode = 0
+            raise supervisor.CustodyError("injected audit-token signal race")
+
+    identity = supervisor._CleanupIdentity(
+        pid=7300,
+        birth_id="birth-7300",
+        uid=os.getuid(),
+        parent_pid=os.getpid(),
+        process_group=7300,
+        session_id=7300,
+        executable=Path(sys.executable).resolve(),
+        artifact_digest="sha256:" + "a" * 64,
+        argv_digest=supervisor._argv_digest([b"fake-host", b"7300"]),
+    )
+    monkeypatch.setattr(supervisor, "RoleBoundCustodyBroker", FailingBroker)
+    monkeypatch.setattr(supervisor, "_capture_cleanup_identity", lambda _pid: identity)
+    monkeypatch.setattr(supervisor, "_verify_cleanup_identity", lambda _identity: True)
+
+    exited = FakeProcess(identity.pid)
+    exited._reigh_custody_broker = FailingBroker(exited, exits=True)
+    supervisor._signal_owned_group(exited, signal.SIGTERM)
+
+    live = FakeProcess(identity.pid)
+    live._reigh_custody_broker = FailingBroker(live, exits=False)
+    with pytest.raises(
+        supervisor.LauncherConfigurationError,
+        match="owned process audit-token signal failed",
+    ):
+        supervisor._signal_owned_group(live, signal.SIGTERM)
+
+
+def test_terminate_and_wait_accepts_retained_child_already_exited(monkeypatch):
+    process = FakeProcess(7301)
+    process.returncode = 0
+    monkeypatch.setattr(
+        supervisor,
+        "_capture_cleanup_identity",
+        lambda _pid: pytest.fail("exited retained child must not be reidentified"),
+    )
+    supervisor._terminate_and_wait(process, process.pid)
+
+
 def _config(tmp_path: Path) -> supervisor.HostLaunchConfig:
     source = tmp_path / "Astrid"
     pack = source / "astrid" / "packs"

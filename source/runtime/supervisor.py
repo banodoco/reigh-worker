@@ -811,6 +811,12 @@ def _signal_owned_group(process: subprocess.Popen[bytes], signum: int) -> None:
         try:
             broker.signal(signum, expected_pid=identity.pid)
         except CustodyError as exc:
+            # The retained child may exit after the final identity check but
+            # before Darwin's audit-token signal reaches the kernel.  Only the
+            # retained Popen can turn that race into a proved-absent success;
+            # live and unobservable incarnations still fail closed.
+            if process.poll() is not None:
+                return
             raise LauncherConfigurationError(
                 "owned process audit-token signal failed"
             ) from exc
@@ -819,6 +825,8 @@ def _signal_owned_group(process: subprocess.Popen[bytes], signum: int) -> None:
 def _terminate_and_wait(process: subprocess.Popen[bytes], pgid: int) -> None:
     """Terminate and reap a verified host process group."""
 
+    if process.poll() is not None:
+        return
     identity = _capture_cleanup_identity(process.pid)
     if (
         pgid != identity.pid
@@ -4031,9 +4039,22 @@ def launch_generic_pack_host(
                 },
             )
             return returncode
-        except BaseException:
+        except BaseException as exc:
             _cleanup_host()
             _invalidate_profile()
+            if "state" in locals():
+                _atomic_write_json(
+                    config.state_file,
+                    {
+                        **state,
+                        "status": "failed",
+                        "ready": bool(locals().get("ready", False)),
+                        "returncode": 78,
+                        "signals": received,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
             return 78
     finally:
         signal.signal(signal.SIGINT, previous_handlers[signal.SIGINT])
