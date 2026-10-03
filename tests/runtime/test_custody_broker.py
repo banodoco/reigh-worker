@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import fcntl
 import inspect
 import json
 import os
@@ -8,6 +9,8 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -41,6 +44,7 @@ def _exercise_registration(
         identity_provider=lambda observed_pid: identity if observed_pid == pid else None,
         ledger_root=tmp_path / "ledger",
         authority_journal=authority_journal,
+        authority_scope_root=(authority_journal.parent if authority_journal else None),
     )
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.connect(str(broker.socket_path))
@@ -100,6 +104,147 @@ def test_post_exec_authority_is_escrowed_before_final_seal(
     assert records[0]["audit_token_words"] == [2] * 8
     assert records[0]["binding"]["state"] == "post-exec-authority-validated"
     assert journal.stat().st_mode & 0o777 == 0o600
+
+
+def test_worker_scope_lease_linearizes_close_before_late_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = tmp_path / "scope"
+    scope.mkdir(mode=0o700)
+    lease = custody_broker._acquire_scope_admission(scope, timeout=0.1)
+    assert os.get_inheritable(lease) is False
+    result = {}
+
+    def close():
+        runtime_path = (
+            Path(__file__).resolve().parents[3]
+            / "banodoco-workspace-runtime/banodoco_local/custody_broker.py"
+        )
+        spec = __import__("importlib.util").util.spec_from_file_location(
+            "worker_scope_runtime_closer", runtime_path,
+        )
+        module = __import__("importlib.util").util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        result.update(module.close_authority_scope(
+            scope, deadline=time.monotonic() + 1.0,
+        ))
+
+    thread = threading.Thread(target=close)
+    thread.start()
+    deadline = time.monotonic() + 0.5
+    while not (scope / custody_broker.AUTHORITY_SCOPE_CLOSED).is_file():
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+    assert thread.is_alive()
+    fcntl.flock(lease, fcntl.LOCK_UN)
+    os.close(lease)
+    thread.join(timeout=1.0)
+    assert result["drained"] is True
+    with pytest.raises(custody_broker.CustodyError, match="scope is closed"):
+        custody_broker._acquire_scope_admission(scope, timeout=0.1)
+
+
+def test_worker_broker_publication_completes_before_runtime_scope_close_drains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pid = 43125
+    identity = {"pid": pid, "birth_id": "birth-43125", "uid": os.getuid()}
+    tokens = iter((
+        {"pid": pid, "uid": os.getuid(), "pidversion": 12, "words": [1] * 8,
+         "sha256": "sha256:" + "1" * 64},
+        {"pid": pid, "uid": os.getuid(), "pidversion": 13, "words": [2] * 8,
+         "sha256": "sha256:" + "2" * 64},
+    ))
+    monkeypatch.setattr(custody_broker.sys, "platform", "darwin")
+    monkeypatch.setattr(custody_broker, "_token_details", lambda _connection: next(tokens))
+    entered, release = threading.Event(), threading.Event()
+    original_append = custody_broker._append_owner_jsonl
+
+    def blocked_append(path, value):
+        entered.set()
+        assert release.wait(1.0)
+        original_append(path, value)
+
+    monkeypatch.setattr(custody_broker, "_append_owner_jsonl", blocked_append)
+    runtime_path = (
+        Path(__file__).resolve().parents[3]
+        / "banodoco-workspace-runtime/banodoco_local/custody_broker.py"
+    )
+    spec = __import__("importlib.util").util.spec_from_file_location(
+        "worker_broker_runtime_closer", runtime_path,
+    )
+    runtime_closer = __import__("importlib.util").util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(runtime_closer)
+    scope = tmp_path / "scope"
+    scope.mkdir(mode=0o700)
+    journal = scope / "authorities.jsonl"
+    broker = custody_broker.RoleBoundCustodyBroker(
+        role="worker", identity_provider=lambda observed: identity if observed == pid else None,
+        ledger_root=tmp_path / "ledger", authority_journal=journal,
+        authority_scope_root=scope, timeout=1.0,
+    )
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.connect(str(broker.socket_path))
+    custody_broker._send_frame(connection, {
+        "version": custody_broker.PROTOCOL_VERSION, "command": "register_pre_exec",
+        "run_id": broker.run_id, "role": broker.role, "pid": pid,
+        "ppid": os.getpid(), "argv_digest": "sha256:" + "a" * 64,
+    })
+    assert custody_broker._read_frame(connection)["status"] == "registered"
+    assert entered.wait(1.0)
+    closed = {}
+    thread = threading.Thread(target=lambda: closed.update(
+        runtime_closer.close_authority_scope(scope, deadline=time.monotonic() + 1.0)
+    ))
+    thread.start()
+    marker_deadline = time.monotonic() + 0.5
+    while not (scope / custody_broker.AUTHORITY_SCOPE_CLOSED).is_file():
+        assert time.monotonic() < marker_deadline
+        time.sleep(0.005)
+    assert thread.is_alive()
+    release.set()
+    broker.wait_until_sealed()
+    connection.close()
+    thread.join(timeout=1.0)
+    assert closed["drained"] is True
+    assert len(journal.read_text().splitlines()) == 1
+
+
+def test_worker_broker_pre_spawn_abort_releases_scope_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(custody_broker.sys, "platform", "darwin")
+    runtime_path = (
+        Path(__file__).resolve().parents[3]
+        / "banodoco-workspace-runtime/banodoco_local/custody_broker.py"
+    )
+    spec = __import__("importlib.util").util.spec_from_file_location(
+        "worker_abort_runtime_closer", runtime_path,
+    )
+    runtime_closer = __import__("importlib.util").util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(runtime_closer)
+    scope = tmp_path / "scope"
+    scope.mkdir(mode=0o700)
+    broker = custody_broker.RoleBoundCustodyBroker(
+        role="engine", identity_provider=lambda _pid: None,
+        ledger_root=tmp_path / "ledger", authority_journal=scope / "authorities.jsonl",
+        authority_scope_root=scope, timeout=0.1,
+    )
+    broker.abort_before_spawn()
+    result = runtime_closer.close_authority_scope(
+        scope, deadline=time.monotonic() + 0.1,
+    )
+    assert result["drained"] is True
+    with pytest.raises(custody_broker.CustodyError, match="scope is closed"):
+        custody_broker.RoleBoundCustodyBroker(
+            role="late", identity_provider=lambda _pid: None,
+            ledger_root=tmp_path / "late-ledger",
+            authority_journal=scope / "authorities.jsonl",
+            authority_scope_root=scope, timeout=0.1,
+        )
 
 
 def test_cleanup_routes_only_through_registered_audit_token(
