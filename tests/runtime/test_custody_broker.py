@@ -23,7 +23,9 @@ def _clear_unresolved_launches():
     supervisor._UNRESOLVED_CUSTODY.clear()
 
 
-def _exercise_registration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def _exercise_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, authority_journal: Path | None = None,
+):
     pid = 43123
     identity = {"pid": pid, "birth_id": "birth-43123", "uid": os.getuid()}
     tokens = iter(
@@ -38,6 +40,7 @@ def _exercise_registration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         role="generic_pack_host",
         identity_provider=lambda observed_pid: identity if observed_pid == pid else None,
         ledger_root=tmp_path / "ledger",
+        authority_journal=authority_journal,
     )
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.connect(str(broker.socket_path))
@@ -78,6 +81,25 @@ def test_registration_is_kernel_authenticated_durable_before_ack_and_sealed(
     ledger = json.loads(broker.ledger_path.read_text())
     assert ledger["state"] == "sealed"
     assert ledger["registration"]["audit_token_pidversion"] == 8
+
+
+def test_post_exec_authority_is_escrowed_before_final_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    escrow_root = tmp_path / "escrow"
+    escrow_root.mkdir(mode=0o700)
+    journal = escrow_root / "authorities.jsonl"
+    broker, identity, _ack = _exercise_registration(
+        tmp_path, monkeypatch, authority_journal=journal,
+    )
+    records = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert len(records) == 1
+    assert records[0]["pid"] == identity["pid"]
+    assert records[0]["role"] == broker.role
+    assert records[0]["identity"] == identity
+    assert records[0]["audit_token_words"] == [2] * 8
+    assert records[0]["binding"]["state"] == "post-exec-authority-validated"
+    assert journal.stat().st_mode & 0o777 == 0o600
 
 
 def test_cleanup_routes_only_through_registered_audit_token(

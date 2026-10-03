@@ -134,6 +134,41 @@ def _write_all(descriptor: int, value: bytes) -> None:
         offset += written
 
 
+def _append_owner_jsonl(path: Path, value: Mapping[str, object]) -> None:
+    if not path.is_absolute() or path.is_symlink():
+        raise CustodyError("custody authority journal path is unsafe")
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    parent = os.lstat(path.parent)
+    if (
+        stat.S_ISLNK(parent.st_mode)
+        or not stat.S_ISDIR(parent.st_mode)
+        or parent.st_uid != os.getuid()
+        or stat.S_IMODE(parent.st_mode) != 0o700
+    ):
+        raise CustodyError("custody authority journal parent is not owner-only")
+    encoded = _canonical(dict(value)) + b"\n"
+    if len(encoded) > FRAME_LIMIT:
+        raise CustodyError("custody authority journal record exceeds its hard limit")
+    descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        observed = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(observed.st_mode)
+            or observed.st_uid != os.getuid()
+            or stat.S_IMODE(observed.st_mode) != 0o600
+        ):
+            raise CustodyError("custody authority journal is not owner-only")
+        if os.write(descriptor, encoded) != len(encoded):
+            raise CustodyError("custody authority journal append was incomplete")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 class RoleBoundCustodyBroker:
     """One-role broker whose durable seal is the only cleanup authority."""
 
@@ -144,6 +179,7 @@ class RoleBoundCustodyBroker:
         identity_provider: Callable[[int], Mapping[str, object] | None],
         ledger_root: Path | None = None,
         timeout: float = 5.0,
+        authority_journal: Path | None = None,
     ) -> None:
         if not role or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in role):
             raise CustodyError("custody role is invalid")
@@ -152,6 +188,10 @@ class RoleBoundCustodyBroker:
         self.role = role
         self.identity_provider = identity_provider
         self.timeout = timeout
+        self.authority_journal = (
+            Path(os.path.abspath(authority_journal))
+            if authority_journal is not None else None
+        )
         self.run_id = _digest(os.urandom(32))
         self.root = ledger_root or Path(tempfile.mkdtemp(prefix="astrid-custody-"))
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -360,6 +400,25 @@ class RoleBoundCustodyBroker:
                 "audit_token_pidversion": post["pidversion"],
             })
             self._post_exec_authority_validated = True
+            if self.authority_journal is not None:
+                identity = dict(self.registration["identity"])  # type: ignore[arg-type]
+                _append_owner_jsonl(self.authority_journal, {
+                    "version": "astrid.plan-a.retained-audit-authority/v1",
+                    "role": self.role,
+                    "pid": int(frame["pid"]),
+                    "identity": identity,
+                    "audit_token_words": list(self.registration["audit_token_words"]),  # type: ignore[arg-type]
+                    "binding": {
+                        "role": self.role,
+                        "pid": int(frame["pid"]),
+                        "birth_id": identity.get("birth_id"),
+                        "uid": identity.get("uid"),
+                        "state": "post-exec-authority-validated",
+                        "registration_before_exec": True,
+                        "pre_post_exec_incarnation_bound": True,
+                        "signal_primitive": "proc_signal_with_audittoken",
+                    },
+                })
             self.sequence += 1
             self._persist("registration_post_exec")
             self.state = "sealed"
