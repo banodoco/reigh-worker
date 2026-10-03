@@ -38,6 +38,8 @@ FRAME_LIMIT = 16 * 1024
 PROTOCOL_VERSION = 1
 AUTHORITY_SCOPE_LOCK = "admission.lock"
 AUTHORITY_SCOPE_CLOSED = "admission.closed.json"
+PENDING_AUTHORITY_VERSION = "astrid.plan-a.authority-admission-pending/v1"
+RESOLVED_AUTHORITY_VERSION = "astrid.plan-a.authority-admission-resolved/v1"
 
 
 class CustodyError(RuntimeError):
@@ -496,6 +498,25 @@ class RoleBoundCustodyBroker:
                 "ledger_state_digest": self.chain_head,
             }
             self._persist("registration_ack_checkpoint")
+            if self.authority_journal is not None:
+                identity = dict(self.registration["identity"])  # type: ignore[arg-type]
+                _append_owner_jsonl(self.authority_journal, {
+                    "version": PENDING_AUTHORITY_VERSION,
+                    "admission_id": self.run_id,
+                    "role": self.role,
+                    "pid": int(frame["pid"]),
+                    "identity": identity,
+                    "binding": {
+                        "admission_id": self.run_id,
+                        "role": self.role,
+                        "pid": int(frame["pid"]),
+                        "birth_id": identity.get("birth_id"),
+                        "uid": identity.get("uid"),
+                        "state": "pre-exec-ack-pending",
+                        "registration_before_exec": True,
+                        "authenticated_signal_authority": False,
+                    },
+                })
             _send_frame(connection, self.ack)
             deadline = time.monotonic() + self.timeout
             post: dict[str, object] | None = None
@@ -526,6 +547,7 @@ class RoleBoundCustodyBroker:
                     "identity": identity,
                     "audit_token_words": list(self.registration["audit_token_words"]),  # type: ignore[arg-type]
                     "binding": {
+                        "admission_id": self.run_id,
                         "role": self.role,
                         "pid": int(frame["pid"]),
                         "birth_id": identity.get("birth_id"),
@@ -535,6 +557,14 @@ class RoleBoundCustodyBroker:
                         "pre_post_exec_incarnation_bound": True,
                         "signal_primitive": "proc_signal_with_audittoken",
                     },
+                })
+                _append_owner_jsonl(self.authority_journal, {
+                    "version": RESOLVED_AUTHORITY_VERSION,
+                    "admission_id": self.run_id,
+                    "resolution": "validated-authority-exported",
+                    "role": self.role,
+                    "pid": int(frame["pid"]),
+                    "identity": identity,
                 })
             self.sequence += 1
             self._persist("registration_post_exec")
